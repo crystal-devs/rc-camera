@@ -1,5 +1,5 @@
 
-export const handleApiError = (err) => {
+export const handleApiError = (err: any) => {
   console.log("from handle api error")
     // the response object contain a field named errors if there is any errors
     try {
@@ -10,7 +10,7 @@ export const handleApiError = (err) => {
         message = setErrorMessage(err, message);
       } else if (err.response) {
         if (err.response.data.errors && err.response.data.errors.length) {
-          setErrorMessage(err.response.data.errors);
+          message = setErrorMessage(err.response.data.errors, message);
         } else {
           message = err.response.data.message;
         }
@@ -28,8 +28,8 @@ export const handleApiError = (err) => {
     }
   };
   
-  export const setErrorMessage = (error, message) => {
-    error.forEach((item) => {
+  export const setErrorMessage = (error: any, message: string) => {
+    error.forEach((item: any) => {
       message = message.length ? message + ", " + item.message : item.message;
     });
     return message;
