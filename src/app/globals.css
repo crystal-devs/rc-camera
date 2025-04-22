@@ -124,3 +124,8 @@
     @apply bg-background text-foreground;
   }
 }
+@media (max-width: 639px) {
+  .hide-chevron-mobile > svg:last-child {
+    display: none;
+  }
+}

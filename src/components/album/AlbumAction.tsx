@@ -26,10 +26,10 @@ export function AlbumActions({ albumId, isOwner }: { albumId: string; isOwner: b
   return (
     <div className="flex space-x-2">
       <Button variant="outline" size="sm" onClick={() => router.push(`/albums/${albumId}/edit`)}>
-        <Pencil className="h-4 w-4 mr-2" /> Edit
+        <Pencil className="h-4 w-4" />
       </Button>
       <Button variant="destructive" size="sm" onClick={handleDelete}>
-        <Trash2 className="h-4 w-4 mr-2" /> Delete
+        <Trash2 className="h-4 w-4" />
       </Button>
     </div>
   );
