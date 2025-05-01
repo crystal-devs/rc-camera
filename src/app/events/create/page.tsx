@@ -1,4 +1,3 @@
-// app/events/create/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -49,7 +48,8 @@ export default function CreateEventPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null); // Add this state
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null); // Renamed from previewImage
   const [authToken, setAuthToken] = useState<string | null>(null);
 
   // Event details
@@ -73,16 +73,32 @@ export default function CreateEventPage() {
     }
   }, [router]);
 
-  // Handle cover image selection
+  // Handle cover image selection - renamed to match the usage in your JSX
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setPreviewImage(file);
-
-      // Create a local preview URL
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewImage(objectUrl);
+    // Always reset the value when nothing is selected
+    if (!e.target.files || e.target.files.length === 0) {
+      setCoverImageFile(null);
+      setPreviewUrl(null);
+      return;
     }
+    
+    // Get the actual File object
+    const selectedFile = e.target.files[0];
+    
+    // Store the File object (not the URL)
+    setCoverImageFile(selectedFile);
+    
+    // For preview only, create an object URL
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setPreviewUrl(objectUrl);
+    
+    // Log for debugging
+    console.log('Selected file:', {
+      name: selectedFile.name,
+      size: selectedFile.size,
+      type: selectedFile.type,
+      lastModified: selectedFile.lastModified
+    });
   };
 
   const handleTemplateSelect = (template: string) => {
@@ -123,9 +139,10 @@ export default function CreateEventPage() {
     setIsSubmitting(true);
 
     try {
-      let previewImageUrl
-      if (previewImage) {
-        previewImageUrl = await uploadCoverImage(previewImage, authToken, 'new-event');
+      let coverImageUrl;
+      // Use the actual File object, not the preview URL
+      if (coverImageFile) {
+        coverImageUrl = await uploadCoverImage(coverImageFile, 'new-event', authToken);
       }
 
       // Generate a shorter, user-friendly access code
@@ -138,7 +155,7 @@ export default function CreateEventPage() {
         date,
         endDate,
         location,
-        cover_image: previewImageUrl || undefined,
+        cover_image: coverImageUrl || undefined,
         accessType,
         accessCode,
         template,
@@ -303,10 +320,10 @@ export default function CreateEventPage() {
               <div className="space-y-2">
                 <Label htmlFor="cover_image">Event Cover Image (Optional)</Label>
                 <div className="border-2 border-dashed rounded-lg p-4 text-center">
-                  {previewImage ? (
+                  {previewUrl ? (
                     <div className="relative h-48 w-full mb-2">
                       <Image
-                        src={previewImage}
+                        src={previewUrl}
                         alt="Cover preview"
                         fill
                         className="object-cover rounded-lg"
@@ -331,7 +348,7 @@ export default function CreateEventPage() {
                     onClick={() => document.getElementById('cover_image')?.click()}
                     className="mt-2"
                   >
-                    {previewImage ? 'Change Image' : 'Select Image'}
+                    {previewUrl ? 'Change Image' : 'Select Image'}
                   </Button>
                 </div>
               </div>

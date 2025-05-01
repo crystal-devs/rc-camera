@@ -19,7 +19,7 @@ const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
     date: startDate,
     endDate: apiEvent.end_date ? new Date(apiEvent.end_date) : undefined,
     location: apiEvent.location,
-    cover_image: apiEvent.thumbnail_pic || undefined,
+    cover_image: apiEvent.cover_image || undefined,
     createdAt: new Date(apiEvent.created_at),
     createdById: apiEvent.created_by,
     accessType: apiEvent.is_private ? 'restricted' : 'public',
@@ -127,7 +127,7 @@ export const updateEvent = async (
       template: eventData.template || 'custom'
     };
 
-    const response = await axios.put(`${API_BASE_URL}/event/${eventId}`, apiEventData, {
+    const response = await axios.patch(`${API_BASE_URL}/event/${eventId}`, apiEventData, {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },

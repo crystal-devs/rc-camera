@@ -25,7 +25,7 @@ export interface Event {
     start_date: string;
     end_date: string | null;
     location?: string;
-    thumbnail_pic: string;
+    cover_image: string;
     created_at: string;
     created_by: string;
     is_private: boolean;

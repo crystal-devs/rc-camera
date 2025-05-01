@@ -38,7 +38,7 @@ import { toast } from 'sonner';
 // Import API services
 import { fetchEventAlbums, createAlbum, deleteAlbum } from '@/services/apis/albums.api';
 import { Album } from '@/types/album';
-import { uploadCoverImage, uploadMedia } from '@/services/apis/media.api';
+import { uploadCoverImage } from '@/services/apis/media.api';
 
 interface AlbumManagementProps {
   eventId: string;
@@ -95,7 +95,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
       // Upload the file to get ImageKit URL
       // We're using 'album' as entity_type but not providing a real albumId yet
       // since we're just creating the album
-      const imageUrl = await uploadCoverImage(file, 'album', eventId, authToken);
+      const imageUrl = await uploadCoverImage(file, 'album', authToken);
 
       // Save the ImageKit URL
       setPreviewImage(imageUrl);
@@ -166,7 +166,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
         name: newAlbumName.trim(),
         description: newAlbumDescription.trim(),
         eventId,
-        coverImage: previewImage || undefined,
+        cover_image: previewImage || undefined,
         accessType,
         accessCode,
         isDefault
@@ -198,7 +198,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
   };
 
   const navigateToAlbum = (albumId: string) => {
-    router.push(`/events/${eventId}/albums/${albumId}`);
+    router.push(`/albums/${albumId}`);
   };
 
   const handleDeleteAlbum = async (albumId: string) => {
@@ -383,14 +383,14 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                 onClick={() => navigateToAlbum(album.id)}
               >
                 <div className="relative h-32 w-full">
-                  {album.coverImage ? (
+                  {album.cover_image ? (
                     <div className="relative h-32 w-full">
                       <Image
-                        src={album.coverImage}
+                        src={album.cover_image}
                         alt={album.name}
                         fill
                         className="object-cover"
-                        unoptimized={album.coverImage.startsWith('data:')} // Skip optimization for data URLs
+                        unoptimized={album.cover_image.startsWith('data:')} // Skip optimization for data URLs
                       />
                     </div>
                   ) : (

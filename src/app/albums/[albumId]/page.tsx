@@ -121,14 +121,14 @@ export default function AlbumPage({ params }: AlbumPageProps) {
         const photoId = `photo_${Date.now()}_${i}`;
 
         // Save to database
-        await db.photos.add({
-          id: photoId,
-          albumId,
-          imageUrl,
-          thumbnail,
-          createdAt: new Date(),
-          takenBy: userId
-        });
+        // await db.photos.add({
+        //   id: photoId,
+        //   albumId,
+        //   imageUrl,
+        //   thumbnail,
+        //   createdAt: new Date(),
+        //   takenBy: userId
+        // });
       } catch (error) {
         console.error('Error processing image:', error);
       }

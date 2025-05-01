@@ -1,4 +1,3 @@
-// app/events/[eventId]/edit/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -92,9 +91,10 @@ export default function EditEventPage({ params }: { params: PageProps }) {
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [location, setLocation] = useState('');
   const [accessType, setAccessType] = useState<'public' | 'restricted'>('restricted');
-  const [coverImage, setCoverImage] = useState<string | null>(null);
   const [accessCode, setAccessCode] = useState('');
   const [template, setTemplate] = useState('custom');
+
+  // Cover image state - consistent naming
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [coverImageUrl, setCoverImageUrl] = useState<string>('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -134,7 +134,8 @@ export default function EditEventPage({ params }: { params: PageProps }) {
         setLocation(eventData.location || '');
         setAccessType(eventData.accessType);
         setCoverImageUrl(eventData.cover_image || '');
-        setPreviewUrl(eventData.cover_image || null); setAccessCode(eventData.accessCode || '');
+        setPreviewUrl(eventData.cover_image || null);
+        setAccessCode(eventData.accessCode || '');
         setTemplate(eventData.template || 'custom');
       } catch (error) {
         console.error('Error loading event:', error);
@@ -160,7 +161,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
       (endDate?.getTime() !== (originalEvent.endDate ? new Date(originalEvent.endDate).getTime() : undefined)) ||
       location !== (originalEvent.location || '') ||
       accessType !== originalEvent.accessType ||
-      coverImage !== (originalEvent.cover_image || null) ||
+      coverImageFile !== null || // Changed if there's a new file selected
       accessCode !== (originalEvent.accessCode || '') ||
       template !== (originalEvent.template || 'custom');
 
@@ -173,38 +174,43 @@ export default function EditEventPage({ params }: { params: PageProps }) {
     endDate,
     location,
     accessType,
-    coverImage,
+    coverImageFile,
     accessCode,
     template
   ]);
 
-  // Cover image handlers
-  // const handlecoverImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-  //   const file = e.target.files?.[0];
-  //   if (file) {
-  //     const reader = new FileReader();
-  //     reader.onload = (e) => {
-  //       setCoverImage(e.target?.result as string);
-  //     };
-  //     reader.readAsDataURL(file);
-  //   }
-  // };
   // Handle cover image selection
   const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setCoverImageFile(file);
-
-      // Create a local preview URL
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
+    if (!e.target.files || e.target.files.length === 0) {
+      setCoverImageFile(null);
+      // Don't reset preview URL to keep showing the existing image
+      return;
     }
+
+    // Get the actual File object
+    const selectedFile = e.target.files[0];
+
+    // Store the File object
+    setCoverImageFile(selectedFile);
+
+    // Create a local preview URL
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setPreviewUrl(objectUrl);
+
+    // Log for debugging
+    console.log('Selected file:', {
+      name: selectedFile.name,
+      size: selectedFile.size,
+      type: selectedFile.type,
+      lastModified: selectedFile.lastModified
+    });
   };
 
-
-
-  const removecoverImage = () => {
-    setCoverImage(null);
+  // Remove cover image
+  const removeCoverImage = () => {
+    setCoverImageFile(null);
+    setPreviewUrl(null);
+    setCoverImageUrl('');
   };
 
   // Regenerate access code
@@ -220,14 +226,15 @@ export default function EditEventPage({ params }: { params: PageProps }) {
     setIsSaving(true);
 
     try {
+      let finalCoverImageUrl = coverImageUrl; // Start with existing URL
 
-      let finalCoverImageUrl = coverImage; // Start with existing URL
+      // Only upload a new image if one was selected
       if (coverImageFile) {
         // Upload the new cover image
         finalCoverImageUrl = await uploadCoverImage(
           coverImageFile,
-          authToken,
-          originalEvent.id // Pass event ID for better folder organization
+          'event_covers/' + eventId, // folder path
+          authToken
         );
       }
 
@@ -238,7 +245,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
         endDate,
         location: location.trim(),
         accessType,
-        cover_image: finalCoverImageUrl || originalEvent.cover_image,
+        cover_image: finalCoverImageUrl,
         accessCode,
         template: template as any,
       };
@@ -248,12 +255,11 @@ export default function EditEventPage({ params }: { params: PageProps }) {
 
       // Update original state to reflect current state
       setOriginalEvent(updatedEvent);
-      setOriginalEvent(updatedEvent);
       setCoverImageUrl(updatedEvent.cover_image || '');
       setCoverImageFile(null); // Reset the file input state
 
-
       toast.success("Your event has been updated successfully.");
+      router.push(`/events/${eventId}`);
 
       // Reset has changes flag
       setHasChanges(false);
@@ -519,10 +525,10 @@ export default function EditEventPage({ params }: { params: PageProps }) {
                 </CardHeader>
                 <CardContent>
                   <div className="border-2 border-dashed rounded-lg p-4 text-center">
-                    {coverImage ? (
+                    {previewUrl ? (
                       <div className="relative h-48 w-full mb-2">
                         <Image
-                          src={coverImage}
+                          src={previewUrl}
                           alt="Cover preview"
                           fill
                           className="object-cover rounded-lg"
@@ -531,7 +537,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
                           variant="destructive"
                           size="icon"
                           className="absolute top-2 right-2 h-8 w-8 rounded-full"
-                          onClick={removecoverImage}
+                          onClick={removeCoverImage}
                         >
                           <XCircleIcon className="h-5 w-5" />
                         </Button>
@@ -543,7 +549,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
                       </div>
                     )}
                     <Input
-                      id="coverImage"
+                      id="cover_image"
                       type="file"
                       accept="image/*"
                       className="hidden"
@@ -552,10 +558,10 @@ export default function EditEventPage({ params }: { params: PageProps }) {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => document.getElementById('coverImage')?.click()}
+                      onClick={() => document.getElementById('cover_image')?.click()}
                       className="mt-2"
                     >
-                      {coverImage ? 'Change Image' : 'Select Image'}
+                      {previewUrl ? 'Change Image' : 'Select Image'}
                     </Button>
                   </div>
                 </CardContent>
@@ -701,9 +707,9 @@ export default function EditEventPage({ params }: { params: PageProps }) {
             <CardContent>
               <div className="rounded-lg overflow-hidden border bg-card">
                 <div className="relative h-32 w-full bg-gray-100">
-                  {coverImage ? (
+                  {previewUrl ? (
                     <Image
-                      src={coverImage}
+                      src={previewUrl}
                       alt="Cover preview"
                       fill
                       className="object-cover"

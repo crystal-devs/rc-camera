@@ -17,17 +17,41 @@ export const uploadCoverImage = async (
     authToken: string
 ): Promise<string> => {
     try {
-        // Create form data for upload
-        const formData = new FormData();
+        // Validate file
+        if (!file || !(file instanceof File)) {
+            console.error('Invalid file object provided:', file);
+            throw new Error('Invalid file object provided');
+        }
 
-        // IMPORTANT: Use 'image' as the field name to match Multer config
+        // Create form data for upload - DO NOT modify the file in any way
+        const formData = new FormData();
+        
+        // Add the actual file object, not its URL
         formData.append('image', file);
         formData.append('folder', folder);
-
+        
+        // Debug logging
+        console.log('File being uploaded:', {
+            name: file.name,
+            type: file.type,
+            size: file.size + ' bytes',
+            isFile: file instanceof File // Should be true
+        });
+        
+        // Log FormData entries
+        for (const pair of formData.entries()) {
+            console.log(`FormData entry - ${pair[0]}:`, 
+                pair[1] instanceof File ? 
+                `File object: ${(pair[1] as File).name}` : 
+                pair[1]);
+        }
+        
+        // Send with the correct content type
         const response = await axios.post(`${API_BASE_URL}/media/upload-cover`, formData, {
             headers: {
                 'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'multipart/form-data'
+                // IMPORTANT: Let axios set the content type - do not specify it manually
+                // for multipart/form-data with files
             }
         });
 
@@ -41,12 +65,12 @@ export const uploadCoverImage = async (
     } catch (error) {
         console.error('Error uploading cover image:', error);
         if (axios.isAxiosError(error) && error.response) {
+            console.error('API error status:', error.response.status);
             console.error('API error details:', error.response.data);
         }
         throw error;
     }
 };
-
 /**
  * Upload media to an album
  * 
