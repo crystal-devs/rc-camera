@@ -45,6 +45,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/db';
 import { toast } from "sonner"
+import { fetchEvents } from '@/services/apis/events.api';
 
 interface Event {
   id: string;
@@ -53,7 +54,7 @@ interface Event {
   date: Date;
   endDate?: Date;
   location?: string;
-  coverImage?: string;
+  cover_image?: string;
   createdAt: Date;
   createdById: number;
   accessType: 'public' | 'restricted';
@@ -78,48 +79,59 @@ export default function EventsPage() {
 
   useEffect(() => {
     const loadEvents = async () => {
-      try {
-        // Get all events for this user
-        let allEvents = await db.events
-          .where('createdById')
-          .equals(userId)
-          .toArray();
-
-        // Add photo and album counts
-        const eventsWithCounts = await Promise.all(
-          allEvents.map(async (event) => {
-            // Get albums for this event
-            const albums = await db.albums
-              .where('eventId')
-              .equals(event.id)
-              .toArray();
-
-            // Get total photo count across all albums
-            let totalPhotos = 0;
-            for (const album of albums) {
-              const photoCount = await db.photos
-                .where('albumId')
-                .equals(album.id)
-                .count();
-
-              totalPhotos += photoCount;
-            }
-
-            return {
-              ...event,
-              albumCount: albums.length,
-              photoCount: totalPhotos
-            };
-          })
-        );
-
-        setEvents(eventsWithCounts);
-      } catch (error) {
+      try{
+        const token = localStorage.getItem('authToken') || '';
+        let getAllEvents = await fetchEvents(token);
+        console.log(getAllEvents);
+        setEvents(getAllEvents || []);
+      }catch(error){
         console.error('Error loading events:', error);
         toast.error("Failed to load your events. Please try again.");
-      } finally {
+      }finally{
         setIsLoading(false);
       }
+      // try {
+      //   // Get all events for this user
+      //   let allEvents = await db.events
+      //     .where('createdById')
+      //     .equals(userId)
+      //     .toArray();
+
+      //   // Add photo and album counts
+      //   const eventsWithCounts = await Promise.all(
+      //     allEvents.map(async (event) => {
+      //       // Get albums for this event
+      //       const albums = await db.albums
+      //         .where('eventId')
+      //         .equals(event.id)
+      //         .toArray();
+
+      //       // Get total photo count across all albums
+      //       let totalPhotos = 0;
+      //       for (const album of albums) {
+      //         const photoCount = await db.photos
+      //           .where('albumId')
+      //           .equals(album.id)
+      //           .count();
+
+      //         totalPhotos += photoCount;
+      //       }
+
+      //       return {
+      //         ...event,
+      //         albumCount: albums.length,
+      //         photoCount: totalPhotos
+      //       };
+      //     })
+      //   );
+
+      //   setEvents(eventsWithCounts);
+      // } catch (error) {
+      //   console.error('Error loading events:', error);
+      //   toast.error("Failed to load your events. Please try again.");
+      // } finally {
+      //   setIsLoading(false);
+      // }
     };
 
     loadEvents();
@@ -327,9 +339,9 @@ export default function EventsPage() {
               >
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
-                  {event.coverImage ? (
+                  {event.cover_image ? (
                     <Image
-                      src={event.coverImage}
+                      src={event.cover_image}
                       alt={event.name}
                       fill
                       className="object-cover"
@@ -422,9 +434,9 @@ export default function EventsPage() {
                 onClick={() => navigateToEvent(event.id)}
               >
                 <div className="relative h-24 w-24 sm:h-32 sm:w-32 flex-shrink-0">
-                  {event.coverImage ? (
+                  {event.cover_image ? (
                     <Image
-                      src={event.coverImage}
+                      src={event.cover_image}
                       alt={event.name}
                       fill
                       className="object-cover"

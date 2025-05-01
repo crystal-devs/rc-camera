@@ -1,9 +1,8 @@
 // app/events/create/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { v4 as uuidv4 } from 'uuid';
 import Image from 'next/image';
 import { format } from 'date-fns';
 import { CalendarIcon, MapPinIcon, ImageIcon } from 'lucide-react';
@@ -33,46 +32,25 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { db } from '@/lib/db';
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
+import { toast } from "sonner";
 
-interface Event {
-  id: string;
-  name: string;
-  description?: string;
-  date: Date;
-  endDate?: Date;
-  location?: string;
-  coverImage?: string;
-  createdAt: Date;
-  createdById: number;
-  accessType: 'public' | 'restricted';
-  accessCode?: string;
-  template?: 'custom' | 'wedding' | 'birthday' | 'concert' | 'corporate' | 'vacation';
-  isActive: boolean;
-}
-
-interface Album {
-  id: string;
-  eventId: string;
-  name: string;
-  description?: string;
-  createdAt: Date;
-  createdById: number;
-  accessType: 'public' | 'restricted';
-  isDefault: boolean;
-}
+// Import API client for event creation
+import { createEvent } from '@/services/apis/events.api';
+import { Event } from '@/types/events';
+import { uploadCoverImage } from '@/services/apis/media.api';
 
 export default function CreateEventPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
 
   // Event details
   const [name, setName] = useState('');
@@ -83,17 +61,27 @@ export default function CreateEventPage() {
   const [template, setTemplate] = useState<'custom' | 'wedding' | 'birthday' | 'concert' | 'corporate' | 'vacation'>('custom');
   const [accessType, setAccessType] = useState<'public' | 'restricted'>('restricted');
 
-  // User ID would come from auth in a real app
-  const userId = 1;
+  // Get auth token on page load
+  useEffect(() => {
+    const storedToken = localStorage.getItem('authToken');
+    if (storedToken) {
+      setAuthToken(storedToken);
+    } else {
+      // Redirect to events page if no token
+      toast.error("You need to be logged in to create an event");
+      router.push('/events');
+    }
+  }, [router]);
 
+  // Handle cover image selection
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPreviewImage(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setPreviewImage(file);
+
+      // Create a local preview URL
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewImage(objectUrl);
     }
   };
 
@@ -130,69 +118,43 @@ export default function CreateEventPage() {
   };
 
   const handleCreateEvent = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !authToken) return;
 
     setIsSubmitting(true);
 
     try {
-      const eventId = uuidv4();
+      let previewImageUrl
+      if (previewImage) {
+        previewImageUrl = await uploadCoverImage(previewImage, authToken, 'new-event');
+      }
+
       // Generate a shorter, user-friendly access code
       const accessCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-      const newEvent: Event = {
-        id: eventId,
+      // Prepare event data for API
+      const eventData: Partial<Event> = {
         name: name.trim(),
         description: description.trim(),
         date,
         endDate,
         location,
-        createdAt: new Date(),
-        createdById: userId,
-        coverImage: previewImage || undefined,
+        cover_image: previewImageUrl || undefined,
         accessType,
         accessCode,
-        template: template as any,
+        template,
         isActive: true
       };
 
-      // Add event to database
-      await db.events.add(newEvent);
+      // Call the API to create the event
+      const createdEvent = await createEvent(eventData, authToken);
 
-      // Create owner access record
-      await db.eventAccess.add({
-        id: uuidv4(),
-        eventId,
-        userId,
-        accessType: 'owner',
-        joinedAt: new Date()
-      });
-
-      // Create default album for this event
-      const defaultAlbum: Album = {
-        id: uuidv4(),
-        eventId,
-        name: "All Photos",
-        description: "Default album for all photos",
-        createdAt: new Date(),
-        createdById: userId,
-        accessType: 'public',
-        isDefault: true
-      };
-
-      await db.albums.add(defaultAlbum);
-
-      // Create owner access record for the default album
-      await db.albumAccess.add({
-        id: uuidv4(),
-        albumId: defaultAlbum.id,
-        userId,
-        accessType: 'owner',
-        joinedAt: new Date()
-      });
-
-      router.push(`/events/${eventId}`);
+      // Navigate to the new event page
+      toast.success("Event created successfully!");
+      router.push(`/events/${createdEvent.id}`);
     } catch (error) {
       console.error('Error creating event:', error);
+      toast.error("Failed to create event. Please try again.");
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -339,7 +301,7 @@ export default function CreateEventPage() {
             /* Step 3: Cover Image */
             <CardContent className="space-y-4 pt-6">
               <div className="space-y-2">
-                <Label htmlFor="coverImage">Event Cover Image (Optional)</Label>
+                <Label htmlFor="cover_image">Event Cover Image (Optional)</Label>
                 <div className="border-2 border-dashed rounded-lg p-4 text-center">
                   {previewImage ? (
                     <div className="relative h-48 w-full mb-2">
@@ -357,7 +319,7 @@ export default function CreateEventPage() {
                     </div>
                   )}
                   <Input
-                    id="coverImage"
+                    id="cover_image"
                     type="file"
                     accept="image/*"
                     className="hidden"
@@ -366,7 +328,7 @@ export default function CreateEventPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => document.getElementById('coverImage')?.click()}
+                    onClick={() => document.getElementById('cover_image')?.click()}
                     className="mt-2"
                   >
                     {previewImage ? 'Change Image' : 'Select Image'}

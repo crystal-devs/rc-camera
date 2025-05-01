@@ -3,7 +3,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { use } from 'react';
 import Image from 'next/image';
 import { format } from 'date-fns';
 import {
@@ -63,24 +62,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { db } from '@/lib/db';
-import { toast } from "sonner"
+import { toast } from "sonner";
 
-interface Event {
-  id: string;
-  name: string;
-  description?: string;
-  date: Date;
-  endDate?: Date;
-  location?: string;
-  coverImage?: string;
-  createdAt: Date;
-  createdById: number;
-  accessType: 'public' | 'restricted';
-  accessCode?: string;
-  template?: string;
-  isActive: boolean;
-}
+// Import API services
+import { getEventById, updateEvent, deleteEvent } from '@/services/apis/events.api';
+import { Event } from '@/types/events';
+import { uploadCoverImage } from '@/services/apis/media.api';
 
 interface PageProps {
   eventId: string;
@@ -96,6 +83,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
   const [hasChanges, setHasChanges] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState('');
@@ -107,16 +95,31 @@ export default function EditEventPage({ params }: { params: PageProps }) {
   const [coverImage, setCoverImage] = useState<string | null>(null);
   const [accessCode, setAccessCode] = useState('');
   const [template, setTemplate] = useState('custom');
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
+  const [coverImageUrl, setCoverImageUrl] = useState<string>('');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Get auth token on page load
+  useEffect(() => {
+    const storedToken = localStorage.getItem('authToken');
+    if (storedToken) {
+      setAuthToken(storedToken);
+    } else {
+      // Redirect to events page if no token
+      toast.error("You need to be logged in to edit an event");
+      router.push('/events');
+    }
+  }, [router]);
 
   // Load event data
   useEffect(() => {
     const loadEvent = async () => {
+      if (!authToken) return;
+
       try {
-        const eventData = await db.events.get(eventId);
+        const eventData = await getEventById(eventId, authToken);
         if (!eventData) {
-          toast.error(
-            "The event you're trying to edit doesn't exist.",
-          );
+          toast.error("The event you're trying to edit doesn't exist.");
           router.push('/events');
           return;
         }
@@ -130,8 +133,8 @@ export default function EditEventPage({ params }: { params: PageProps }) {
         setEndDate(eventData.endDate ? new Date(eventData.endDate) : undefined);
         setLocation(eventData.location || '');
         setAccessType(eventData.accessType);
-        setCoverImage(eventData.coverImage || null);
-        setAccessCode(eventData.accessCode || '');
+        setCoverImageUrl(eventData.cover_image || '');
+        setPreviewUrl(eventData.cover_image || null); setAccessCode(eventData.accessCode || '');
         setTemplate(eventData.template || 'custom');
       } catch (error) {
         console.error('Error loading event:', error);
@@ -141,8 +144,10 @@ export default function EditEventPage({ params }: { params: PageProps }) {
       }
     };
 
-    loadEvent();
-  }, [eventId, router, toast]);
+    if (authToken) {
+      loadEvent();
+    }
+  }, [eventId, authToken, router]);
 
   // Check for changes
   useEffect(() => {
@@ -155,7 +160,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
       (endDate?.getTime() !== (originalEvent.endDate ? new Date(originalEvent.endDate).getTime() : undefined)) ||
       location !== (originalEvent.location || '') ||
       accessType !== originalEvent.accessType ||
-      coverImage !== (originalEvent.coverImage || null) ||
+      coverImage !== (originalEvent.cover_image || null) ||
       accessCode !== (originalEvent.accessCode || '') ||
       template !== (originalEvent.template || 'custom');
 
@@ -174,18 +179,31 @@ export default function EditEventPage({ params }: { params: PageProps }) {
   ]);
 
   // Cover image handlers
-  const handleCoverImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setCoverImage(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+  // const handlecoverImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = e.target.files?.[0];
+  //   if (file) {
+  //     const reader = new FileReader();
+  //     reader.onload = (e) => {
+  //       setCoverImage(e.target?.result as string);
+  //     };
+  //     reader.readAsDataURL(file);
+  //   }
+  // };
+  // Handle cover image selection
+  const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setCoverImageFile(file);
+
+      // Create a local preview URL
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewUrl(objectUrl);
     }
   };
 
-  const removeCoverImage = () => {
+
+
+  const removecoverImage = () => {
     setCoverImage(null);
   };
 
@@ -197,64 +215,71 @@ export default function EditEventPage({ params }: { params: PageProps }) {
 
   // Save changes
   const saveChanges = async () => {
-    if (!originalEvent || !hasChanges) return;
+    if (!originalEvent || !hasChanges || !authToken) return;
 
     setIsSaving(true);
 
     try {
-      const updatedEvent = {
-        ...originalEvent,
+
+      let finalCoverImageUrl = coverImage; // Start with existing URL
+      if (coverImageFile) {
+        // Upload the new cover image
+        finalCoverImageUrl = await uploadCoverImage(
+          coverImageFile,
+          authToken,
+          originalEvent.id // Pass event ID for better folder organization
+        );
+      }
+
+      const updatedEventData: Partial<Event> = {
         name: name.trim(),
         description: description.trim(),
         date,
         endDate,
         location: location.trim(),
         accessType,
-        coverImage,
+        cover_image: finalCoverImageUrl || originalEvent.cover_image,
         accessCode,
-        template
+        template: template as any,
       };
 
-      await db.events.update(eventId, updatedEvent);
+      // Call API to update the event
+      const updatedEvent = await updateEvent(eventId, updatedEventData, authToken);
 
       // Update original state to reflect current state
       setOriginalEvent(updatedEvent);
+      setOriginalEvent(updatedEvent);
+      setCoverImageUrl(updatedEvent.cover_image || '');
+      setCoverImageFile(null); // Reset the file input state
 
-      toast.success(
-        "Your event has been updated successfully.",
-      );
+
+      toast.success("Your event has been updated successfully.");
 
       // Reset has changes flag
       setHasChanges(false);
     } catch (error) {
       console.error('Error updating event:', error);
-      toast.error(
-        "Failed to update event. Please try again."
-      );
+      toast.error("Failed to update event. Please try again.");
     } finally {
       setIsSaving(false);
     }
   };
 
   // Delete event
-  const deleteEvent = async () => {
+  const handleDeleteEvent = async () => {
+    if (!authToken) return;
+
     try {
-      // Delete the event
-      await db.events.delete(eventId);
+      // Call API to delete the event
+      await deleteEvent(eventId, authToken);
 
-      // In a production app, we'd also delete all related albums, photos, etc.
-
-      toast.success(
-        "The event has been permanently removed.",
-      );
+      toast.success("The event has been permanently removed.");
 
       // Redirect to events list
       router.push('/events');
     } catch (error) {
       console.error('Error deleting event:', error);
-      toast.error(
-        "Failed to delete event. Please try again.",
-      );
+      toast.error("Failed to delete event. Please try again.");
     }
   };
 
@@ -321,7 +346,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  onClick={deleteEvent}
+                  onClick={handleDeleteEvent}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   Delete
@@ -434,7 +459,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
                             selected={endDate}
                             onSelect={(date) => setEndDate(date)}
                             initialFocus
-                            disabled={(date) => date < (new Date(this.date))}
+                            disabled={(date) => date < new Date(date.getTime())}
                           />
                         </PopoverContent>
                       </Popover>
@@ -506,7 +531,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
                           variant="destructive"
                           size="icon"
                           className="absolute top-2 right-2 h-8 w-8 rounded-full"
-                          onClick={removeCoverImage}
+                          onClick={removecoverImage}
                         >
                           <XCircleIcon className="h-5 w-5" />
                         </Button>
@@ -522,7 +547,7 @@ export default function EditEventPage({ params }: { params: PageProps }) {
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={handleCoverImageUpload}
+                      onChange={handleCoverImageChange}
                     />
                     <Button
                       type="button"

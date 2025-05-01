@@ -1,23 +1,21 @@
-import { url } from "inspector";
-import { apiFetch } from "./common/api.fetch";
-import { USERLOGIN_ROUTE } from "./routes.service";
-import { handleApiError } from "./common/apiErrorHandler";
+// services/auth.service.ts
 
-export const loginFunction = async (data, navigate) => {
-    try {
-        const config = {
-            method: "POST",
-            url: USERLOGIN_ROUTE,
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: data,
-        }
-        const { message, ...rest } = await apiFetch(config)
-        navigate('/')
-    } catch (error) {
-        handleApiError(error)
-    } finally {
-        // dispatch(setIsloading(false))
-    }
-}
+import axios from 'axios';
+import { API_BASE_URL } from '@/lib/api-config';
+
+// Authenticate user and get token
+export const authenticateUser = async (): Promise<string> => {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/auth/login`, {
+      email: 'adwaith@gmail.com',
+      name: 'Clicky',
+      provider: 'google',
+    });
+
+    const token = response.data.token;
+    return token;
+  } catch (error) {
+    console.error('Authentication error:', error);
+    throw new Error('Failed to authenticate user');
+  }
+};

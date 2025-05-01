@@ -23,7 +23,7 @@ interface EventHeaderProps {
         id: string;
         name: string;
         location?: string;
-        coverImage?: string;
+        cover_image?: string;
         template?: string;
         isFavorite?: boolean;
     };

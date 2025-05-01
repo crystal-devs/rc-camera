@@ -38,7 +38,7 @@ interface Event {
   date: Date;
   endDate?: Date;
   location?: string;
-  coverImage?: string;
+  cover_image?: string;
   createdAt: Date;
   createdById: number;
   accessType: 'public' | 'restricted';
@@ -54,7 +54,7 @@ interface Album {
   description?: string;
   createdAt: Date;
   createdById: number;
-  coverImage?: string;
+  cover_image?: string;
   accessType: 'public' | 'restricted';
   accessCode?: string;
   isDefault?: boolean;

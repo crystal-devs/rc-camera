@@ -33,6 +33,8 @@ import PhotoGallery from '@/components/album/PhotoGallery';
 import AlbumManagement from '@/components/album/AlbumManagement';
 import EventHeader from '@/components/event/EventHeader';
 import EventHeaderDetails from '@/components/event/EventDetailsHeader';
+import { getEventById } from '@/services/apis/events.api';
+import { toast } from 'sonner';
 
 interface Event {
     id: string;
@@ -41,7 +43,7 @@ interface Event {
     date: Date;
     endDate?: Date;
     location?: string;
-    coverImage?: string;
+    cover_image?: string;
     createdAt: Date;
     createdById: number;
     accessType: 'public' | 'restricted';
@@ -62,30 +64,44 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
     useEffect(() => {
         const loadEvent = async () => {
             try {
-                // Get event details
-                const eventData = await db.events.get(eventId);
-                if (!eventData) {
-                    router.push('/events');
-                    return;
-                }
-
-                setEvent(eventData);
-
-                // Get default album
-                const defaultAlbum = await db.albums
-                    .where('eventId')
-                    .equals(eventId)
-                    .and(album => album.isDefault === true)
-                    .first();
-
-                if (defaultAlbum) {
-                    setDefaultAlbumId(defaultAlbum.id);
-                }
+                const token = localStorage.getItem('authToken') || '';
+                console.log(eventId, token);
+                let getAllEvent = await getEventById(eventId, token);
+                // console.log(getAllEvent);
+                setEvent(getAllEvent);
             } catch (error) {
-                console.error('Error loading event:', error);
+                console.error('Error loading events:', error);
+                toast.error("Failed to load your events. Please try again.");
             } finally {
                 setIsLoading(false);
             }
+
+
+            // try {
+            //     // Get event details
+            //     const eventData = await db.events.get(eventId);
+            //     if (!eventData) {
+            //         router.push('/events');
+            //         return;
+            //     }
+
+            //     setEvent(eventData);
+
+            //     // Get default album
+            //     const defaultAlbum = await db.albums
+            //         .where('eventId')
+            //         .equals(eventId)
+            //         .and(album => album.isDefault === true)
+            //         .first();
+
+            //     if (defaultAlbum) {
+            //         setDefaultAlbumId(defaultAlbum.id);
+            //     }
+            // } catch (error) {
+            //     console.error('Error loading event:', error);
+            // } finally {
+            //     setIsLoading(false);
+            // }
         };
 
         loadEvent();

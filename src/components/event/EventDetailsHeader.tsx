@@ -7,7 +7,7 @@ interface EventHeaderProps {
         id: string;
         name: string;
         location?: string;
-        coverImage?: string;
+        cover_image?: string;
         template?: string;
         isFavorite?: boolean;
     };
@@ -21,9 +21,9 @@ export default function EventHeaderDetails({ event }: EventHeaderProps) {
             <EventHeader event={event} />
             {/* Background Image with Gradient Overlay */}
             <div className="absolute inset-0 ">
-                {event.coverImage ? (
+                {event.cover_image ? (
                     <Image
-                        src={event.coverImage}
+                        src={event.cover_image}
                         alt={event.name}
                         fill
                         className="object-cover"

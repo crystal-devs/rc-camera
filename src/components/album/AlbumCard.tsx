@@ -12,7 +12,7 @@ interface AlbumCardProps {
     name: string;
     description?: string;
     createdAt: Date;
-    coverImage?: string;
+    cover_image?: string;
   };
   onClick: () => void;
   isOwner: boolean;
@@ -39,7 +39,7 @@ export function AlbumCard({ album, onClick, isOwner }: AlbumCardProps) {
       onClick={onClick}
     >
       <div className="relative h-40 bg-gray-100">
-        {!album.coverImage ? (
+        {!album.cover_image ? (
           <img src={'https://images.unsplash.com/photo-1743993330456-6fa7a903b3bd?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'} alt={album.name} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">

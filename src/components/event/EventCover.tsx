@@ -2,17 +2,17 @@ import React from 'react';
 import Image from 'next/image';
 
 interface EventCoverProps {
-    coverImage?: string;
+    cover_image?: string;
     name: string;
     template?: string;
 }
 
-const EventCover: React.FC<EventCoverProps> = ({ coverImage, name, template }) => {
+const EventCover: React.FC<EventCoverProps> = ({ cover_image, name, template }) => {
     return (
         <div className="relative h-48 w-full rounded-lg overflow-hidden bg-gray-100">
-            {coverImage ? (
+            {cover_image ? (
                 <Image
-                    src={coverImage}
+                    src={cover_image}
                     alt={name}
                     fill
                     className="object-cover"

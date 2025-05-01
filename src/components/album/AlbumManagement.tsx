@@ -3,7 +3,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { v4 as uuidv4 } from 'uuid';
 import Image from 'next/image';
 import { PlusIcon, FolderIcon, UploadIcon, MoreHorizontalIcon, ImageIcon } from 'lucide-react';
 
@@ -34,22 +33,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
-// import { useToast } from '@/components/ui/use-toast';
-import { db } from '@/lib/db';
+import { toast } from 'sonner';
 
-type Album = {
-  id: string;
-  eventId: string;
-  name: string;
-  description?: string;
-  createdAt: Date;
-  createdById: number;
-  coverImage?: string;
-  accessType: 'public' | 'restricted';
-  accessCode?: string;
-  isDefault?: boolean;
-  photoCount?: number;
-};
+// Import API services
+import { fetchEventAlbums, createAlbum, deleteAlbum } from '@/services/apis/albums.api';
+import { Album } from '@/types/album';
+import { uploadCoverImage, uploadMedia } from '@/services/apis/media.api';
 
 interface AlbumManagementProps {
   eventId: string;
@@ -59,168 +48,185 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
   const router = useRouter();
   const [albums, setAlbums] = useState<Album[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState('');
   const [newAlbumDescription, setNewAlbumDescription] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-//   const { toast } = useToast();
-  
-  // User ID would come from auth in a real app
-  const userId = 1;
-  
+  const [accessType, setAccessType] = useState<'public' | 'restricted'>('public');
+  const [isDefault, setIsDefault] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+
+  // Get auth token
+  useEffect(() => {
+    const storedToken = localStorage.getItem('authToken');
+    if (storedToken) {
+      setAuthToken(storedToken);
+    } else {
+      // Redirect to login if no token
+      toast.error("You need to be logged in to manage albums");
+      router.push('/events');
+    }
+
+    // Check if eventId is provided
+    if (!eventId) {
+      toast.error("Event ID is required to manage albums");
+      router.push('/events');
+    }
+  }, [eventId, router]);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !authToken || !eventId) return;
+
+    try {
+      // Show loading state
+      toast.loading("Uploading cover image...");
+
+      // Show temporary preview for immediate feedback
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const tempPreview = e.target?.result as string;
+        // This is just for UI preview, not sent to the server
+        setPreviewImage(tempPreview);
+      };
+      reader.readAsDataURL(file);
+
+      // Upload the file to get ImageKit URL
+      // We're using 'album' as entity_type but not providing a real albumId yet
+      // since we're just creating the album
+      const imageUrl = await uploadCoverImage(file, 'album', eventId, authToken);
+
+      // Save the ImageKit URL
+      setPreviewImage(imageUrl);
+      toast.dismiss();
+      toast.success("Cover image uploaded successfully");
+    } catch (error) {
+      console.error('Error uploading cover image:', error);
+      toast.dismiss();
+      toast.error("Failed to upload cover image. Please try again.");
+      // Keep the temporary preview as it looks better than removing it
+    }
+  };
+
+  // Load albums
   useEffect(() => {
     const loadAlbums = async () => {
+      if (!authToken || !eventId) return;
+
+      setIsLoading(true);
       try {
-        // Get all albums for this event
-        const albumList = await db.albums
-          .where('eventId')
-          .equals(eventId)
-          .toArray();
-        
-        // Get photo counts
-        const albumsWithCounts = await Promise.all(
-          albumList.map(async (album) => {
-            const photoCount = await db.photos
-              .where('albumId')
-              .equals(album.id)
-              .count();
-            
-            return {
-              ...album,
-              photoCount,
-            };
-          })
-        );
-        
+        const albumList = await fetchEventAlbums(eventId, authToken);
+
         // Sort albums - default album first, then by creation date
-        albumsWithCounts.sort((a, b) => {
+        albumList.sort((a, b) => {
           if (a.isDefault && !b.isDefault) return -1;
           if (!a.isDefault && b.isDefault) return 1;
-          return b.createdAt.getTime() - a.createdAt.getTime();
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
-        
-        setAlbums(albumsWithCounts);
+
+        setAlbums(albumList);
       } catch (error) {
         console.error('Error loading albums:', error);
+        toast.error("Failed to load albums");
       } finally {
         setIsLoading(false);
       }
     };
-    
-    loadAlbums();
-  }, [eventId]);
-  
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPreviewImage(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+
+    if (authToken) {
+      loadAlbums();
     }
-  };
-  
-  const createNewAlbum = async () => {
-    if (!newAlbumName.trim()) return;
-    
+  }, [eventId, authToken]);
+
+  // const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = e.target.files?.[0];
+  //   if (file) {
+  //     const reader = new FileReader();
+  //     reader.onload = (e) => {
+  //       setPreviewImage(e.target?.result as string);
+  //     };
+  //     reader.readAsDataURL(file);
+  //   }
+  // };
+
+  const handleCreateAlbum = async () => {
+    if (!newAlbumName.trim() || !eventId || !authToken) return;
+
+    setIsSubmitting(true);
+
     try {
-      const albumId = uuidv4();
-      
-      const newAlbum = {
-        id: albumId,
-        eventId,
+      // Generate a shorter, user-friendly access code if restricted
+      const accessCode = accessType === 'restricted'
+        ? Math.random().toString(36).substring(2, 8).toUpperCase()
+        : undefined;
+
+      // Prepare album data for API
+      const albumData: Partial<Album> = {
         name: newAlbumName.trim(),
         description: newAlbumDescription.trim(),
-        createdAt: new Date(),
-        createdById: userId,
-        coverImage: previewImage,
-        accessType: 'public' as const,
-        isDefault: false
+        eventId,
+        coverImage: previewImage || undefined,
+        accessType,
+        accessCode,
+        isDefault
       };
-      
-      await db.albums.add(newAlbum);
-      
-      // Create owner access record
-      await db.albumAccess.add({
-        id: uuidv4(),
-        albumId,
-        userId,
-        accessType: 'owner' as const,
-        joinedAt: new Date()
-      });
-      
-      // Reset form and close dialog
+
+      // Call API to create the album
+      const createdAlbum = await createAlbum(albumData, authToken);
+
+      // Add the new album to the state
+      setAlbums([createdAlbum, ...albums.filter(album => !createdAlbum.isDefault || !album.isDefault)]);
+
+      // Reset form
       setNewAlbumName('');
       setNewAlbumDescription('');
       setPreviewImage(null);
+      setIsDefault(false);
+      setAccessType('public');
+
+      // Close dialog
       setCreateDialogOpen(false);
-      
-      // Add new album to state
-      setAlbums([
-        ...albums,
-        {
-          ...newAlbum,
-          photoCount: 0
-        }
-      ]);
-      
-      toast({
-        title: "Album Created",
-        description: `"${newAlbum.name}" album has been created successfully.`,
-      });
+
+      toast.success("Album created successfully!");
     } catch (error) {
       console.error('Error creating album:', error);
-      toast({
-        title: "Error",
-        description: "Failed to create album. Please try again.",
-        variant: "destructive",
-      });
+      toast.error("Failed to create album. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
-  
+
   const navigateToAlbum = (albumId: string) => {
     router.push(`/events/${eventId}/albums/${albumId}`);
   };
-  
-  const deleteAlbum = async (albumId: string) => {
+
+  const handleDeleteAlbum = async (albumId: string) => {
+    if (!authToken) return;
+
     // Don't allow deleting the default album
     const album = albums.find(a => a.id === albumId);
-    if (album?.isDefault) return;
-    
+    if (album?.isDefault) {
+      toast.error("Cannot delete the default album");
+      return;
+    }
+
     try {
-      // Delete all photos in the album
-      await db.photos
-        .where('albumId')
-        .equals(albumId)
-        .delete();
-      
-      // Delete album access records
-      await db.albumAccess
-        .where('albumId')
-        .equals(albumId)
-        .delete();
-      
-      // Delete the album
-      await db.albums
-        .where('id')
-        .equals(albumId)
-        .delete();
-      
+      // Confirm deletion
+      if (!confirm(`Are you sure you want to delete "${album?.name}" album? This will remove all photos in this album.`)) {
+        return;
+      }
+
+      // Call API to delete album
+      await deleteAlbum(albumId, authToken);
+
       // Update state
       setAlbums(albums.filter(a => a.id !== albumId));
-      
-    //   toast({
-    //     title: "Album Deleted",
-    //     description: `"${album?.name}" album has been deleted.`,
-    //   });
+
+      toast.success(`"${album?.name}" album has been deleted.`);
     } catch (error) {
       console.error('Error deleting album:', error);
-    //   toast({
-    //     title: "Error",
-    //     description: "Failed to delete album. Please try again.",
-    //     variant: "destructive",
-    //   });
+      toast.error("Failed to delete album. Please try again.");
     }
   };
 
@@ -242,7 +248,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                 Add a new photo album to organize your pictures
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="albumName">Album Name</Label>
@@ -253,7 +259,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                   onChange={(e) => setNewAlbumName(e.target.value)}
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="albumDescription">Description (Optional)</Label>
                 <Textarea
@@ -264,17 +270,19 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                   rows={2}
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="albumCover">Cover Image (Optional)</Label>
                 <div className="border-2 border-dashed rounded-lg p-4 text-center">
                   {previewImage ? (
                     <div className="relative h-32 w-full mb-2">
-                      <Image 
-                        src={previewImage} 
-                        alt="Cover preview" 
-                        fill 
+                      {/* Replace this Image component with this version */}
+                      <Image
+                        src={previewImage}
+                        alt="Cover preview"
+                        fill
                         className="object-cover rounded-lg"
+                        unoptimized={previewImage.startsWith('data:')} // Skip optimization for data URLs
                       />
                     </div>
                   ) : (
@@ -283,6 +291,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                       <p className="text-xs text-gray-500">Select a cover image</p>
                     </div>
                   )}
+
                   <Input
                     id="albumCover"
                     type="file"
@@ -290,9 +299,9 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                     className="hidden"
                     onChange={handleImageUpload}
                   />
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     size="sm"
                     onClick={() => document.getElementById('albumCover')?.click()}
                     className="mt-2"
@@ -301,31 +310,49 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                   </Button>
                 </div>
               </div>
+
+              <div className="flex items-start space-x-2">
+                <input
+                  type="checkbox"
+                  id="isDefault"
+                  className="mt-1"
+                  checked={isDefault}
+                  onChange={(e) => setIsDefault(e.target.checked)}
+                />
+                <div>
+                  <Label htmlFor="isDefault" className="font-medium">
+                    Make this the default album
+                  </Label>
+                  <p className="text-xs text-gray-500">
+                    The default album is where photos will be added when not specified.
+                  </p>
+                </div>
+              </div>
             </div>
-            
+
             <DialogFooter>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setCreateDialogOpen(false)}
               >
                 Cancel
               </Button>
-              <Button 
-                onClick={createNewAlbum}
-                disabled={!newAlbumName.trim()}
+              <Button
+                onClick={handleCreateAlbum}
+                disabled={isSubmitting || !newAlbumName.trim()}
               >
-                Create Album
+                {isSubmitting ? 'Creating...' : 'Create Album'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
-      
+
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
-            <div 
-              key={i} 
+            <div
+              key={i}
               className="h-48 rounded-lg bg-gray-100 animate-pulse"
             />
           ))}
@@ -350,26 +377,29 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
         <ScrollArea className="h-[500px] pr-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {albums.map((album) => (
-              <Card 
-                key={album.id} 
+              <Card
+                key={album.id}
                 className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
                 onClick={() => navigateToAlbum(album.id)}
               >
                 <div className="relative h-32 w-full">
                   {album.coverImage ? (
-                    <Image 
-                      src={album.coverImage} 
-                      alt={album.name} 
-                      fill 
-                      className="object-cover"
-                    />
+                    <div className="relative h-32 w-full">
+                      <Image
+                        src={album.coverImage}
+                        alt={album.name}
+                        fill
+                        className="object-cover"
+                        unoptimized={album.coverImage.startsWith('data:')} // Skip optimization for data URLs
+                      />
+                    </div>
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">
                       <FolderIcon className="h-12 w-12 text-gray-300" />
                     </div>
                   )}
                 </div>
-                
+
                 <CardHeader className="py-3">
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-lg font-medium truncate">
@@ -380,7 +410,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                         </span>
                       )}
                     </CardTitle>
-                    
+
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -388,7 +418,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
                             navigateToAlbum(album.id);
@@ -410,9 +440,7 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                             className="text-red-600"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`Are you sure you want to delete "${album.name}" album? This will remove all photos in this album.`)) {
-                                deleteAlbum(album.id);
-                              }
+                              handleDeleteAlbum(album.id);
                             }}
                           >
                             Delete Album
@@ -422,9 +450,9 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
                     </DropdownMenu>
                   </div>
                 </CardHeader>
-                
+
                 <CardFooter className="py-3 text-sm text-gray-500">
-                  {album.photoCount} {album.photoCount === 1 ? 'photo' : 'photos'}
+                  {album.photoCount ?? 0} {(album.photoCount ?? 0) === 1 ? 'photo' : 'photos'}
                 </CardFooter>
               </Card>
             ))}
