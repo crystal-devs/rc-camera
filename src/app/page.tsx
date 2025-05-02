@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { PlusCircle, Camera, FolderPlus } from 'lucide-react';
 import { db } from '@/lib/db';
 import { AlbumCard } from '@/components/album/AlbumCard';
+import { authenticateUser } from '@/services/auth.service';
 
 export default function HomePage() {
   const router = useRouter();
@@ -25,6 +26,7 @@ export default function HomePage() {
   const userId = 1; // In a real app, get this from authentication
 
   useEffect(() => {
+    authenticateUser()
     const loadAlbums = async () => {
       try {
         // Check if this is first time user
