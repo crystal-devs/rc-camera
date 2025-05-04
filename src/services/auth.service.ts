@@ -13,6 +13,7 @@ export const authenticateUser = async (): Promise<string> => {
     });
 
     const token = response.data.token;
+    localStorage.setItem("authToken", token)
     return token;
   } catch (error) {
     console.error('Authentication error:', error);

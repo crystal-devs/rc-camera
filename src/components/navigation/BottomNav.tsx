@@ -6,6 +6,11 @@ import { usePathname } from "next/navigation";
 const BottomNav = () => {
   const pathname = usePathname();
   
+  // Hide bottom nav on login pages
+  if (pathname.startsWith('/login')) {
+    return null;
+  }
+  
   const navItems = [
     { icon: <HomeIcon size={20} />, label: "Home", href: "/" },
     { icon: <ImageIcon size={20} />, label: "Events", href: "/events" },
