@@ -1,10 +1,10 @@
-"use client"
+"use client";
 import React from 'react'
 import { LoginForm } from './components/login-form'
 import { LoginCosmetics } from './components/login-cosmetics'
 import {GoogleOAuthProvider} from "@react-oauth/google"
 
-const client_id = "301412680308-6tpn8f9k3ll0bam898dogavmh97jlfoh.apps.googleusercontent.com"
+const client_id = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID !
 
 const page = () => {
     return (

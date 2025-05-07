@@ -1,5 +1,8 @@
+"use client";
+
 import cameAnimation from "@/assets/camera-lottie.json";
-import Lottie from 'lottie-react';
+import dynamic from "next/dynamic";
+const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
 
 export const LoginCosmetics = () => {

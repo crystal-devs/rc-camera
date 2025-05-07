@@ -1,13 +1,35 @@
-import React from 'react'
-import { Button } from '@/components/ui/button'
-import { GoogleLogin } from '@react-oauth/google'
+"use client"
 
-import {jwtDecode} from "jwt-decode"
+import { CredentialResponse, GoogleLogin } from '@react-oauth/google';
+
+
+import { loginUser } from '@/services/apis/auth.api';
+import { jwtDecode } from "jwt-decode";
+import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
+
 
 export const LoginForm = () => {
-  const handleGoogleLogin = () => {
-    // Google authentication logic will go here
-    console.log('Google login initiated')
+
+  const router = useRouter()
+
+  const handleGoogleLogin = async (credential_response: CredentialResponse) => {
+    try{
+      const creds: any = await jwtDecode(credential_response.credential as string)
+      const result = await loginUser({
+        name: creds.name,
+        email: creds.email,
+        provider: "google",
+        profile_pic: creds.picture
+      })
+      if(result){
+        toast.success("login success")
+        router.push("/");
+      }
+    }catch(err: any){
+      console.log(err)
+      toast.error(err?.message ?? "something went wrong")
+    }
   }
 
   return (
@@ -27,7 +49,7 @@ export const LoginForm = () => {
           </div>
         </div>
         
-        <GoogleLogin onSuccess={(credentialResponse) => console.log(jwtDecode(credentialResponse.credential as string))} />
+        <GoogleLogin onSuccess={(credentialResponse) => handleGoogleLogin(credentialResponse)} />
       </div>
     </div>
   )
