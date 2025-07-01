@@ -26,55 +26,55 @@ export default function HomePage() {
   const userId = 1; // In a real app, get this from authentication
 
   useEffect(() => {
-    authenticateUser()
-    const loadAlbums = async () => {
-      try {
-        // Check if this is first time user
-        const userExists = await db.users.get(userId);
+    // authenticateUser()
+    // const loadAlbums = async () => {
+    //   try {
+    //     // Check if this is first time user
+    //     const userExists = await db.users.get(userId);
         
-        if (!userExists) {
-          // Create demo user
-          await db.users.add({
-            id: userId,
-            name: 'Demo User',
-            email: 'demo@example.com'
-          });
-        }
+    //     if (!userExists) {
+    //       // Create demo user
+    //       await db.users.add({
+    //         id: userId,
+    //         name: 'Demo User',
+    //         email: 'demo@example.com'
+    //       });
+    //     }
 
-        // Get albums created by user
-        const createdAlbums = await db.albums
-          .where('createdById')
-          .equals(userId)
-          .toArray();
+    //     // Get albums created by user
+    //     const createdAlbums = await db.albums
+    //       .where('createdById')
+    //       .equals(userId)
+    //       .toArray();
           
-        setMyAlbums(createdAlbums);
+    //     setMyAlbums(createdAlbums);
         
-        // Get albums user has access to
-        const accessList = await db.albumAccess
-          .where('userId')
-          .equals(userId)
-          .toArray();
+    //     // Get albums user has access to
+    //     const accessList = await db.albumAccess
+    //       .where('userId')
+    //       .equals(userId)
+    //       .toArray();
           
-        const accessibleAlbumIds = accessList
-          .filter(access => access.accessType !== 'owner')
-          .map(access => access.albumId);
+    //     const accessibleAlbumIds = accessList
+    //       .filter(access => access.accessType !== 'owner')
+    //       .map(access => access.albumId);
           
-        if (accessibleAlbumIds.length > 0) {
-          const sharedAlbums = await db.albums
-            .where('id')
-            .anyOf(accessibleAlbumIds)
-            .toArray();
+    //     if (accessibleAlbumIds.length > 0) {
+    //       const sharedAlbums = await db.albums
+    //         .where('id')
+    //         .anyOf(accessibleAlbumIds)
+    //         .toArray();
             
-          setAccessibleAlbums(sharedAlbums);
-        }
-      } catch (error) {
-        console.error('Error loading albums:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+    //       setAccessibleAlbums(sharedAlbums);
+    //     }
+    //   } catch (error) {
+    //     console.error('Error loading albums:', error);
+    //   } finally {
+    //     setLoading(false);
+    //   }
+    // };
 
-    loadAlbums();
+    // loadAlbums();
   }, []);
 
   const handleCreateAlbum = () => {

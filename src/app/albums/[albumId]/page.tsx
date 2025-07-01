@@ -9,6 +9,7 @@ import { Camera, Share2, PencilIcon, Grid, MoreVertical, X, Upload } from 'lucid
 import { db } from '@/lib/db';
 import { AlbumQR } from '@/components/album/AlbumQR';
 import { PhotoGrid } from '@/components/photo/PhotoGrid';
+import PhotoGallery from '@/components/album/PhotoGallery';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { CameraCapture } from '@/components/camera/CameraCapture';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 import React from 'react';
 
 interface AlbumPageProps {
@@ -39,17 +41,38 @@ export default function AlbumPage({ params }: AlbumPageProps) {
   useEffect(() => {
     const loadAlbum = async () => {
       try {
-        const albumData = await db.albums.get(albumId);
-        if (!albumData) {
-          router.push('/albums');
+        // Try to get the auth token from local storage
+        const authToken = localStorage.getItem('authToken');
+        if (!authToken) {
+          console.error('No auth token found');
+          toast.error("Authentication required. Please log in again.");
+          router.push('/login');
           return;
         }
+
+        // Import the album API functions
+        const { getAlbumById } = await import('@/services/apis/albums.api');
+        
+        console.log(`Fetching album details for album ID: ${albumId}`);
+        const albumData = await getAlbumById(albumId, authToken);
+        
+        if (!albumData) {
+          console.error(`Album not found with ID: ${albumId}`);
+          toast.error("Album not found");
+          router.push('/events');
+          return;
+        }
+        
+        console.log('Album data loaded successfully:', albumData);
         setAlbum(albumData);
 
+        // For now, we'll still use the local DB for photos
+        // In the future, this should be replaced with an API call
         const photosList = await db.photos.where('albumId').equals(albumId).toArray();
         setPhotos(photosList);
       } catch (error) {
         console.error('Error loading album:', error);
+        toast.error("Failed to load album details");
       } finally {
         setLoading(false);
       }
@@ -240,20 +263,13 @@ export default function AlbumPage({ params }: AlbumPageProps) {
         </TabsList>
 
         <TabsContent value="photos" className="mt-0">
-          {photos.length > 0 ? (
-            <PhotoGrid photos={photos} onDelete={handlePhotoDelete} />
-          ) : (
-            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-              <p className="text-gray-500 mb-4">No photos yet</p>
-              <div className="flex space-x-4 justify-center">
-                <Button onClick={handleCameraClick}>
-                  <Camera className="h-4 w-4 mr-2" /> Take photo
-                </Button>
-                <Button onClick={handleUploadClick} variant="outline">
-                  <Upload className="h-4 w-4 mr-2" /> Upload photos
-                </Button>
-              </div>
-            </div>
+          {/* Use the same PhotoGallery component from the event details page */}
+          {album && (
+            <PhotoGallery 
+              eventId={album.eventId}
+              albumId={albumId}
+              canUpload={true}
+            />
           )}
         </TabsContent>
 

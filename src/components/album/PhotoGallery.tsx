@@ -4,11 +4,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Image from 'next/image';
-import { 
-  CameraIcon, 
-  DownloadIcon, 
-  ShareIcon, 
-  TrashIcon, 
+import {
+  CameraIcon,
+  DownloadIcon,
+  ShareIcon,
+  TrashIcon,
   XIcon,
   InfoIcon,
   ChevronLeftIcon,
@@ -29,38 +29,41 @@ import {
 import { db } from '@/lib/db';
 import { toast } from "sonner";
 import PhotoInfoDialog from '@/components/photo/PhotoInfoDialog';
+import { uploadAlbumMedia } from '@/services/apis/media.api';
+import { useAuthToken } from '@/hooks/use-auth';
+import { getOrCreateDefaultAlbum } from '@/services/apis/albums.api';
 
 // Add a swipe detection hook
 const useSwipe = (onSwipeLeft: () => void, onSwipeRight: () => void) => {
   const touchStart = useRef(null);
   const touchEnd = useRef(null);
-  
+
   // the required distance between touchStart and touchEnd to be detected as a swipe
   const minSwipeDistance = 50;
-  
+
   const onTouchStart = (e: any) => {
     touchEnd.current = null;
     touchStart.current = e.targetTouches[0].clientX;
   };
-  
+
   const onTouchMove = (e: any) => {
     touchEnd.current = e.targetTouches[0].clientX;
   };
-  
+
   const onTouchEnd = () => {
     if (!touchStart.current || !touchEnd.current) return;
-    
+
     const distance = touchStart.current - touchEnd.current;
     const isLeftSwipe = distance > minSwipeDistance;
     const isRightSwipe = distance < -minSwipeDistance;
-    
+
     if (isLeftSwipe) {
       onSwipeLeft();
     } else if (isRightSwipe) {
       onSwipeRight();
     }
   };
-  
+
   return { onTouchStart, onTouchMove, onTouchEnd };
 };
 
@@ -80,7 +83,7 @@ type Photo = {
 
 interface PhotoGalleryProps {
   eventId: string;
-  albumId: string;
+  albumId?: string | null; // Now optional to handle default album scenarios
   canUpload?: boolean;
 }
 
@@ -94,7 +97,12 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
   const [isRealtime, setIsRealtime] = useState(true);
   const [photoInfoOpen, setPhotoInfoOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [defaultAlbumId, setDefaultAlbumId] = useState<string | null>(albumId || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const token = useAuthToken(); // Get auth token from your auth hook
 
   // User ID would come from auth in a real app
   const userId = 1;
@@ -105,29 +113,29 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
   // Function to navigate to next/previous photos
   const navigateToPhoto = useCallback((direction: 'next' | 'prev') => {
     if (selectedPhotoIndex === null || photos.length <= 1) return;
-    
+
     let newIndex;
     if (direction === 'next') {
       newIndex = (selectedPhotoIndex + 1) % photos.length;
     } else {
       newIndex = (selectedPhotoIndex - 1 + photos.length) % photos.length;
     }
-    
+
     setSelectedPhotoIndex(newIndex);
     setSelectedPhoto(photos[newIndex]);
   }, [selectedPhotoIndex, photos]);
-  
+
   // Setup swipe handlers
   const { onTouchStart, onTouchMove, onTouchEnd } = useSwipe(
     () => navigateToPhoto('next'),
     () => navigateToPhoto('prev')
   );
-  
+
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!photoViewerOpen) return;
-      
+
       if (e.key === 'ArrowRight') {
         navigateToPhoto('next');
       } else if (e.key === 'ArrowLeft') {
@@ -136,131 +144,288 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
         setPhotoViewerOpen(false);
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [photoViewerOpen, navigateToPhoto]);
 
+  // Get default album if albumId is not provided
   useEffect(() => {
-    const loadPhotos = async () => {
+    const fetchDefaultAlbum = async () => {
+      if (albumId) {
+        setDefaultAlbumId(albumId);
+        return;
+      }
+
       try {
-        const photosList = await db.photos
-          .where('albumId')
-          .equals(albumId)
-          .sortBy('createdAt');
-        
-        // Reverse to show newest first
-        setPhotos(photosList.reverse());
+        // Get or create default album in one call
+        const defaultAlbum = await getOrCreateDefaultAlbum(eventId, token);
+
+        if (defaultAlbum) {
+          console.log('Found/created default album:', defaultAlbum.id);
+          setDefaultAlbumId(defaultAlbum.id);
+        } else {
+          console.error('Failed to get or create default album');
+          toast.error("Could not load album. Please try again later.");
+        }
       } catch (error) {
-        console.error('Error loading photos:', error);
+        console.error('Error fetching default album:', error);
+        toast.error("Error loading album. Please try again.");
+      }
+    };
+
+    fetchDefaultAlbum();
+  }, [eventId, albumId, token]);
+
+  useEffect(() => {
+    const fetchDefaultAlbum = async () => {
+      if (albumId) {
+        setDefaultAlbumId(albumId);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        // Get or create default album in one call
+        const defaultAlbum = await getOrCreateDefaultAlbum(eventId, token);
+
+        if (defaultAlbum) {
+          console.log('Found/created default album:', defaultAlbum.id);
+          setDefaultAlbumId(defaultAlbum.id);
+        } else {
+          console.error('Failed to get or create default album');
+          toast.error("Could not load album. Please try again later.");
+        }
+      } catch (error) {
+        console.error('Error fetching default album:', error);
+        toast.error("Error loading album. Please try again.");
       } finally {
         setIsLoading(false);
       }
     };
-    
-    loadPhotos();
-    
-    // Set up polling for "realtime" updates if enabled
-    if (isRealtime) {
-      realtimeInterval.current = setInterval(loadPhotos, 5000);
-    }
-    
-    return () => {
-      if (realtimeInterval.current) {
-        clearInterval(realtimeInterval.current);
-      }
-    };
-  }, [albumId, isRealtime]);
+
+    fetchDefaultAlbum();
+  }, [eventId, albumId, token]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    
+
+    // Ensure we have an albumId to use (either provided or default)
+    const targetAlbumId = albumId || defaultAlbumId;
+    if (!targetAlbumId) {
+      toast.error("No album available for uploading. Please try again later.");
+      return;
+    }
+
+    // Validate token
+    if (!token) {
+      toast.error("You need to be logged in to upload photos.");
+      return;
+    }
+
     try {
+      setIsUploading(true);
       setUploadDialogOpen(false);
       
-      // Process each file
-      const uploadPromises = Array.from(files).map(async (file) => {
-        // Convert file to base64 (in a real app, you'd upload to cloud storage)
-        const reader = new FileReader();
-        const imageDataPromise = new Promise<string>((resolve) => {
-          reader.onload = (e) => resolve(e.target?.result as string);
-        });
-        reader.readAsDataURL(file);
-        const imageData = await imageDataPromise;
+      // Show initial upload toast with progress indication
+      const uploadingToast = toast.loading(`Preparing ${files.length} photo${files.length > 1 ? 's' : ''} for upload...`);
+
+      // Validate files before uploading with detailed feedback
+      const validFiles = Array.from(files).filter(file => {
+        // Check file type
+        if (!file.type.startsWith('image/')) {
+          toast.error(`"${file.name}" is not a valid image file.`);
+          console.error(`Invalid file type: ${file.type} for file ${file.name}`);
+          return false;
+        }
         
-        // Create a thumbnail (simplified here - in a real app you'd generate proper thumbnails)
-        // For now, we'll just use the same image
-        const thumbnail = imageData;
+        // Check file size (max 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+          const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+          toast.error(`"${file.name}" is too large (${sizeMB}MB). Maximum size is 10MB.`);
+          console.error(`File too large: ${sizeMB}MB exceeds limit of 10MB`);
+          return false;
+        }
         
-        // Create photo record
-        const photoId = uuidv4();
-        const newPhoto = {
-          id: photoId,
-          albumId,
-          eventId,
-          takenBy: userId,
-          imageUrl: imageData,
-          thumbnail,
-          createdAt: new Date(),
-          metadata: {
-            device: navigator.userAgent
-          }
-        };
-        
-        await db.photos.add(newPhoto);
-        return newPhoto;
+        return true;
       });
       
-      const newPhotos = await Promise.all(uploadPromises);
+      if (validFiles.length === 0) {
+        toast.dismiss(uploadingToast);
+        toast.error("No valid image files to upload.");
+        setIsUploading(false);
+        return;
+      }
+
+      // Update toast with actual upload status
+      toast.dismiss(uploadingToast);
+      const progressToast = toast.loading(`Uploading ${validFiles.length} photo${validFiles.length > 1 ? 's' : ''}...`, {
+        duration: 60000 // Long duration for upload process
+      });
+
+      // Track upload progress
+      let completedUploads = 0;
       
-      // Update state with new photos
-      setPhotos([...newPhotos, ...photos]);
+      // Process each file
+      const results = await Promise.allSettled(
+        validFiles.map(async (file, index) => {
+          try {
+            console.log(`Uploading file ${index + 1}/${validFiles.length}: ${file.name} (${file.size} bytes) to album ${targetAlbumId}`);
+            
+            // Upload to API, passing both albumId and eventId for better server-side handling
+            const uploadedData = await uploadAlbumMedia(file, targetAlbumId, token, eventId);
+            
+            // Update progress
+            completedUploads++;
+            toast.dismiss(progressToast);
+            toast.loading(`Uploaded ${completedUploads}/${validFiles.length} photos...`, {
+              id: progressToast,
+              duration: 60000
+            });
+
+            // Create photo record for local storage
+            const photoId = uuidv4();
+            const newPhoto = {
+              id: photoId,
+              albumId: targetAlbumId,
+              eventId,
+              takenBy: userId,
+              imageUrl: uploadedData.url, // URL from API response
+              thumbnail: uploadedData.thumbnail_url, // Assuming API provides thumbnail URL
+              createdAt: new Date(),
+              metadata: {
+                device: navigator.userAgent,
+                fileName: file.name,
+                fileType: file.type,
+                fileSize: file.size
+              }
+            };
+
+            await db.photos.add(newPhoto);
+            return newPhoto;
+          } catch (error) {
+            console.error(`Error uploading file ${file.name}:`, error);
+            throw error;
+          }
+        })
+      );
+
+      // Process results
+      const successfulUploads = results.filter(r => r.status === 'fulfilled');
+      const failedUploads = results.filter(r => r.status === 'rejected');
       
-      // Show success message
-      toast(`${files.length} photo${files.length > 1 ? 's' : ''} uploaded successfully.`);
+      // Get the new photos
+      const newPhotos = successfulUploads.map(r => (r as PromiseFulfilledResult<any>).value);
       
-      // Reset file input
+      // Update state with new photos if any succeeded
+      if (newPhotos.length > 0) {
+        setPhotos(prev => [...newPhotos, ...prev]);
+      }
+      
+      // Show appropriate toast messages for the final result
+      toast.dismiss(progressToast);
+      
+      if (successfulUploads.length > 0) {
+        toast.success(`${successfulUploads.length} photo${successfulUploads.length > 1 ? 's' : ''} uploaded successfully.`);
+      }
+      
+      if (failedUploads.length > 0) {
+        // Show specific error for each failed upload
+        toast.error(`Failed to upload ${failedUploads.length} photo${failedUploads.length > 1 ? 's' : ''}.`);
+        
+        // Log detailed errors and show in UI
+        failedUploads.forEach((result, i) => {
+          const error = (result as PromiseRejectedResult).reason;
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          console.error(`Failed upload #${i + 1}:`, error);
+          
+          // Show individual error messages for each failed file
+          if (i < 3) { // Limit to first 3 errors to avoid spam
+            toast.error(`Upload failed: ${errorMessage}`, {
+              duration: 8000,
+              id: `upload-error-${i}`
+            });
+          }
+        });
+        
+        // If we have many failed uploads, provide guidance
+        if (failedUploads.length > 3) {
+          toast.error(`Check browser console for details on all ${failedUploads.length} failed uploads.`);
+        }
+        
+        // If all uploads failed due to server errors, suggest using diagnostic tool
+        if (failedUploads.length === validFiles.length) {
+          toast.error(
+            "All uploads failed. Try the diagnostics tool to troubleshoot.",
+            { duration: 10000, id: 'suggest-diagnostic' }
+          );
+        }
+      }
+
+      // Reset file inputs regardless of success/failure
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = '';
+      }
     } catch (error) {
       console.error('Error uploading photos:', error);
-      toast.error("There was an error uploading your photos.");
+      const errorMessage = error instanceof Error ? error.message : "There was an error uploading your photos.";
+      toast.error(errorMessage, { duration: 8000 });
+      
+      // Additional debug information
+      if (error instanceof Error) {
+        console.error('Stack trace:', error.stack);
+      }
+      
+      // Add a clickable toast that links to the diagnostic page
+      toast.error(
+        <div onClick={() => window.location.href = '/diagnostic'} className="cursor-pointer">
+          Click here to visit the diagnostics page for troubleshooting help.
+        </div>,
+        { 
+          duration: 10000,
+          id: 'diagnostics-link'
+        }
+      );
+    } finally {
+      setIsUploading(false);
     }
   };
-  
+
   const deletePhoto = async (photoId: string) => {
     try {
       await db.photos
         .where('id')
         .equals(photoId)
         .delete();
-      
+
       // Update state
       setPhotos(photos.filter(p => p.id !== photoId));
-      
+
       // Close photo viewer if open
       if (selectedPhoto?.id === photoId) {
         setSelectedPhoto(null);
         setPhotoViewerOpen(false);
       }
-      
+
       toast("The photo has been removed from the album.");
     } catch (error) {
       console.error('Error deleting photo:', error);
       toast.error("There was an error deleting the photo.");
     }
   };
-  
+
   const handleCameraCapture = () => {
-    // In a real app, you'd implement camera access using the browser API
-    // For simplicity, we'll just trigger the file upload dialog
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
+    // Trigger the camera input
+    if (cameraInputRef.current) {
+      cameraInputRef.current.click();
     }
   };
-  
+
   const downloadPhoto = (photo: Photo) => {
     const link = document.createElement('a');
     link.href = photo.imageUrl;
@@ -269,7 +434,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
     link.click();
     document.body.removeChild(link);
   };
-  
+
   const openPhotoViewer = (photo: Photo, index: number) => {
     setSelectedPhoto(photo);
     setSelectedPhotoIndex(index);
@@ -279,9 +444,9 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
   // Component for the full-screen mobile photo viewer
   const FullscreenPhotoViewer = () => {
     if (!selectedPhoto) return null;
-    
+
     return (
-      <div 
+      <div
         className="fixed inset-0 z-50 bg-black flex flex-col"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
@@ -289,27 +454,27 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 text-white">
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             className="text-white"
             onClick={() => setIsFullscreen(false)}
           >
             <ArrowLeftIcon className="h-5 w-5" />
           </Button>
-          
+
           <div className="flex space-x-1">
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               className="text-white"
               onClick={() => downloadPhoto(selectedPhoto)}
             >
               <DownloadIcon className="h-5 w-5" />
             </Button>
-            
-            <Button 
-              variant="ghost" 
+
+            <Button
+              variant="ghost"
               size="icon"
               className="text-white"
               onClick={(e) => {
@@ -328,19 +493,19 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
             >
               <ShareIcon className="h-5 w-5" />
             </Button>
-            
-            <Button 
-              variant="ghost" 
+
+            <Button
+              variant="ghost"
               size="icon"
               className="text-white"
               onClick={() => setPhotoInfoOpen(true)}
             >
               <InfoIcon className="h-5 w-5" />
             </Button>
-            
-            <Button 
-              variant="ghost" 
-              size="icon" 
+
+            <Button
+              variant="ghost"
+              size="icon"
               className="text-red-400"
               onClick={() => {
                 if (confirm('Are you sure you want to delete this photo?')) {
@@ -352,7 +517,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
             </Button>
           </div>
         </div>
-        
+
         {/* Main image with navigation */}
         <div className="flex-1 relative overflow-hidden">
           {/* Left navigation button (desktop only) */}
@@ -364,7 +529,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
           >
             <ChevronLeftIcon className="h-6 w-6" />
           </Button>
-          
+
           {/* Image */}
           <div className="h-full w-full flex items-center justify-center bg-black">
             <Image
@@ -374,7 +539,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
               className="object-contain"
             />
           </div>
-          
+
           {/* Right navigation button (desktop only) */}
           <Button
             variant="ghost"
@@ -385,7 +550,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
             <ChevronRightIcon className="h-6 w-6" />
           </Button>
         </div>
-        
+
         {/* Footer with photo info */}
         <div className="p-4 text-xs text-gray-300">
           <div className="flex items-center justify-between">
@@ -394,7 +559,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                 <span>{selectedPhotoIndex + 1} of {photos.length}</span>
               )}
             </div>
-            
+
             <div>
               <time>
                 {selectedPhoto.createdAt.toLocaleDateString()}
@@ -418,23 +583,25 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
             </div>
           )}
         </div>
-        
-        {canUpload && (
+
+        {canUpload && (defaultAlbumId || albumId) && (
           <div className="flex space-x-2">
             <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button disabled={isUploading}>
                   <CameraIcon className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Add Photos</span>
+                  <span className="hidden sm:inline">
+                    {isUploading ? 'Uploading...' : 'Add Photos'}
+                  </span>
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Upload Photos</DialogTitle>
                 </DialogHeader>
-                
+
                 <div className="grid grid-cols-2 gap-4 py-4">
-                  <div 
+                  <div
                     className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer hover:bg-gray-50 transition-colors"
                     onClick={() => {
                       if (fileInputRef.current) {
@@ -458,11 +625,19 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                       Select photos from your device
                     </p>
                   </div>
-                  
-                  <div 
+
+                  <div
                     className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer hover:bg-gray-50 transition-colors"
                     onClick={handleCameraCapture}
                   >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      ref={cameraInputRef}
+                      onChange={handleFileUpload}
+                    />
                     <div className="bg-primary/10 p-3 rounded-full mb-2">
                       <CameraIcon className="h-6 w-6 text-primary" />
                     </div>
@@ -472,7 +647,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                     </p>
                   </div>
                 </div>
-                
+
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
                     Cancel
@@ -480,7 +655,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-            
+
             <Button
               variant="outline"
               onClick={() => {
@@ -488,11 +663,14 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                   fileInputRef.current.click();
                 }
               }}
+              disabled={isUploading}
             >
               <DownloadIcon className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Upload</span>
+              <span className="hidden sm:inline">
+                {isUploading ? 'Uploading...' : 'Upload'}
+              </span>
             </Button>
-            
+
             <input
               type="file"
               accept="image/*"
@@ -504,12 +682,22 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
           </div>
         )}
       </div>
-      
-      {isLoading ? (
+
+      {isLoading || isUploading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
             <Skeleton key={i} className="aspect-square rounded-lg" />
           ))}
+        </div>
+      ) : !defaultAlbumId && !albumId ? (
+        <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed rounded-lg">
+          <div className="bg-gray-100 p-4 rounded-full mb-4">
+            <CameraIcon className="h-8 w-8 text-gray-400" />
+          </div>
+          <h3 className="text-xl font-medium text-gray-700 mb-2">Loading Album...</h3>
+          <p className="text-gray-500 text-center max-w-md mb-6">
+            Please wait while we prepare your album.
+          </p>
         </div>
       ) : photos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed rounded-lg">
@@ -527,6 +715,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                   fileInputRef.current.click();
                 }
               }}
+              disabled={isUploading}
             >
               <CameraIcon className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Add Photos</span>
@@ -538,8 +727,8 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
           {/* Optimized responsive grid with smaller gaps on mobile */}
           <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 gap-1 sm:gap-2 md:gap-3">
             {photos.map((photo, index) => (
-              <div 
-                key={photo.id} 
+              <div
+                key={photo.id}
                 className="relative aspect-square bg-gray-100 cursor-pointer overflow-hidden"
                 onClick={() => {
                   openPhotoViewer(photo, index);
@@ -560,7 +749,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
               </div>
             ))}
           </div>
-          
+
           {/* Desktop Dialog Photo Viewer */}
           {!isFullscreen && (
             <Dialog open={photoViewerOpen} onOpenChange={setPhotoViewerOpen}>
@@ -570,29 +759,29 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                     <div className="flex items-center justify-between p-4 border-b">
                       <DialogTitle>Photo Details</DialogTitle>
                       <div className="flex items-center space-x-1">
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="icon"
                           onClick={() => setIsFullscreen(true)}
                         >
                           <div className="h-4 w-4 border-2 border-current" />
                         </Button>
-                        
-                        <Button 
-                          variant="ghost" 
+
+                        <Button
+                          variant="ghost"
                           size="icon"
                           onClick={() => downloadPhoto(selectedPhoto)}
                         >
                           <DownloadIcon className="h-4 w-4" />
                         </Button>
-                        
-                        <Button 
-                          variant="ghost" 
+
+                        <Button
+                          variant="ghost"
                           size="icon"
                           onClick={(e) => {
                             e.stopPropagation();
                             const shareUrl = `${window.location.origin}/shared/photos/${selectedPhoto.id}`;
-                            
+
                             if (navigator.share) {
                               navigator.share({
                                 title: 'Check out this photo',
@@ -606,10 +795,10 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                         >
                           <ShareIcon className="h-4 w-4" />
                         </Button>
-                        
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="text-red-500"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -618,9 +807,9 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                         >
                           <TrashIcon className="h-4 w-4" />
                         </Button>
-                        
-                        <Button 
-                          variant="ghost" 
+
+                        <Button
+                          variant="ghost"
                           size="icon"
                           onClick={() => setPhotoViewerOpen(false)}
                         >
@@ -628,8 +817,8 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                         </Button>
                       </div>
                     </div>
-                    
-                    <div 
+
+                    <div
                       className="flex-1 relative overflow-hidden"
                       onTouchStart={onTouchStart}
                       onTouchMove={onTouchMove}
@@ -647,14 +836,14 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                       >
                         <ChevronLeftIcon className="h-5 w-5" />
                       </Button>
-                      
+
                       <Image
                         src={selectedPhoto.imageUrl}
                         alt="Photo"
                         fill
                         className="object-contain"
                       />
-                      
+
                       <Button
                         variant="ghost"
                         size="icon"
@@ -667,7 +856,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                         <ChevronRightIcon className="h-5 w-5" />
                       </Button>
                     </div>
-                    
+
                     <div className="p-4 border-t text-sm">
                       <div className="flex items-center justify-between">
                         <div>
@@ -676,7 +865,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
                             {selectedPhoto.createdAt.toLocaleDateString()} at {selectedPhoto.createdAt.toLocaleTimeString()}
                           </time>
                         </div>
-                        
+
                         <Button
                           variant="ghost"
                           size="sm"
@@ -693,10 +882,10 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
               </DialogContent>
             </Dialog>
           )}
-          
+
           {/* Mobile Fullscreen Photo Viewer */}
           {isFullscreen && selectedPhoto && <FullscreenPhotoViewer />}
-          
+
           {/* Photo Info Dialog */}
           {selectedPhoto && (
             <PhotoInfoDialog

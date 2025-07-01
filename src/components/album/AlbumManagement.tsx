@@ -42,12 +42,15 @@ import { uploadCoverImage } from '@/services/apis/media.api';
 
 interface AlbumManagementProps {
   eventId: string;
+  initialAlbums?: Album[];
+  onAlbumCreated?: (album: Album) => void;
+  onRefresh?: () => Promise<Album[]>;
 }
 
-export default function AlbumManagement({ eventId }: AlbumManagementProps) {
+export default function AlbumManagement({ eventId, initialAlbums, onAlbumCreated, onRefresh }: AlbumManagementProps) {
   const router = useRouter();
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [albums, setAlbums] = useState<Album[]>(initialAlbums || []);
+  const [isLoading, setIsLoading] = useState(!initialAlbums);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState('');
@@ -91,10 +94,6 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
         setPreviewImage(tempPreview);
       };
       reader.readAsDataURL(file);
-
-      // Upload the file to get ImageKit URL
-      // We're using 'album' as entity_type but not providing a real albumId yet
-      // since we're just creating the album
       const imageUrl = await uploadCoverImage(file, 'album', authToken);
 
       // Save the ImageKit URL
@@ -109,14 +108,24 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
     }
   };
 
-  // Load albums
+  // Load albums if initialAlbums is not provided
   useEffect(() => {
     const loadAlbums = async () => {
       if (!authToken || !eventId) return;
+      
+      // Skip API call if we have initialAlbums
+      if (initialAlbums && initialAlbums.length > 0) {
+        console.log(`Using ${initialAlbums.length} albums from parent component`);
+        setAlbums(initialAlbums);
+        setIsLoading(false);
+        return;
+      }
 
       setIsLoading(true);
       try {
+        console.log(`AlbumManagement: Fetching albums for event ${eventId}`);
         const albumList = await fetchEventAlbums(eventId, authToken);
+        console.log(`AlbumManagement: Fetched ${albumList.length} albums`);
 
         // Sort albums - default album first, then by creation date
         albumList.sort((a, b) => {
@@ -134,21 +143,16 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
       }
     };
 
-    if (authToken) {
-      loadAlbums();
-    }
-  }, [eventId, authToken]);
+    loadAlbums();
+  }, [eventId, authToken, initialAlbums]);
 
-  // const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-  //   const file = e.target.files?.[0];
-  //   if (file) {
-  //     const reader = new FileReader();
-  //     reader.onload = (e) => {
-  //       setPreviewImage(e.target?.result as string);
-  //     };
-  //     reader.readAsDataURL(file);
-  //   }
-  // };
+  // Update local state when initialAlbums changes
+  useEffect(() => {
+    if (initialAlbums) {
+      setAlbums(initialAlbums);
+      setIsLoading(false);
+    }
+  }, [initialAlbums]);
 
   const handleCreateAlbum = async () => {
     if (!newAlbumName.trim() || !eventId || !authToken) return;
@@ -172,11 +176,25 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
         isDefault
       };
 
+      console.log('Creating album with data:', albumData);
+
       // Call API to create the album
       const createdAlbum = await createAlbum(albumData, authToken);
+      console.log('Album created successfully:', createdAlbum);
 
-      // Add the new album to the state
-      setAlbums([createdAlbum, ...albums.filter(album => !createdAlbum.isDefault || !album.isDefault)]);
+      // If this is a default album, remove any existing default album from state
+      const updatedAlbums = createdAlbum.isDefault 
+        ? [createdAlbum, ...albums.filter(album => !album.isDefault)] 
+        : [createdAlbum, ...albums];
+      
+      // Update local state
+      setAlbums(updatedAlbums);
+      
+      // Notify parent component about the new album
+      if (onAlbumCreated) {
+        console.log('Notifying parent component about new album:', createdAlbum.id);
+        onAlbumCreated(createdAlbum);
+      }
 
       // Reset form
       setNewAlbumName('');
@@ -191,14 +209,26 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
       toast.success("Album created successfully!");
     } catch (error) {
       console.error('Error creating album:', error);
-      toast.error("Failed to create album. Please try again.");
+      if (error instanceof Error) {
+        toast.error(error.message || "Failed to create album. Please try again.");
+      } else {
+        toast.error("Failed to create album. Please try again.");
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const navigateToAlbum = (albumId: string) => {
-    router.push(`/albums/${albumId}`);
+    console.log(`Navigating to album: ${albumId}`);
+    try {
+      // Add a toast to confirm the navigation
+      toast.info(`Opening album...`);
+      router.push(`/albums/${albumId}`);
+    } catch (error) {
+      console.error('Navigation error:', error);
+      toast.error('Error navigating to album');
+    }
   };
 
   const handleDeleteAlbum = async (albumId: string) => {
@@ -233,7 +263,30 @@ export default function AlbumManagement({ eventId }: AlbumManagementProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold">Albums</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-2xl font-bold">Albums</h2>
+          {onRefresh && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={async () => {
+                setIsLoading(true);
+                try {
+                  const refreshedAlbums = await onRefresh();
+                  setAlbums(refreshedAlbums);
+                  toast.success("Albums refreshed");
+                } catch (error) {
+                  console.error('Error refreshing albums:', error);
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              className="text-xs"
+            >
+              ↻ Refresh
+            </Button>
+          )}
+        </div>
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>

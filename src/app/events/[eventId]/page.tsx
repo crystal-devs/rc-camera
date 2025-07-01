@@ -12,7 +12,8 @@ import {
     ShareIcon,
     CameraIcon,
     FolderIcon,
-    SettingsIcon
+    SettingsIcon,
+    RefreshCcwIcon
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -28,29 +29,17 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/db';
-import FloatingNav from '@/components/navigation/FloatingNav';
 import PhotoGallery from '@/components/album/PhotoGallery';
 import AlbumManagement from '@/components/album/AlbumManagement';
 import EventHeader from '@/components/event/EventHeader';
 import EventHeaderDetails from '@/components/event/EventDetailsHeader';
 import { getEventById } from '@/services/apis/events.api';
+import { fetchEventAlbums } from '@/services/apis/albums.api';
+import { Album, ApiAlbum } from '@/types/album';
+import { Event } from '@/types/events';
 import { toast } from 'sonner';
-
-interface Event {
-    id: string;
-    name: string;
-    description?: string;
-    date: Date;
-    endDate?: Date;
-    location?: string;
-    cover_image?: string;
-    createdAt: Date;
-    createdById: number;
-    accessType: 'public' | 'restricted';
-    accessCode?: string;
-    template?: string;
-    isActive: boolean;
-}
+import { API_BASE_URL } from '@/lib/api-config';
+import { mapApiAlbumToAlbum } from '@/lib/album-mappers';
 
 export default function EventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
     const { eventId } = use(params);
@@ -60,52 +49,143 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
     const [activeTab, setActiveTab] = useState('photos');
     const [qrDialogOpen, setQrDialogOpen] = useState(false);
     const [defaultAlbumId, setDefaultAlbumId] = useState<string | null>(null);
+    const [albums, setAlbums] = useState<Album[]>([]);
+    const [albumsLoaded, setAlbumsLoaded] = useState(false);
+
+    // Add an album update function that can be passed to AlbumManagement
+    const updateAlbumsList = (newAlbum: Album) => {
+        console.log(`EventDetailsPage: Updating albums list with new album: ${newAlbum.id}`, newAlbum);
+        
+        setAlbums(prevAlbums => {
+            // If it's a default album, remove any existing default album
+            if (newAlbum.isDefault) {
+                const updatedAlbums = [newAlbum, ...prevAlbums.filter(album => !album.isDefault && album.id !== newAlbum.id)];
+                console.log(`Updated albums list (default album case): ${updatedAlbums.length} albums`);
+                return updatedAlbums;
+            }
+            // Otherwise, just add it to the top of the list
+            const updatedAlbums = [newAlbum, ...prevAlbums.filter(album => album.id !== newAlbum.id)];
+            console.log(`Updated albums list: ${updatedAlbums.length} albums`);
+            return updatedAlbums;
+        });
+
+        // If this is a default album, update the defaultAlbumId
+        if (newAlbum.isDefault) {
+            console.log(`Setting default album ID to: ${newAlbum.id}`);
+            setDefaultAlbumId(newAlbum.id);
+        }
+        
+        // Ensure we mark albums as loaded
+        setAlbumsLoaded(true);
+    };
 
     useEffect(() => {
         const loadEvent = async () => {
             try {
                 const token = localStorage.getItem('authToken') || '';
                 console.log(eventId, token);
-                let getAllEvent = await getEventById(eventId, token);
-                // console.log(getAllEvent);
-                setEvent(getAllEvent);
+                const eventData = await getEventById(eventId, token);
+                setEvent(eventData as Event);
             } catch (error) {
                 console.error('Error loading events:', error);
                 toast.error("Failed to load your events. Please try again.");
             } finally {
                 setIsLoading(false);
             }
-
-
-            // try {
-            //     // Get event details
-            //     const eventData = await db.events.get(eventId);
-            //     if (!eventData) {
-            //         router.push('/events');
-            //         return;
-            //     }
-
-            //     setEvent(eventData);
-
-            //     // Get default album
-            //     const defaultAlbum = await db.albums
-            //         .where('eventId')
-            //         .equals(eventId)
-            //         .and(album => album.isDefault === true)
-            //         .first();
-
-            //     if (defaultAlbum) {
-            //         setDefaultAlbumId(defaultAlbum.id);
-            //     }
-            // } catch (error) {
-            //     console.error('Error loading event:', error);
-            // } finally {
-            //     setIsLoading(false);
-            // }
         };
 
         loadEvent();
     }, [eventId, router]);
+
+    // Load albums when the component mounts or eventId changes
+    useEffect(() => {
+        // Use the refreshAlbums function for initial load and refreshes
+        const loadAlbums = async () => {
+            try {
+                setIsLoading(true);
+                await refreshAlbums();
+            } catch (error) {
+                console.error('Error loading albums:', error);
+                toast.error("Failed to load albums. Please try again.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        // Reset state when eventId changes
+        setAlbumsLoaded(false);
+        setAlbums([]);
+        setDefaultAlbumId(null);
+        
+        // Always load albums on mount or when eventId changes
+        loadAlbums();
+        
+    }, [eventId]); // Only depend on eventId, so it reloads when event changes
+
+    // Function to manually refresh albums
+    const refreshAlbums = async () => {
+        console.log(`Manually refreshing albums for event ${eventId}`);
+        try {
+            if (!eventId) {
+                console.error('No eventId provided for refreshAlbums');
+                return [];
+            }
+            
+            const token = localStorage.getItem('authToken') || '';
+            if (!token) {
+                console.error('No auth token available for refreshAlbums');
+                toast.error("Authentication required. Please log in again.");
+                router.push('/login');
+                return [];
+            }
+            
+            // First try using the fixed fetchEventAlbums function
+            let fetchedAlbums = await fetchEventAlbums(eventId, token);
+            console.log(`Fetched ${fetchedAlbums.length} albums in refresh using API`);
+            
+            // Sort albums - default album first, then by creation date
+            fetchedAlbums.sort((a, b) => {
+                if (a.isDefault && !b.isDefault) return -1;
+                if (!a.isDefault && b.isDefault) return 1;
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+            
+            // Find the default album
+            const defaultAlbum = fetchedAlbums.find(album => album.isDefault);
+            if (defaultAlbum) {
+                console.log(`Setting default album to: ${defaultAlbum.id}`);
+                setDefaultAlbumId(defaultAlbum.id);
+            } else if (fetchedAlbums.length > 0) {
+                console.log(`No default album found, using first album: ${fetchedAlbums[0].id}`);
+                setDefaultAlbumId(fetchedAlbums[0].id);
+            } else {
+                console.log('No albums found in refresh, clearing defaultAlbumId');
+                setDefaultAlbumId(null);
+            }
+            
+            setAlbums(fetchedAlbums);
+            setAlbumsLoaded(true);
+            
+            return fetchedAlbums;
+        } catch (error) {
+            console.error('Error refreshing albums:', error);
+            
+            // Try the direct fetch method as a fallback
+            console.log('Error in standard refresh, trying direct fetch as fallback');
+            try {
+                return albums;
+            } catch (fallbackError) {
+                console.error('Fallback also failed:', fallbackError);
+                
+                if (error instanceof Error) {
+                    toast.error(error.message || "Failed to refresh albums. Please try again.");
+                } else {
+                    toast.error("Failed to refresh albums. Please try again.");
+                }
+                return [];
+            }
+        }
+    };
 
     const getShareUrl = () => {
         return `${window.location.origin}/join?event=${eventId}&code=${event?.accessCode || ''}`;
@@ -210,10 +290,19 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                         <ShareIcon className="h-4 w-4 sm:mr-2" />
                         <span className="hidden sm:inline">Share</span>
                     </Button>
+                
                 </div>
 
                 {/* Tabs Section */}
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <Tabs 
+                    value={activeTab} 
+                    onValueChange={(value) => {
+                        // When switching tabs, no need to force a reload anymore
+                        // since we're storing albums at the page level
+                        setActiveTab(value);
+                    }} 
+                    className="w-full"
+                >
                     <TabsList className="w-full mb-6">
                         <TabsTrigger value="photos" className="flex-1">
                             <CameraIcon className="h-4 w-4 mr-2" />
@@ -221,7 +310,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                         </TabsTrigger>
                         <TabsTrigger value="albums" className="flex-1">
                             <FolderIcon className="h-4 w-4 mr-2" />
-                            Albums
+                            Albums ({albums.length})
                         </TabsTrigger>
                     </TabsList>
 
@@ -236,12 +325,15 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                     </TabsContent>
 
                     <TabsContent value="albums">
-                        <AlbumManagement eventId={eventId} />
+                        <AlbumManagement 
+                            eventId={eventId}
+                            initialAlbums={albums}
+                            onAlbumCreated={updateAlbumsList}
+                            onRefresh={refreshAlbums}
+                        />
                     </TabsContent>
                 </Tabs>
             </div>
-
-            <FloatingNav />
         </div>
     );
 }
