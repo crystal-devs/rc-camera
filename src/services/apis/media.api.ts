@@ -281,3 +281,235 @@ export const uploadAlbumMedia = async (
         throw new Error(error instanceof Error ? error.message : 'Failed to upload image');
     }
 };
+
+/**
+ * Fetch all media for a specific album
+ * 
+ * @param albumId ID of the album to fetch media from
+ * @param authToken Authentication token
+ * @returns Array of media items
+ */
+export const getAlbumMedia = async (albumId: string, authToken: string) => {
+    try {
+        console.log(`Fetching media for album ID: ${albumId}`);
+        
+        const response = await axios.get(`${API_BASE_URL}/media/album/${albumId}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        if (response.data && response.data.status === true) {
+            console.log(`Successfully fetched ${response.data.data?.length || 0} media items for album`);
+            return response.data.data || [];
+        }
+        
+        console.error('Invalid response format from album media API:', response.data);
+        throw new Error(response.data?.message || 'Failed to fetch album media');
+    } catch (error) {
+        console.error('Error fetching album media:', error);
+        
+        if (axios.isAxiosError(error)) {
+            console.error('API error status:', error.response?.status);
+            console.error('API error details:', error.response?.data);
+            
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Authentication error. Please log in again.');
+            }
+        }
+        
+        throw error;
+    }
+};
+
+/**
+ * Fetch all media for a specific event
+ * This could be across multiple albums or just from the default album
+ * 
+ * @param eventId ID of the event to fetch media from
+ * @param authToken Authentication token
+ * @param includeAllAlbums Whether to include media from all albums in this event (true) or just default album (false)
+ * @returns Array of media items
+ */
+export const getEventMedia = async (
+    eventId: string, 
+    authToken: string,
+    includeAllAlbums: boolean = true
+) => {
+    try {
+        console.log(`Fetching media for event ID: ${eventId} (includeAllAlbums: ${includeAllAlbums})`);
+        
+        // Use the appropriate endpoint based on whether we want all albums or just default
+        const endpoint = includeAllAlbums 
+            ? `${API_BASE_URL}/media/event/${eventId}` 
+            : `${API_BASE_URL}/media/event/${eventId}/default`;
+            
+        console.log(`Making API request to: ${endpoint}`);
+        
+        // Make the API request with timeout for better user experience
+        const response = await axios.get(endpoint, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            },
+            timeout: 15000 // 15 seconds timeout
+        });
+        
+        if (response.data && response.data.status === true) {
+            console.log(`Successfully fetched ${response.data.data?.length || 0} media items for event`);
+            return response.data.data || [];
+        }
+        
+        console.error('Invalid response format from event media API:', response.data);
+        throw new Error(response.data?.message || 'Failed to fetch event media');
+    } catch (error) {
+        console.error('Error fetching event media:', error);
+        
+        if (axios.isAxiosError(error)) {
+            if (error.code === 'ERR_NETWORK') {
+                console.error('Network error - API server may be down or not accessible');
+                console.error('API_BASE_URL:', API_BASE_URL);
+                throw new Error('Cannot connect to server. Please check if your API server is running at ' + API_BASE_URL);
+            }
+            
+            console.error('API error status:', error.response?.status);
+            console.error('API error details:', error.response?.data);
+            console.error('Request URL:', error.config?.url);
+            console.error('Request method:', error.config?.method);
+            
+            // Log headers but remove authorization token
+            const sanitizedHeaders = { ...error.config?.headers };
+            if (sanitizedHeaders && sanitizedHeaders.Authorization) {
+                sanitizedHeaders.Authorization = '[REDACTED]';
+            }
+            console.error('Request headers:', sanitizedHeaders);
+            
+            if (error.response) {
+                if (error.response.status === 401 || error.response.status === 403) {
+                    throw new Error('Authentication error. Please log in again.');
+                } else if (error.response.status === 404) {
+                    throw new Error('The requested media was not found. The event may not have any photos yet.');
+                } else if (error.response.status >= 500) {
+                    throw new Error('Server error. Please try again later.');
+                }
+            } else if (error.code === 'ECONNABORTED') {
+                throw new Error('Request timed out. The server may be overloaded or unresponsive.');
+            } else if (error.message && error.message.includes('CORS')) {
+                throw new Error('CORS error. The API server may not allow requests from this origin.');
+            }
+        }
+        
+        // Rethrow with more descriptive message that helps with troubleshooting
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Media API Error Details: ${errorMessage}`);
+        throw new Error(`Failed to load photos: ${errorMessage}. Check that your API server is running at ${API_BASE_URL}`);
+    }
+};
+
+/**
+ * Transform API media item to frontend Photo format
+ * Use this to standardize the media items returned from the API
+ * 
+ * @param mediaItem The media item from the API
+ * @returns Transformed Photo object
+ */
+export const transformMediaToPhoto = (mediaItem: any) => {
+    return {
+        id: mediaItem._id || mediaItem.id,
+        albumId: mediaItem.album_id,
+        eventId: mediaItem.event_id,
+        takenBy: mediaItem.created_by || mediaItem.user_id,
+        imageUrl: mediaItem.url,
+        thumbnail: mediaItem.thumbnail_url || mediaItem.url,
+        createdAt: mediaItem.created_at ? new Date(mediaItem.created_at) : new Date(),
+        metadata: {
+            location: mediaItem.location,
+            device: mediaItem.device,
+            fileName: mediaItem.file_name,
+            fileType: mediaItem.file_type,
+            fileSize: mediaItem.file_size
+        }
+    };
+};
+
+/**
+ * Delete a media item from the backend
+ * 
+ * @param mediaId ID of the media item to delete
+ * @param authToken Authentication token
+ * @returns Response from the API
+ */
+export const deleteMedia = async (mediaId: string, authToken: string) => {
+    try {
+        console.log(`Deleting media with ID: ${mediaId}`);
+        
+        const response = await axios.delete(`${API_BASE_URL}/media/${mediaId}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        if (response.data && response.data.status === true) {
+            console.log('Media deleted successfully');
+            return true;
+        }
+        
+        console.error('Invalid response format from delete media API:', response.data);
+        throw new Error(response.data?.message || 'Failed to delete media');
+    } catch (error) {
+        console.error('Error deleting media:', error);
+        
+        if (axios.isAxiosError(error)) {
+            console.error('API error status:', error.response?.status);
+            console.error('API error details:', error.response?.data);
+            
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Authentication error. Please log in again.');
+            }
+            
+            if (error.response?.status === 404) {
+                console.warn('Media not found on server, may have been already deleted');
+                return true; // Consider it deleted if not found
+            }
+        }
+        
+        throw error;
+    }
+};
+
+/**
+ * Handle API errors and improve error messages
+ * @param error The axios error
+ * @returns Formatted error message
+ */
+const handleApiError = (error: any): string => {
+  if (axios.isAxiosError(error)) {
+    // Network errors (like ECONNREFUSED)
+    if (error.code === 'ERR_NETWORK') {
+      console.error('Network error - API server may be down or not accessible');
+      return 'Cannot connect to API server. Make sure it is running and accessible.';
+    } 
+    // CORS errors
+    else if (error.code === 'ERR_NETWORK_ACCESS_DENIED' || 
+             (error.message && error.message.includes('CORS'))) {
+      return 'CORS error: The API server is not allowing requests from this origin.';
+    }
+    // Timeout errors
+    else if (error.code === 'ECONNABORTED') {
+      return 'Request timed out. The server may be overloaded or unresponsive.';
+    }
+    // HTTP errors
+    else if (error.response) {
+      if (error.response.status === 401 || error.response.status === 403) {
+        return 'Authentication error. Please log in again.';
+      } else if (error.response.status === 404) {
+        return 'The requested resource was not found on the server.';
+      } else if (error.response.status >= 500) {
+        return `Server error (${error.response.status}). Please try again later.`;
+      }
+      return `API error: ${error.response.status} - ${error.response.statusText || 'Unknown error'}`;
+    }
+  }
+  
+  // Generic error handling
+  return error instanceof Error ? error.message : 'Unknown API error';
+}

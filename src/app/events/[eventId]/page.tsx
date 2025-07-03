@@ -83,12 +83,48 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
         const loadEvent = async () => {
             try {
                 const token = localStorage.getItem('authToken') || '';
-                console.log(eventId, token);
+                console.log(`Loading event data for ID: ${eventId}`);
+                
+                // Verify token presence
+                if (!token) {
+                    console.error('No auth token available');
+                    toast.error("Authentication required. Please log in to view events.");
+                    router.push('/login');
+                    return;
+                }
+                
+                console.log('Attempting to fetch event details from API...');
                 const eventData = await getEventById(eventId, token);
-                setEvent(eventData as Event);
+                
+                if (eventData) {
+                    console.log('Event data fetched successfully:', eventData.name);
+                    setEvent(eventData as Event);
+                } else {
+                    console.error('No event data returned from API');
+                    toast.error("Event not found. It may have been deleted or you don't have permission to view it.");
+                }
             } catch (error) {
-                console.error('Error loading events:', error);
-                toast.error("Failed to load your events. Please try again.");
+                console.error('Error loading event:', error);
+                
+                // More informative error messages based on error type
+                if (error instanceof Error) {
+                    if (error.message.includes('Network Error') || error.message.includes('connect')) {
+                        toast.error(
+                            "Network error: Cannot connect to the server. The API server might be down or not running.",
+                            { duration: 8000 }
+                        );
+                    } else if (error.message.includes('401') || error.message.includes('403') || 
+                               error.message.includes('Authentication')) {
+                        toast.error("Authentication error. Please log in again.", { duration: 5000 });
+                        router.push('/login');
+                    } else if (error.message.includes('404') || error.message.includes('not found')) {
+                        toast.error("Event not found. It may have been deleted or is not accessible.", { duration: 5000 });
+                    } else {
+                        toast.error(`Error: ${error.message}`, { duration: 5000 });
+                    }
+                } else {
+                    toast.error("Failed to load event details. Please try again.");
+                }
             } finally {
                 setIsLoading(false);
             }
@@ -315,13 +351,13 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                     </TabsList>
 
                     <TabsContent value="photos">
-                        {defaultAlbumId && (
-                            <PhotoGallery
-                                eventId={eventId}
-                                albumId={defaultAlbumId}
-                                canUpload={true}
-                            />
-                        )}
+                        {/* For Photos tab, we always render the gallery and explicitly set albumId to null */}
+                        {/* This ensures we show ALL photos from ALL albums in this event */}
+                        <PhotoGallery
+                            eventId={eventId}
+                            albumId={null} // Explicitly null to show all event photos
+                            canUpload={true}
+                        />
                     </TabsContent>
 
                     <TabsContent value="albums">

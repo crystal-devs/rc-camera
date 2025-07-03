@@ -8,7 +8,6 @@ const navItems = [
   { icon: <ImageIcon size={20} />, label: "Events", href: "/events" },
   { icon: <CameraIcon size={20} />, label: "Capture", href: "/capture" },
   { icon: <UserIcon size={20} />, label: "Profile", href: "/profile" },
-  { icon: <LifeBuoyIcon size={20} />, label: "Diagnostics", href: "/diagnostic" }
 ];
 
 export default function SidebarNav() {

@@ -55,19 +55,56 @@ export const fetchEvents = async (authToken: string): Promise<Event[]> => {
 // Get a single event by ID
 export const getEventById = async (eventId: string, authToken: string): Promise<Event | null> => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/event/${eventId}`, {
+    console.log(`Fetching event details for ID: ${eventId}`);
+    const url = `${API_BASE_URL}/event/${eventId}`;
+    console.log(`Making API request to: ${url}`);
+    
+    const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
+      timeout: 10000 // 10 seconds timeout for better UX
     });
 
+    console.log(`API response status: ${response.status}`);
+
     if (response.data && response.data.data) {
+      console.log('Event data received:', response.data.data);
       return mapApiEventToEvent(response.data.data[0]);
     }
     
+    console.warn('No event data found in API response:', response.data);
     return null;
   } catch (error) {
     console.error(`Error fetching event ${eventId}:`, error);
+    
+    if (axios.isAxiosError(error)) {
+      // Log more details about the error
+      if (error.code === 'ERR_NETWORK') {
+        console.error('Network error - API server may be down or not accessible');
+        console.error('API_BASE_URL:', API_BASE_URL);
+        throw new Error(`Network Error: Cannot connect to server at ${API_BASE_URL}. Make sure your API server is running.`);
+      }
+      
+      if (error.response) {
+        console.error('API error status:', error.response.status);
+        console.error('API error data:', error.response.data);
+        
+        if (error.response.status === 401 || error.response.status === 403) {
+          throw new Error('Authentication error. Please log in again.');
+        } else if (error.response.status === 404) {
+          throw new Error('Event not found. It may have been deleted or is not accessible.');
+        } else if (error.response.status >= 500) {
+          throw new Error(`Server error (${error.response.status}). Please try again later.`);
+        }
+      }
+      
+      if (error.message && error.message.includes('timeout')) {
+        throw new Error('Request timed out. The server may be overloaded or unresponsive.');
+      }
+    }
+    
+    // If we get here, rethrow with a generic message
     throw error;
   }
 };

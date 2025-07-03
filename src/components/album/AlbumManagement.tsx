@@ -402,8 +402,8 @@ export default function AlbumManagement({ eventId, initialAlbums, onAlbumCreated
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
               className="h-48 rounded-lg bg-gray-100 animate-pulse"
@@ -428,86 +428,96 @@ export default function AlbumManagement({ eventId, initialAlbums, onAlbumCreated
         </div>
       ) : (
         <ScrollArea className="h-[500px] pr-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {albums.map((album) => (
-              <Card
+              <div
                 key={album.id}
-                className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+                className="relative rounded-xl overflow-hidden cursor-pointer h-48 md:h-52 shadow-sm hover:shadow-md transition-shadow"
                 onClick={() => navigateToAlbum(album.id)}
               >
-                <div className="relative h-32 w-full">
+                {/* Card Background Image */}
+                <div className="absolute inset-0">
                   {album.cover_image ? (
-                    <div className="relative h-32 w-full">
-                      <Image
-                        src={album.cover_image}
-                        alt={album.name}
-                        fill
-                        className="object-cover"
-                        unoptimized={album.cover_image.startsWith('data:')} // Skip optimization for data URLs
-                      />
-                    </div>
+                    <Image
+                      src={album.cover_image}
+                      alt={album.name}
+                      fill
+                      className="object-cover"
+                      unoptimized={album.cover_image.startsWith('data:')} // Skip optimization for data URLs
+                    />
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">
                       <FolderIcon className="h-12 w-12 text-gray-300" />
                     </div>
                   )}
+
+                  {/* Gradient Overlay for Text Visibility */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
                 </div>
 
-                <CardHeader className="py-3">
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="text-lg font-medium truncate">
-                      {album.name}
-                      {album.isDefault && (
-                        <span className="ml-2 text-xs bg-gray-100 text-gray-600 py-0.5 px-1.5 rounded-full">
-                          Default
-                        </span>
-                      )}
-                    </CardTitle>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontalIcon className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigateToAlbum(album.id);
-                          }}
-                        >
-                          View Photos
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // Open upload dialog/page
-                            router.push(`/events/${eventId}/albums/${album.id}/upload`);
-                          }}
-                        >
-                          Upload Photos
-                        </DropdownMenuItem>
-                        {!album.isDefault && (
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteAlbum(album.id);
-                            }}
-                          >
-                            Delete Album
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                {/* Top Actions Row */}
+                <div className="absolute top-2 flex justify-between w-full px-2 z-10">
+                  {/* Photo Count */}
+                  <div className="flex items-center gap-1 bg-black/30 backdrop-blur-sm rounded-full py-1 px-2 text-white text-xs">
+                    <ImageIcon className="h-3 w-3" />
+                    <span>{album.photoCount ?? 0}</span>
                   </div>
-                </CardHeader>
+                  
+                  {album.isDefault && (
+                    <div className="flex items-center gap-1 bg-black/30 backdrop-blur-sm rounded-full py-1 px-2 text-white text-xs ml-1">
+                      <span>Default</span>
+                    </div>
+                  )}
+                </div>
 
-                <CardFooter className="py-3 text-sm text-gray-500">
-                  {album.photoCount ?? 0} {(album.photoCount ?? 0) === 1 ? 'photo' : 'photos'}
-                </CardFooter>
-              </Card>
+                {/* Menu (More Options) */}
+                <div className="absolute top-2 right-2 z-20">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 bg-black/30 backdrop-blur-sm hover:bg-white/50 text-white">
+                        <MoreHorizontalIcon className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigateToAlbum(album.id);
+                        }}
+                      >
+                        View Photos
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/events/${eventId}/albums/${album.id}/upload`);
+                        }}
+                      >
+                        Upload Photos
+                      </DropdownMenuItem>
+                      {!album.isDefault && (
+                        <DropdownMenuItem
+                          className="text-red-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteAlbum(album.id);
+                          }}
+                        >
+                          Delete Album
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Bottom Text Content */}
+                <div className="absolute bottom-0 left-0 right-0 p-3 text-white z-10">
+                  <h3 className="font-medium text-lg line-clamp-1">{album.name}</h3>
+                  {album.description && (
+                    <p className="text-sm line-clamp-1 opacity-90">{album.description}</p>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         </ScrollArea>

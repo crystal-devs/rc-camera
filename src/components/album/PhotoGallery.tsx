@@ -29,7 +29,7 @@ import {
 import { db } from '@/lib/db';
 import { toast } from "sonner";
 import PhotoInfoDialog from '@/components/photo/PhotoInfoDialog';
-import { uploadAlbumMedia } from '@/services/apis/media.api';
+import { uploadAlbumMedia, getAlbumMedia, getEventMedia, transformMediaToPhoto, deleteMedia } from '@/services/apis/media.api';
 import { useAuthToken } from '@/hooks/use-auth';
 import { getOrCreateDefaultAlbum } from '@/services/apis/albums.api';
 
@@ -69,7 +69,7 @@ const useSwipe = (onSwipeLeft: () => void, onSwipeRight: () => void) => {
 
 type Photo = {
   id: string;
-  albumId: string;
+  albumId: string | null; // Allow null for photos in event photos mode
   eventId: string;
   takenBy: number;
   imageUrl: string;
@@ -78,6 +78,9 @@ type Photo = {
   metadata?: {
     location?: { lat: number; lng: number };
     device?: string;
+    fileName?: string;
+    fileType?: string;
+    fileSize?: number;
   };
 };
 
@@ -149,71 +152,307 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [photoViewerOpen, navigateToPhoto]);
 
-  // Get default album if albumId is not provided
+  // Get default album if albumId is not provided and we're not in event photos mode
   useEffect(() => {
+    // Check if we're in event photos mode (albumId is explicitly null)
+    const isEventPhotosMode = albumId === null;
+
+    // Skip default album fetch in event photos mode or if missing requirements
+    if (isEventPhotosMode || !eventId) {
+      console.log(`Skipping default album fetch - ${isEventPhotosMode ? 'in event photos mode' : 'missing eventId'}`);
+      return;
+    }
+
+    // Get token from hook or localStorage
+    const authToken = token || localStorage.getItem('authToken');
+    if (!authToken) {
+      console.log('Skipping default album fetch - missing auth token');
+      return;
+    }
+
+    // Flag to track if component is mounted
+    let isMounted = true;
+
     const fetchDefaultAlbum = async () => {
+      // If albumId is explicitly provided, use it and don't fetch default
       if (albumId) {
-        setDefaultAlbumId(albumId);
+        if (isMounted) {
+          console.log(`Using provided albumId: ${albumId}`);
+          setDefaultAlbumId(albumId);
+        }
+        return;
+      }
+
+      // Skip the API call if we already have a defaultAlbumId
+      if (defaultAlbumId) {
+        console.log(`Already have defaultAlbumId: ${defaultAlbumId}`);
         return;
       }
 
       try {
-        // Get or create default album in one call
-        const defaultAlbum = await getOrCreateDefaultAlbum(eventId, token);
+        console.log(`Fetching default album for event ${eventId}`);
 
-        if (defaultAlbum) {
-          console.log('Found/created default album:', defaultAlbum.id);
-          setDefaultAlbumId(defaultAlbum.id);
-        } else {
-          console.error('Failed to get or create default album');
-          toast.error("Could not load album. Please try again later.");
+        // Get or create default album in one call
+        const defaultAlbum = await getOrCreateDefaultAlbum(eventId, authToken);
+
+        // Only update state if component is still mounted
+        if (isMounted) {
+          if (defaultAlbum) {
+            console.log('Found/created default album:', defaultAlbum.id);
+            setDefaultAlbumId(defaultAlbum.id);
+          } else {
+            console.error('Failed to get or create default album');
+            toast.error("Could not load album. Please try again later.");
+          }
         }
       } catch (error) {
-        console.error('Error fetching default album:', error);
-        toast.error("Error loading album. Please try again.");
+        // Only update state if component is still mounted
+        if (isMounted) {
+          console.error('Error fetching default album:', error);
+          toast.error("Error loading album. Please try again.");
+        }
       }
     };
 
     fetchDefaultAlbum();
-  }, [eventId, albumId, token]);
 
-  useEffect(() => {
-    const fetchDefaultAlbum = async () => {
-      if (albumId) {
-        setDefaultAlbumId(albumId);
-        return;
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId, albumId, token, defaultAlbumId]);
+
+  // Function to load photos from the backend API
+  const fetchPhotosFromAPI = useCallback(async () => {
+    console.log('asdfasdfasdfasdfasdfasdf');
+    // Get token from localStorage if not available through hook
+    const authToken = token || localStorage.getItem('authToken');
+    if (!authToken) {
+      console.error('No auth token available - please ensure you are logged in');
+      return false;
+    }
+
+    try {
+      let mediaItems;
+      // Store these values to avoid issues with state changes during the fetch
+      const currentAlbumId = albumId;
+      const currentDefaultAlbumId = defaultAlbumId;
+      const currentEventId = eventId;
+
+      // Log the fetch attempt with exact values we're using
+      console.log('Attempting to fetch photos with:', {
+        albumId: currentAlbumId,
+        defaultAlbumId: currentDefaultAlbumId,
+        eventId: currentEventId
+      });
+
+      // Prioritize by eventId if albumId is explicitly set to null - for the Photos tab in event page
+      if (currentAlbumId === null && currentEventId) {
+        // Intentionally fetch ALL photos for this event (across all albums)
+        console.log(`Intentionally fetching ALL photos for event: ${currentEventId} (Photos tab)`);
+        // Make sure to set includeAllAlbums=true to get photos from all albums in this event
+        mediaItems = await getEventMedia(currentEventId, authToken, true);
+      } else if (currentAlbumId || currentDefaultAlbumId) {
+        // Fetch photos for a specific album
+        const targetAlbumId = currentAlbumId || currentDefaultAlbumId;
+        if (targetAlbumId) {
+          console.log(`Fetching photos for album: ${targetAlbumId}`);
+          mediaItems = await getAlbumMedia(targetAlbumId, authToken);
+        } else {
+          console.error('Album ID is null, cannot fetch photos');
+          return false;
+        }
+      } else if (currentEventId) {
+        // Fetch all photos for an event (across all albums)
+        console.log(`Fetching photos for event: ${currentEventId}`);
+        mediaItems = await getEventMedia(currentEventId, authToken, true); // Explicitly set includeAllAlbums=true
+      } else {
+        console.error('No albumId, defaultAlbumId, or eventId provided');
+        return false;
       }
 
-      try {
-        setIsLoading(true);
-        // Get or create default album in one call
-        const defaultAlbum = await getOrCreateDefaultAlbum(eventId, token);
+      // Transform API media items to your app's photo format
+      if (mediaItems && Array.isArray(mediaItems)) {
+        const transformedPhotos = mediaItems.map(transformMediaToPhoto);
+        console.log(`Successfully fetched ${transformedPhotos.length} photos from API`);
 
-        if (defaultAlbum) {
-          console.log('Found/created default album:', defaultAlbum.id);
-          setDefaultAlbumId(defaultAlbum.id);
+        // Only update state if the component is still mounted and using the same IDs
+        // This prevents state updates if props changed during the async operation
+        if (currentAlbumId === albumId && currentDefaultAlbumId === defaultAlbumId &&
+          currentEventId === eventId) {
+          setPhotos(transformedPhotos);
+          return true;
         } else {
-          console.error('Failed to get or create default album');
-          toast.error("Could not load album. Please try again later.");
+          console.warn('Component props changed during fetch, skipping state update');
+          return false;
+        }
+      }
+
+      return false;
+    } catch (error) {
+      console.error('Error fetching photos from API:', error);
+      return false;
+    }
+  }, [token, albumId, defaultAlbumId, eventId]);
+
+  // Load photos when component mounts or dependencies change
+  useEffect(() => {
+    // Flag to track if component is mounted
+    let isMounted = true;
+
+    const loadPhotos = async () => {
+      // If values have changed since effect was triggered, don't proceed
+      if (!isMounted) return;
+
+      setIsLoading(true);
+
+      try {
+        // Capture current values to ensure we're using consistent values throughout the async operation
+        const currentAlbumId = albumId;
+        const currentDefaultAlbumId = defaultAlbumId;
+        const currentEventId = eventId;
+
+        // Log exact params we're using for fetch
+        console.log('Loading photos with params:', {
+          albumId: currentAlbumId === null ? 'null (event photos mode)' : currentAlbumId,
+          defaultAlbumId: currentDefaultAlbumId,
+          eventId: currentEventId
+        });
+
+        // Check if we're in event photos mode (albumId explicitly set to null)
+        const isEventPhotosMode = currentAlbumId === null && currentEventId;
+
+        // Only proceed if we have the necessary IDs or we're in event photos mode
+        if (!isEventPhotosMode && !currentAlbumId && !currentDefaultAlbumId && !currentEventId) {
+          console.warn('No albumId, defaultAlbumId, or eventId available for photo loading');
+          setIsLoading(false);
+          return;
+        }
+
+        // First try to fetch from the backend API
+        const apiSuccess = await fetchPhotosFromAPI();
+
+        // Check if component is still mounted and using same IDs
+        if (!isMounted ||
+          currentAlbumId !== albumId ||
+          currentDefaultAlbumId !== defaultAlbumId ||
+          currentEventId !== eventId) {
+          console.log('Component state changed during API fetch, aborting');
+          return;
+        }
+
+        if (!apiSuccess) {
+          console.log('API fetch failed or returned no data, falling back to local DB');
+          // Fallback to local database
+          try {
+            // Check if we're in event photos mode (explicitly set to show all photos for an event)
+            const isEventPhotosMode = currentAlbumId === null && currentEventId;
+
+            // If in event photos mode or no album ID available, fetch by eventId
+            if (isEventPhotosMode || (currentEventId && !currentAlbumId && !currentDefaultAlbumId)) {
+              console.log(`Loading photos for event ID ${currentEventId} from local DB (event photos mode)`);
+              // For eventId with no album specified, try to find photos by eventId
+              const eventPhotos = await db.photos
+                .where('eventId')
+                .equals(currentEventId)
+                .reverse()
+                .sortBy('createdAt');
+
+              // Check if component is still mounted and using same IDs before updating state
+              if (isMounted && currentEventId === eventId) {
+                console.log(`Loaded ${eventPhotos.length} event photos from local database`);
+                setPhotos(eventPhotos);
+              }
+            } else {
+              // For album mode, we need an albumId
+              const targetAlbumId = currentAlbumId || currentDefaultAlbumId;
+
+              if (targetAlbumId) {
+                const albumPhotos = await db.photos
+                  .where('albumId')
+                  .equals(targetAlbumId)
+                  .reverse()
+                  .sortBy('createdAt');
+
+                // Check if component is still mounted and using same IDs before updating state
+                if (isMounted && currentAlbumId === albumId && currentDefaultAlbumId === defaultAlbumId) {
+                  console.log(`Loaded ${albumPhotos.length} photos from local database for album ${targetAlbumId}`);
+                  setPhotos(albumPhotos);
+                }
+              }
+            }
+          } catch (dbError) {
+            if (isMounted) {
+              console.error('Error loading photos from local DB:', dbError);
+              toast.error("Failed to load photos from local storage");
+            }
+          }
         }
       } catch (error) {
-        console.error('Error fetching default album:', error);
-        toast.error("Error loading album. Please try again.");
+        if (isMounted) {
+          console.error('Error in photo loading process:', error);
+          toast.error("Failed to load photos");
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
-    fetchDefaultAlbum();
-  }, [eventId, albumId, token]);
+    // Check if we're in event photos mode (albumId is explicitly null, meaning show all event photos)
+    const isEventPhotosMode = albumId === null && eventId;
+
+    // Only load photos if we have necessary props
+    // We should load photos if:
+    // 1. We're in event photos mode (albumId is null and we have eventId)
+    // 2. We have an explicit albumId
+    // 3. We have a defaultAlbumId
+    // 4. We have an eventId (as fallback)
+    if ((isEventPhotosMode || albumId || (defaultAlbumId && defaultAlbumId !== null) || eventId) && !isLoading) {
+      console.log(`Loading photos with: albumId=${albumId}, defaultAlbumId=${defaultAlbumId}, eventId=${eventId}, isEventPhotosMode=${isEventPhotosMode}`);
+    }
+    loadPhotos();
+
+    // Simulated realtime updates (polling) - in a real app this would be WebSockets
+    let intervalId: NodeJS.Timeout | null = null;
+    if (isRealtime) {
+      intervalId = setInterval(() => {
+        if (isMounted && !isLoading) {
+          fetchPhotosFromAPI().catch(err => {
+            if (isMounted) console.error('Error in interval photo fetch:', err);
+          });
+        }
+      }, 30000); // Poll every 30 seconds
+      realtimeInterval.current = intervalId;
+    }
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      if (realtimeInterval.current) {
+        clearInterval(realtimeInterval.current);
+      }
+    };
+    // Removed isLoading from dependency array to prevent infinite loops
+  }, [albumId, defaultAlbumId, eventId, fetchPhotosFromAPI, isRealtime]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    // Ensure we have an albumId to use (either provided or default)
-    const targetAlbumId = albumId || defaultAlbumId;
-    if (!targetAlbumId) {
+    // Check if we're in event photos mode (albumId is explicitly null)
+    const isEventPhotosMode = albumId === null && eventId;
+
+    // When in event photos mode, we'll let the backend choose the default album
+    // Otherwise, ensure we have an albumId to use (either provided or default)
+    const targetAlbumId = isEventPhotosMode ? null : (albumId || defaultAlbumId);
+
+    // In event photos mode we don't need an albumId, otherwise we do
+    if (!isEventPhotosMode && !targetAlbumId) {
       toast.error("No album available for uploading. Please try again later.");
       return;
     }
@@ -227,7 +466,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
     try {
       setIsUploading(true);
       setUploadDialogOpen(false);
-      
+
       // Show initial upload toast with progress indication
       const uploadingToast = toast.loading(`Preparing ${files.length} photo${files.length > 1 ? 's' : ''} for upload...`);
 
@@ -239,7 +478,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
           console.error(`Invalid file type: ${file.type} for file ${file.name}`);
           return false;
         }
-        
+
         // Check file size (max 10MB)
         const maxSize = 10 * 1024 * 1024; // 10MB
         if (file.size > maxSize) {
@@ -248,10 +487,10 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
           console.error(`File too large: ${sizeMB}MB exceeds limit of 10MB`);
           return false;
         }
-        
+
         return true;
       });
-      
+
       if (validFiles.length === 0) {
         toast.dismiss(uploadingToast);
         toast.error("No valid image files to upload.");
@@ -267,16 +506,16 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
 
       // Track upload progress
       let completedUploads = 0;
-      
+
       // Process each file
       const results = await Promise.allSettled(
         validFiles.map(async (file, index) => {
           try {
             console.log(`Uploading file ${index + 1}/${validFiles.length}: ${file.name} (${file.size} bytes) to album ${targetAlbumId}`);
-            
+
             // Upload to API, passing both albumId and eventId for better server-side handling
             const uploadedData = await uploadAlbumMedia(file, targetAlbumId, token, eventId);
-            
+
             // Update progress
             completedUploads++;
             toast.dismiss(progressToast);
@@ -285,15 +524,20 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
               duration: 60000
             });
 
-            // Create photo record for local storage
-            const photoId = uuidv4();
-            const newPhoto = {
+            // Create photo record with data from API response
+            const photoId = uploadedData._id || uploadedData.id || uuidv4();
+
+            // Get the actual albumId from the response, or use our targetAlbumId
+            // The server might have assigned it to the default album
+            const responseAlbumId = uploadedData.album_id || targetAlbumId;
+
+            const newPhoto: Photo = {
               id: photoId,
-              albumId: targetAlbumId,
+              albumId: responseAlbumId,
               eventId,
               takenBy: userId,
               imageUrl: uploadedData.url, // URL from API response
-              thumbnail: uploadedData.thumbnail_url, // Assuming API provides thumbnail URL
+              thumbnail: uploadedData.thumbnail_url || uploadedData.url, // Assuming API provides thumbnail URL
               createdAt: new Date(),
               metadata: {
                 device: navigator.userAgent,
@@ -303,7 +547,24 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
               }
             };
 
-            await db.photos.add(newPhoto);
+            try {
+              // Only store in local DB if we have a valid albumId (DB schema might require it)
+              if (newPhoto.albumId) {
+                await db.photos.add({
+                  ...newPhoto,
+                  albumId: newPhoto.albumId // Ensure it's not null for DB
+                });
+                console.log('Added photo to local DB:', newPhoto);
+              } else {
+                console.log('Skipping local DB storage as albumId is null');
+              }
+            } catch (dbError) {
+              console.warn('Failed to add to local DB, continuing:', dbError);
+            }
+
+            // Also immediately add to the UI
+            setPhotos(prevPhotos => [newPhoto, ...prevPhotos]);
+
             return newPhoto;
           } catch (error) {
             console.error(`Error uploading file ${file.name}:`, error);
@@ -315,32 +576,32 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
       // Process results
       const successfulUploads = results.filter(r => r.status === 'fulfilled');
       const failedUploads = results.filter(r => r.status === 'rejected');
-      
+
       // Get the new photos
       const newPhotos = successfulUploads.map(r => (r as PromiseFulfilledResult<any>).value);
-      
+
       // Update state with new photos if any succeeded
       if (newPhotos.length > 0) {
         setPhotos(prev => [...newPhotos, ...prev]);
       }
-      
+
       // Show appropriate toast messages for the final result
       toast.dismiss(progressToast);
-      
+
       if (successfulUploads.length > 0) {
         toast.success(`${successfulUploads.length} photo${successfulUploads.length > 1 ? 's' : ''} uploaded successfully.`);
       }
-      
+
       if (failedUploads.length > 0) {
         // Show specific error for each failed upload
         toast.error(`Failed to upload ${failedUploads.length} photo${failedUploads.length > 1 ? 's' : ''}.`);
-        
+
         // Log detailed errors and show in UI
         failedUploads.forEach((result, i) => {
           const error = (result as PromiseRejectedResult).reason;
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
           console.error(`Failed upload #${i + 1}:`, error);
-          
+
           // Show individual error messages for each failed file
           if (i < 3) { // Limit to first 3 errors to avoid spam
             toast.error(`Upload failed: ${errorMessage}`, {
@@ -349,12 +610,12 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
             });
           }
         });
-        
+
         // If we have many failed uploads, provide guidance
         if (failedUploads.length > 3) {
           toast.error(`Check browser console for details on all ${failedUploads.length} failed uploads.`);
         }
-        
+
         // If all uploads failed due to server errors, suggest using diagnostic tool
         if (failedUploads.length === validFiles.length) {
           toast.error(
@@ -375,18 +636,18 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
       console.error('Error uploading photos:', error);
       const errorMessage = error instanceof Error ? error.message : "There was an error uploading your photos.";
       toast.error(errorMessage, { duration: 8000 });
-      
+
       // Additional debug information
       if (error instanceof Error) {
         console.error('Stack trace:', error.stack);
       }
-      
+
       // Add a clickable toast that links to the diagnostic page
       toast.error(
         <div onClick={() => window.location.href = '/diagnostic'} className="cursor-pointer">
           Click here to visit the diagnostics page for troubleshooting help.
         </div>,
-        { 
+        {
           duration: 10000,
           id: 'diagnostics-link'
         }
@@ -398,6 +659,21 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
 
   const deletePhoto = async (photoId: string) => {
     try {
+      // Show a loading toast
+      const loadingToast = toast.loading("Deleting photo...");
+
+      // First try to delete from the backend API
+      if (token) {
+        try {
+          await deleteMedia(photoId, token);
+          console.log('Successfully deleted photo from backend');
+        } catch (apiError) {
+          console.error('Error deleting photo from backend:', apiError);
+          // Continue with local deletion even if API delete fails
+        }
+      }
+
+      // Then delete from local DB
       await db.photos
         .where('id')
         .equals(photoId)
@@ -412,7 +688,9 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
         setPhotoViewerOpen(false);
       }
 
-      toast("The photo has been removed from the album.");
+      // Dismiss loading toast and show success
+      toast.dismiss(loadingToast);
+      toast.success("The photo has been removed from the album.");
     } catch (error) {
       console.error('Error deleting photo:', error);
       toast.error("There was an error deleting the photo.");
@@ -584,7 +862,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
           )}
         </div>
 
-        {canUpload && (defaultAlbumId || albumId) && (
+        {canUpload && (defaultAlbumId || albumId !== undefined || albumId === null) && (
           <div className="flex space-x-2">
             <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
               <DialogTrigger asChild>
@@ -689,7 +967,8 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
             <Skeleton key={i} className="aspect-square rounded-lg" />
           ))}
         </div>
-      ) : !defaultAlbumId && !albumId ? (
+      ) : !defaultAlbumId && !albumId && albumId !== null && !eventId ? (
+        // Only show "Loading Album..." when we're not in event photos mode
         <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed rounded-lg">
           <div className="bg-gray-100 p-4 rounded-full mb-4">
             <CameraIcon className="h-8 w-8 text-gray-400" />

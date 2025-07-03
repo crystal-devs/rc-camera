@@ -1,5 +1,7 @@
 'use client';
 
+import { SidebarProvider } from "./ui/sidebar";
+
 interface ProvidersProps {
     children: React.ReactNode;
 }
@@ -7,7 +9,10 @@ interface ProvidersProps {
 function Providers({ children }: ProvidersProps) {
     return (
         <>
-            {children}
+            <SidebarProvider>
+                {children}
+            </SidebarProvider>
+
         </>
     );
 }
