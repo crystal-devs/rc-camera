@@ -63,7 +63,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
               <div className="bg-primary/10 p-1 rounded-md">
                 <CameraIcon size={24} className="text-primary" />
               </div>
-              <h2 className="text-lg font-semibold">RC Photo</h2>
+              {/* <h2 className="text-lg font-semibold">RC Photo</h2> */}
             </div>
             <div className="flex-1" />
             <SidebarTrigger />
@@ -109,7 +109,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
       
       {/* Main content area with proper inset styling */}
       <SidebarInset className="bg-background">
-        <main className="flex-1 px-4 py-4 md:px-6 md:py-6">
+        <main className="flex-1 sm:px-4 sm:py-4 md:px-6 md:py-6">
           {children}
         </main>
       </SidebarInset>

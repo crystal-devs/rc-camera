@@ -90,48 +90,6 @@ export default function EventsPage() {
       }finally{
         setIsLoading(false);
       }
-      // try {
-      //   // Get all events for this user
-      //   let allEvents = await db.events
-      //     .where('createdById')
-      //     .equals(userId)
-      //     .toArray();
-
-      //   // Add photo and album counts
-      //   const eventsWithCounts = await Promise.all(
-      //     allEvents.map(async (event) => {
-      //       // Get albums for this event
-      //       const albums = await db.albums
-      //         .where('eventId')
-      //         .equals(event.id)
-      //         .toArray();
-
-      //       // Get total photo count across all albums
-      //       let totalPhotos = 0;
-      //       for (const album of albums) {
-      //         const photoCount = await db.photos
-      //           .where('albumId')
-      //           .equals(album.id)
-      //           .count();
-
-      //         totalPhotos += photoCount;
-      //       }
-
-      //       return {
-      //         ...event,
-      //         albumCount: albums.length,
-      //         photoCount: totalPhotos
-      //       };
-      //     })
-      //   );
-
-      //   setEvents(eventsWithCounts);
-      // } catch (error) {
-      //   console.error('Error loading events:', error);
-      //   toast.error("Failed to load your events. Please try again.");
-      // } finally {
-      //   setIsLoading(false);
-      // }
     };
 
     loadEvents();
@@ -401,11 +359,11 @@ export default function EventsPage() {
                 </div>
 
                 {/* Past Event Indicator */}
-                {!event.isActive && (
+                {/* {!event.isActive && (
                   <div className="absolute top-2 left-2 bg-gray-900/70 text-white text-xs py-1 px-2 rounded-full">
                     Past Event
                   </div>
-                )}
+                )} */}
 
                 {/* Bottom Text Content */}
                 <div className="absolute bottom-0 left-0 right-0 p-3 text-white z-10">

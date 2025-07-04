@@ -15,6 +15,7 @@ import {
   ChevronRightIcon,
   ArrowLeftIcon
 } from 'lucide-react';
+import { useFullscreen } from '@/lib/FullscreenContext';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -145,6 +146,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
         navigateToPhoto('prev');
       } else if (e.key === 'Escape') {
         setPhotoViewerOpen(false);
+        setIsFullscreen(false);
       }
     };
 
@@ -562,9 +564,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
               console.warn('Failed to add to local DB, continuing:', dbError);
             }
 
-            // Also immediately add to the UI
-            setPhotos(prevPhotos => [newPhoto, ...prevPhotos]);
-
+            // Don't add to UI here, we'll do it once after all uploads complete
             return newPhoto;
           } catch (error) {
             console.error(`Error uploading file ${file.name}:`, error);
@@ -582,6 +582,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
 
       // Update state with new photos if any succeeded
       if (newPhotos.length > 0) {
+        // Only update state once with all new photos
         setPhotos(prev => [...newPhotos, ...prev]);
       }
 
@@ -717,29 +718,69 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
     setSelectedPhoto(photo);
     setSelectedPhotoIndex(index);
     setPhotoViewerOpen(true);
+    // Always go directly to fullscreen
+    setIsFullscreen(true);
   };
 
-  // Component for the full-screen mobile photo viewer
+  // Component for the full-screen photo viewer
   const FullscreenPhotoViewer = () => {
+    const { setIsFullscreenActive } = useFullscreen();
+    
     if (!selectedPhoto) return null;
+    
+    // Track double tap for mobile
+    const lastTapRef = useRef<number>(0);
+    
+    // Set fullscreen active on component mount
+    useEffect(() => {
+      setIsFullscreenActive(true);
+      return () => setIsFullscreenActive(false);
+    }, [setIsFullscreenActive]);
+    
+    const handleTap = () => {
+      const now = Date.now();
+      const DOUBLE_TAP_DELAY = 300;
+      
+      if (lastTapRef.current && (now - lastTapRef.current) < DOUBLE_TAP_DELAY) {
+        // Double tap detected - close the viewer
+        setIsFullscreen(false);
+        setPhotoViewerOpen(false);
+        lastTapRef.current = 0;
+      } else {
+        // First tap
+        lastTapRef.current = now;
+      }
+    };
 
     return (
       <div
-        className="fixed inset-0 z-50 bg-black flex flex-col"
+        className="fixed inset-0 z-50 bg-black flex flex-col touch-none"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onClick={handleTap}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 text-white">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-white"
-            onClick={() => setIsFullscreen(false)}
-          >
-            <ArrowLeftIcon className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white bg-black/30 rounded-full"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsFullscreen(false);
+                setPhotoViewerOpen(false);
+              }}
+            >
+              <ArrowLeftIcon className="h-5 w-5" />
+            </Button>
+            
+            {/* Photo counter */}
+            {selectedPhotoIndex !== null && (
+              <span className="text-sm opacity-80">{selectedPhotoIndex + 1} of {photos.length}</span>
+            )}
+          </div>
 
           <div className="flex space-x-1">
             <Button
@@ -802,19 +843,23 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:flex absolute left-4 top-1/2 transform -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-black/30 text-white"
-            onClick={() => navigateToPhoto('prev')}
+            className="hidden md:flex absolute left-4 top-1/2 transform -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white"
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent double-tap from triggering
+              navigateToPhoto('prev');
+            }}
           >
             <ChevronLeftIcon className="h-6 w-6" />
           </Button>
 
-          {/* Image */}
+          {/* Image - full screen */}
           <div className="h-full w-full flex items-center justify-center bg-black">
             <Image
               src={selectedPhoto.imageUrl}
               alt="Photo"
               fill
               className="object-contain"
+              priority
             />
           </div>
 
@@ -822,38 +867,25 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:flex absolute right-4 top-1/2 transform -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-black/30 text-white"
-            onClick={() => navigateToPhoto('next')}
+            className="hidden md:flex absolute right-4 top-1/2 transform -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white"
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent double-tap from triggering
+              navigateToPhoto('next');
+            }}
           >
             <ChevronRightIcon className="h-6 w-6" />
           </Button>
         </div>
-
-        {/* Footer with photo info */}
-        <div className="p-4 text-xs text-gray-300">
-          <div className="flex items-center justify-between">
-            <div>
-              {selectedPhotoIndex !== null && (
-                <span>{selectedPhotoIndex + 1} of {photos.length}</span>
-              )}
-            </div>
-
-            <div>
-              <time>
-                {selectedPhoto.createdAt.toLocaleDateString()}
-              </time>
-            </div>
-          </div>
-        </div>
+        
+        {/* No footer - removed for cleaner fullscreen experience */}
       </div>
     );
   };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 px-4">
         <div className="flex items-center">
-          <h2 className="text-2xl font-bold">Photos</h2>
           {isRealtime && (
             <div className="flex items-center ml-3 bg-green-50 text-green-700 text-xs px-2 py-1 rounded-full">
               <span className="h-2 w-2 bg-green-500 rounded-full mr-1.5"></span>
@@ -962,7 +994,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
       </div>
 
       {isLoading || isUploading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-8 gap-2 sm:gap-3 md:gap-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
             <Skeleton key={i} className="aspect-square rounded-lg" />
           ))}
@@ -1004,17 +1036,14 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
       ) : (
         <>
           {/* Optimized responsive grid with smaller gaps on mobile */}
-          <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 gap-1 sm:gap-2 md:gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-8 gap-1 sm:gap-2 md:gap-3 px-4">
             {photos.map((photo, index) => (
               <div
                 key={photo.id}
                 className="relative aspect-square bg-gray-100 cursor-pointer overflow-hidden"
                 onClick={() => {
+                  // Always go straight to fullscreen view
                   openPhotoViewer(photo, index);
-                  // On mobile, go straight to fullscreen
-                  if (window.innerWidth < 768) {
-                    setIsFullscreen(true);
-                  }
                 }}
               >
                 <Image
@@ -1029,141 +1058,10 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
             ))}
           </div>
 
-          {/* Desktop Dialog Photo Viewer */}
-          {!isFullscreen && (
-            <Dialog open={photoViewerOpen} onOpenChange={setPhotoViewerOpen}>
-              <DialogContent className="sm:max-w-3xl h-[80vh] flex flex-col p-0 gap-0">
-                {selectedPhoto && (
-                  <>
-                    <div className="flex items-center justify-between p-4 border-b">
-                      <DialogTitle>Photo Details</DialogTitle>
-                      <div className="flex items-center space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setIsFullscreen(true)}
-                        >
-                          <div className="h-4 w-4 border-2 border-current" />
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => downloadPhoto(selectedPhoto)}
-                        >
-                          <DownloadIcon className="h-4 w-4" />
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const shareUrl = `${window.location.origin}/shared/photos/${selectedPhoto.id}`;
-
-                            if (navigator.share) {
-                              navigator.share({
-                                title: 'Check out this photo',
-                                url: shareUrl
-                              });
-                            } else {
-                              navigator.clipboard.writeText(shareUrl);
-                              toast("Share link copied to clipboard");
-                            }
-                          }}
-                        >
-                          <ShareIcon className="h-4 w-4" />
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-red-500"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deletePhoto(selectedPhoto.id);
-                          }}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setPhotoViewerOpen(false)}
-                        >
-                          <XIcon className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div
-                      className="flex-1 relative overflow-hidden"
-                      onTouchStart={onTouchStart}
-                      onTouchMove={onTouchMove}
-                      onTouchEnd={onTouchEnd}
-                    >
-                      {/* Navigation arrows for desktop */}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute left-2 top-1/2 transform -translate-y-1/2 z-10 h-9 w-9 rounded-full bg-black/30 text-white"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigateToPhoto('prev');
-                        }}
-                      >
-                        <ChevronLeftIcon className="h-5 w-5" />
-                      </Button>
-
-                      <Image
-                        src={selectedPhoto.imageUrl}
-                        alt="Photo"
-                        fill
-                        className="object-contain"
-                      />
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 z-10 h-9 w-9 rounded-full bg-black/30 text-white"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigateToPhoto('next');
-                        }}
-                      >
-                        <ChevronRightIcon className="h-5 w-5" />
-                      </Button>
-                    </div>
-
-                    <div className="p-4 border-t text-sm">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-gray-500">Uploaded </span>
-                          <time className="text-gray-700">
-                            {selectedPhoto.createdAt.toLocaleDateString()} at {selectedPhoto.createdAt.toLocaleTimeString()}
-                          </time>
-                        </div>
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center text-gray-500 text-xs"
-                          onClick={() => setPhotoInfoOpen(true)}
-                        >
-                          <InfoIcon className="h-3 w-3 mr-1" />
-                          Photo Info
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </DialogContent>
-            </Dialog>
-          )}
-
-          {/* Mobile Fullscreen Photo Viewer */}
-          {isFullscreen && selectedPhoto && <FullscreenPhotoViewer />}
+          {/* We've removed the modal dialog and now go straight to fullscreen */}
+          
+          {/* Fullscreen Photo Viewer - shown on both mobile and desktop */}
+          {photoViewerOpen && selectedPhoto && <FullscreenPhotoViewer />}
 
           {/* Photo Info Dialog */}
           {selectedPhoto && (

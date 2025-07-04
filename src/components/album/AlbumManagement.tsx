@@ -402,7 +402,7 @@ export default function AlbumManagement({ eventId, initialAlbums, onAlbumCreated
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
@@ -428,7 +428,7 @@ export default function AlbumManagement({ eventId, initialAlbums, onAlbumCreated
         </div>
       ) : (
         <ScrollArea className="h-[500px] pr-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {albums.map((album) => (
               <div
                 key={album.id}

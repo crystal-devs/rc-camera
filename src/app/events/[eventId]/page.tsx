@@ -33,6 +33,7 @@ import PhotoGallery from '@/components/album/PhotoGallery';
 import AlbumManagement from '@/components/album/AlbumManagement';
 import EventHeader from '@/components/event/EventHeader';
 import EventHeaderDetails from '@/components/event/EventDetailsHeader';
+import EventCoverSection from '@/components/event/EventCoverSection';
 import { getEventById } from '@/services/apis/events.api';
 import { fetchEventAlbums } from '@/services/apis/albums.api';
 import { Album, ApiAlbum } from '@/types/album';
@@ -224,11 +225,17 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
     };
 
     const getShareUrl = () => {
-        return `${window.location.origin}/join?event=${eventId}&code=${event?.accessCode || ''}`;
+        // When sharing, include the access code only for restricted events
+        if (event?.accessType === 'restricted') {
+            return `${window.location.origin}/join?event=${eventId}&code=${event?.accessCode || ''}`;
+        }
+        // For public events, no need to include access code
+        return `${window.location.origin}/join?event=${eventId}`;
     };
 
     const copyShareLink = () => {
         navigator.clipboard.writeText(getShareUrl());
+        toast.success("Share link copied to clipboard");
     };
 
     if (isLoading) {
@@ -250,7 +257,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
 
     if (!event) {
         return (
-            <div className="container mx-auto px-4 py-16 text-center">
+            <div className="container mx-auto px-2 py-8 sm:px-4 sm:py-16 text-center">
                 <h1 className="text-2xl font-bold mb-4">Event Not Found</h1>
                 <p className="text-gray-500 mb-6">
                     The event you're looking for doesn't exist or has been removed.
@@ -261,13 +268,16 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
     }
 
     return (
-        <div className="w-full pb-20">
-            {/* New Header Component */}
+        <div className="w-full pb-16 sm:pb-20">
+            {/* Sticky Header */}
             <EventHeaderDetails event={event} />
+            
+            {/* Cover Image Section */}
+            <EventCoverSection event={event} />
 
-            <div className="container mx-auto px-4 py-6">
+            <div className="mx-auto px-2 py-4 sm:px-2 sm:py-2">
                 {/* Event Info Section - Simplified */}
-                <div className="flex flex-wrap gap-3 mb-6">
+                <div className="flex flex-wrap gap-3 mb-4 sm:mb-6">
                     <div className="flex items-center text-sm text-gray-600">
                         <CalendarIcon className="h-4 w-4 mr-1.5" />
                         {new Date(event.date).toLocaleDateString()}
@@ -282,11 +292,11 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 </div>
 
                 {event.description && (
-                    <p className="text-gray-700 mb-6">{event.description}</p>
+                    <p className="text-gray-700 mb-4 sm:mb-6">{event.description}</p>
                 )}
 
                 {/* Action Buttons - Mobile Responsive */}
-                <div className="flex flex-wrap gap-2 mb-6">
+                <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
                     <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
                         <DialogTrigger asChild>
                             <Button variant="outline" className="sm:flex items-center">

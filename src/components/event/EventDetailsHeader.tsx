@@ -1,56 +1,176 @@
-// Redesigned Event Header Component
-import Image from 'next/image';
-import EventHeader from './EventHeader';
+// Slim Sticky Header Component
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { ChevronLeftIcon, BookmarkIcon, HeartIcon, ShareIcon, MoreHorizontalIcon } from 'lucide-react';
+import { 
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger 
+} from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
+import { db } from '@/lib/db';
 
 interface EventHeaderProps {
     event: {
         id: string;
         name: string;
-        location?: string;
-        cover_image?: string;
-        template?: string;
         isFavorite?: boolean;
     };
 }
 
-export default function EventHeaderDetails({ event }: EventHeaderProps) {
+export default function EventDetailsHeader({ event }: EventHeaderProps) {
+    const router = useRouter();
+    const [isFavorite, setIsFavorite] = useState(event.isFavorite || false);
 
+    const toggleFavorite = () => {
+        setIsFavorite(!isFavorite);
+        // Here you would save the favorite status to your database
+    };
+    
+    const copyShareLink = () => {
+        const shareUrl = `${window.location.origin}/join?event=${event.id}`;
+        navigator.clipboard.writeText(shareUrl);
+        toast.success("Link copied to clipboard");
+    };
+    
+    const handleDeleteEvent = async () => {
+        if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
+            try {
+                // In a real app, you'd delete all related data too
+                await db.events.delete(event.id);
+                router.push('/events');
+                toast.success("The event has been permanently removed.");
+            } catch (error) {
+                console.error('Error deleting event:', error);
+                toast.error("Failed to delete the event");
+            }
+        }
+    };
 
     return (
-        <div className="relative w-full h-72 sm:h-80 md:h-96 lg:max-h-52">
-            <EventHeader event={event} />
-            {/* Background Image with Gradient Overlay */}
-            <div className="absolute inset-0 ">
-                {event.cover_image ? (
-                    <Image
-                        src={event.cover_image}
-                        alt={event.name}
-                        fill
-                        className="object-cover"
-                        priority
-                    />
-                ) : (
-                    <div className="flex items-center justify-center h-full bg-gray-800">
-                        {event.template === 'wedding' && <span className="text-8xl">💍</span>}
-                        {event.template === 'birthday' && <span className="text-8xl">🎂</span>}
-                        {event.template === 'concert' && <span className="text-8xl">🎵</span>}
-                        {event.template === 'corporate' && <span className="text-8xl">👔</span>}
-                        {event.template === 'vacation' && <span className="text-8xl">🏖️</span>}
-                        {(!event.template || event.template === 'custom') && <span className="text-8xl">📸</span>}
-                    </div>
-                )}
-                {/* Gradient overlay for better text visibility */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20"></div>
+        <div className="sticky top-0 z-30 w-full bg-white/80 backdrop-blur-md shadow-sm">
+            {/* Desktop Header */}
+            <div className="hidden sm:flex items-center justify-between px-4 py-3">
+                <div className="flex items-center">
+                    {/* No back button on desktop */}
+                    <h1 className="text-lg font-semibold truncate max-w-[300px] md:max-w-[400px]">{event.name}</h1>
+                </div>
+                
+                {/* Right side actions - desktop */}
+                <div className="flex gap-2">
+                    {/* Like/Heart Button */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-9 w-9 rounded-full ${isFavorite ? 'text-green-400' : ''}`}
+                        onClick={toggleFavorite}
+                    >
+                        <HeartIcon className="h-4 w-4" fill={isFavorite ? "currentColor" : "none"} />
+                    </Button>
+                    
+                    {/* Share Button */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-full"
+                        onClick={copyShareLink}
+                    >
+                        <ShareIcon className="h-4 w-4" />
+                    </Button>
+                    
+                    {/* More Options Dropdown */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 rounded-full"
+                            >
+                                <MoreHorizontalIcon className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => router.push(`/events/${event.id}/edit`)}>
+                                Edit Event
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => router.push(`/events/${event.id}/guests`)}>
+                                Manage Guests
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                className="text-red-600"
+                                onClick={handleDeleteEvent}
+                            >
+                                Delete Event
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             </div>
-
-
-
-            {/* Event Title and Location */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 text-white z-10">
-                <h1 className="text-3xl md:text-4xl font-bold mb-1 font-cursive">{event.name}</h1>
-                {event.location && (
-                    <div className="text-sm md:text-base opacity-90">{event.location}</div>
-                )}
+            
+            {/* Mobile Header */}
+            <div className="sm:hidden flex items-center justify-between px-2 py-2">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 rounded-full"
+                    onClick={() => router.back()}
+                >
+                    <ChevronLeftIcon className="h-5 w-5" />
+                </Button>
+                
+                <h1 className="text-base font-semibold truncate max-w-[160px]">{event.name}</h1>
+                
+                {/* Right side actions - mobile */}
+                <div className="flex gap-1">
+                    {/* Like/Heart Button */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-9 w-9 rounded-full ${isFavorite ? 'text-green-400' : ''}`}
+                        onClick={toggleFavorite}
+                    >
+                        <HeartIcon className="h-4 w-4" fill={isFavorite ? "currentColor" : "none"} />
+                    </Button>
+                
+                    {/* Share Button */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-full"
+                        onClick={copyShareLink}
+                    >
+                        <ShareIcon className="h-4 w-4" />
+                    </Button>
+                    
+                    {/* More Options Dropdown */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 rounded-full"
+                            >
+                                <MoreHorizontalIcon className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => router.push(`/events/${event.id}/edit`)}>
+                                Edit Event
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => router.push(`/events/${event.id}/guests`)}>
+                                Manage Guests
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                className="text-red-600"
+                                onClick={handleDeleteEvent}
+                            >
+                                Delete Event
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             </div>
         </div>
     );

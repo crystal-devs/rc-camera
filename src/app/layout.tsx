@@ -3,9 +3,10 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { AppProvider } from '@/lib/AppContext';
+import { FullscreenProvider } from '@/lib/FullscreenContext';
 import Providers from '@/components/Providers';
 import FloatingNav from '@/components/navigation/FloatingNav';
-import BottomNav from '@/components/navigation/BottomNav';
+import { BottomNavigationWithFullscreenAwareness } from '@/components/navigation/FullscreenAwareBottomNav';
 import { Toaster } from "@/components/ui/sonner";
 import { AppSidebar } from '@/components/app-sidebar';
 
@@ -26,21 +27,22 @@ export default function RootLayout({
       <body className={inter.className}>
         <Providers>
           <AppProvider>
-            {/* SidebarProvider is in AppSidebar component */}
-            <AppSidebar>
-              {children}
-            </AppSidebar>
-            
-            {/* BottomNav for mobile only */}
-            <div className="block md:hidden fixed bottom-0 w-full z-50">
-              <BottomNav />
-            </div>
-            
-            {/* Toaster notification system */}
-            <Toaster />
+            <FullscreenProvider>
+              {/* SidebarProvider is in AppSidebar component */}
+              <AppSidebar>
+                {children}
+              </AppSidebar>
+              
+              <BottomNavigationWithFullscreenAwareness />
+              
+              {/* Toaster notification system */}
+              <Toaster />
+            </FullscreenProvider>
           </AppProvider>
         </Providers>
       </body>
     </html>
   );
 }
+
+

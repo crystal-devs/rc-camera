@@ -3,19 +3,12 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Camera, Share2, PencilIcon, Grid, MoreVertical, X, Upload } from 'lucide-react';
+import { Camera, X, Upload } from 'lucide-react';
 import { db } from '@/lib/db';
-import { AlbumQR } from '@/components/album/AlbumQR';
 import { PhotoGrid } from '@/components/photo/PhotoGrid';
 import PhotoGallery from '@/components/album/PhotoGallery';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import AlbumHeader from '@/components/album/AlbumHeader';
 import { CameraCapture } from '@/components/camera/CameraCapture';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
@@ -31,7 +24,6 @@ export default function AlbumPage({ params }: AlbumPageProps) {
   const [album, setAlbum] = useState<any>(null);
   const [photos, setPhotos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("photos");
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraPermission, setCameraPermission] = useState<boolean | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,17 +44,17 @@ export default function AlbumPage({ params }: AlbumPageProps) {
 
         // Import the album API functions
         const { getAlbumById } = await import('@/services/apis/albums.api');
-        
+
         console.log(`Fetching album details for album ID: ${albumId}`);
         const albumData = await getAlbumById(albumId, authToken);
-        
+
         if (!albumData) {
           console.error(`Album not found with ID: ${albumId}`);
           toast.error("Album not found");
           router.push('/events');
           return;
         }
-        
+
         console.log('Album data loaded successfully:', albumData);
         setAlbum(albumData);
 
@@ -225,66 +217,50 @@ export default function AlbumPage({ params }: AlbumPageProps) {
   const isOwner = album.createdById === userId;
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-3xl">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{album.name}</h1>
-          <p className="text-sm text-gray-500">
-            {photos.length} photos • Created {new Date(album.createdAt).toLocaleDateString()}
-          </p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <MoreVertical className="h-5 w-5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {isOwner && (
-              <DropdownMenuItem onClick={() => router.push(`/albums/${albumId}/edit`)}>
-                <PencilIcon className="h-4 w-4 mr-2" /> Edit album
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onClick={() => setActiveTab("share")}>
-              <Share2 className="h-4 w-4 mr-2" /> Share album
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+    <div className="w-full pb-16 sm:pb-20">
+      {/* Sticky Album Header */}
+      <AlbumHeader 
+        album={album} 
+        photoCount={photos.length}
+        isOwner={isOwner}
+      />
+      
+      {/* Album Info Bar */}
+      <div className="px-4 py-3">
+        <p className="text-sm text-gray-500">
+          {photos.length} photos • Created {new Date(album.createdAt).toLocaleDateString()}
+        </p>
       </div>
 
-      <Tabs defaultValue="photos" value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="photos">
-            <Grid className="h-4 w-4 mr-2" /> Photos
-          </TabsTrigger>
-          <TabsTrigger value="share">
-            <Share2 className="h-4 w-4 mr-2" /> Share
-          </TabsTrigger>
-        </TabsList>
+      {/* Photo Gallery */}
+      <div className="mt-4">
+        {album && (
+          <PhotoGallery
+            eventId={album.eventId}
+            albumId={albumId}
+            canUpload={true}
+          />
+        )}
+      </div>
 
-        <TabsContent value="photos" className="mt-0">
-          {/* Use the same PhotoGallery component from the event details page */}
-          {album && (
-            <PhotoGallery 
-              eventId={album.eventId}
-              albumId={albumId}
-              canUpload={true}
-            />
-          )}
-        </TabsContent>
-
-        <TabsContent value="share" className="mt-0">
-          <div className="py-4">
-            <h2 className="text-xl font-semibold mb-4">Share this album</h2>
-            <p className="text-sm text-gray-500 mb-6">
-              Anyone with this QR code or link can view and add photos to this album.
-            </p>
-            <AlbumQR albumId={albumId} accessCode={album.accessCode || albumId} />
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {activeTab === "photos" && (
+      {/* Floating Action Buttons */}
+      <div className="fixed bottom-8 right-8 flex flex-col space-y-2">
+        <Button
+          onClick={handleUploadClick}
+          size="lg"
+          variant="outline"
+          className="h-14 w-14 rounded-full shadow-lg flex items-center justify-center"
+        >
+          <Upload className="h-6 w-6" />
+        </Button>
+        <Button
+          onClick={handleCameraClick}
+          size="lg"
+          className="h-14 w-14 rounded-full shadow-lg flex items-center justify-center"
+        >
+          <Camera className="h-6 w-6" />
+        </Button>
+      </div>
         <div className="fixed bottom-8 right-8 flex flex-col space-y-2">
           <Button
             onClick={handleUploadClick}
@@ -302,7 +278,6 @@ export default function AlbumPage({ params }: AlbumPageProps) {
             <Camera className="h-6 w-6" />
           </Button>
         </div>
-      )}
 
       {/* Hidden file input for uploading images */}
       <input
@@ -317,9 +292,9 @@ export default function AlbumPage({ params }: AlbumPageProps) {
       <Dialog open={cameraOpen} onOpenChange={setCameraOpen}>
         <DialogContent className="max-w-md p-0 h-[90vh] max-h-[700px]">
           <DialogHeader>
-            <DialogTitle>Edit profile</DialogTitle>
+            <DialogTitle>Take a photo</DialogTitle>
             <DialogDescription>
-              Make changes to your profile here. Click save when you're done.
+              Capture a photo for this album
             </DialogDescription>
           </DialogHeader>
           <div className="relative h-full w-full flex flex-col">
