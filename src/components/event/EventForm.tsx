@@ -25,8 +25,10 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { toast } from 'sonner';
 
-import { Event, EventTemplate, CreateEventPayload, UpdateEventPayload } from '@/types/events';
-import { useEvents } from '@/hooks/useEvents';
+import { Event, EventTemplate } from '@/types/events';
+import { EventAccessLevel } from '@/types/sharing';
+import { createEvent, updateEvent } from '@/services/apis/events.api';
+import { useAuthToken } from '@/hooks/use-auth';
 
 // Event template options
 const eventTemplates = [
@@ -44,7 +46,7 @@ interface EventFormProps {
 
 export const EventForm = ({ event }: EventFormProps) => {
   const router = useRouter();
-  const { createEvent, updateEvent } = useEvents();
+  const authToken = useAuthToken();
   const isEditMode = Boolean(event);
 
   // Form state
@@ -83,35 +85,47 @@ export const EventForm = ({ event }: EventFormProps) => {
     try {
       if (isEditMode && event) {
         // Update existing event
-        const updatePayload: UpdateEventPayload = {
-          title: formState.title,
+        const updatePayload = {
+          name: formState.title,
           description: formState.description || undefined,
-          start_date: formState.startDate,
-          end_date: formState.endDate,
+          date: formState.startDate,
+          endDate: formState.endDate,
           location: formState.location || undefined,
-          is_private: formState.isPrivate,
-          access_code: formState.isPrivate ? formState.accessCode : undefined,
+          accessType: formState.isPrivate ? 'restricted' as const : 'public' as const,
+          accessCode: formState.isPrivate ? formState.accessCode : undefined,
           template: formState.template,
-          thumbnail_pic: formState.thumbnailPic || undefined
+          cover_image: formState.thumbnailPic || undefined,
+          // New access model
+          access: {
+            level: formState.isPrivate ? EventAccessLevel.RESTRICTED : EventAccessLevel.PUBLIC,
+            allowGuestUploads: false,
+            requireApproval: false
+          }
         };
         
-        await updateEvent(event.id, updatePayload);
+        await updateEvent(event.id, updatePayload, authToken || '');
         router.push(`/events/${event.id}`);
       } else {
         // Create new event
-        const createPayload: CreateEventPayload = {
-          title: formState.title,
+        const createPayload = {
+          name: formState.title,
           description: formState.description,
-          start_date: formState.startDate,
-          end_date: formState.endDate,
+          date: formState.startDate,
+          endDate: formState.endDate,
           location: formState.location,
-          is_private: formState.isPrivate,
-          access_code: formState.isPrivate ? formState.accessCode : undefined,
+          accessType: formState.isPrivate ? 'restricted' as const : 'public' as const,
+          accessCode: formState.isPrivate ? formState.accessCode : undefined,
           template: formState.template,
-          thumbnail_pic: formState.thumbnailPic
+          cover_image: formState.thumbnailPic,
+          // New access model
+          access: {
+            level: formState.isPrivate ? EventAccessLevel.RESTRICTED : EventAccessLevel.PUBLIC,
+            allowGuestUploads: false,
+            requireApproval: false
+          }
         };
         
-        const newEvent = await createEvent(createPayload);
+        const newEvent = await createEvent(createPayload, authToken || '');
         router.push(`/events/${newEvent.id}`);
       }
     } catch (error) {
@@ -251,18 +265,28 @@ export const EventForm = ({ event }: EventFormProps) => {
       </div>
 
       <div className="space-y-4 pt-2">
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label htmlFor="isPrivate">Restricted Access</Label>
-            <p className="text-sm text-gray-500">
-              Require an access code to view photos
-            </p>
-          </div>
-          <Switch
-            id="isPrivate"
-            checked={formState.isPrivate}
-            onCheckedChange={(checked) => handleChange('isPrivate', checked)}
-          />
+        <div className="space-y-2">
+          <Label htmlFor="accessLevel">Access Level</Label>
+          <Select
+            value={formState.isPrivate ? "restricted" : "public"}
+            onValueChange={(value) => {
+              handleChange('isPrivate', value === "restricted");
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select access level" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="public">Public (Anyone can view)</SelectItem>
+              <SelectItem value="link_only">Link Only (Anyone with link)</SelectItem>
+              <SelectItem value="restricted">Restricted (Requires access code)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-gray-500 mt-1">
+            {formState.isPrivate ? 
+              "Only people with the access code can view this event" : 
+              "Anyone can view this event without restrictions"}
+          </p>
         </div>
 
         {formState.isPrivate && (

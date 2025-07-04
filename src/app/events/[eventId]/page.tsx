@@ -224,17 +224,85 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
         }
     };
 
+    const [shareToken, setShareToken] = useState<string | null>(null);
+    const [isCreatingShareToken, setIsCreatingShareToken] = useState(false);
+
     const getShareUrl = () => {
-        // When sharing, include the access code only for restricted events
+        // If we have a generated share token, use it for a more secure link
+        if (shareToken) {
+            return `${window.location.origin}/join?token=${shareToken}`;
+        }
+        
+        // Legacy fallback
         if (event?.accessType === 'restricted') {
             return `${window.location.origin}/join?event=${eventId}&code=${event?.accessCode || ''}`;
         }
-        // For public events, no need to include access code
+        
+        // For public events, no need for access code
         return `${window.location.origin}/join?event=${eventId}`;
     };
 
-    const copyShareLink = () => {
-        navigator.clipboard.writeText(getShareUrl());
+    const generateShareToken = async (): Promise<string | null> => {
+        if (!event) return null;
+        
+        try {
+            setIsCreatingShareToken(true);
+            const token = localStorage.getItem('authToken') || '';
+            
+            console.log('Generating share token for event:', eventId);
+            console.log('Auth token available:', !!token);
+            
+            // Import the createShareToken function
+            const { createShareToken } = await import('@/services/apis/sharing.api');
+            
+            console.log('Calling createShareToken with:', {
+                type: 'event',
+                eventId,
+                permissions: { canView: true, canUpload: true, canDownload: true }
+            });
+            
+            const shareTokenData = await createShareToken(
+                'event',
+                eventId,
+                undefined, // No specific album
+                { canView: true, canUpload: true, canDownload: true },
+                undefined, // No expiration
+                undefined, // No password
+                token
+            );
+            
+            console.log('Share token created successfully:', shareTokenData);
+            setShareToken(shareTokenData.token);
+            toast.success("Secure share link created!");
+            return shareTokenData.token;
+        } catch (error) {
+            console.error('Error generating share token:', error);
+            toast.error("Failed to create share link. Using fallback link.");
+            return null;
+        } finally {
+            setIsCreatingShareToken(false);
+        }
+    };
+
+    const copyShareLink = async () => {
+        // If we don't have a share token yet, create one first
+        let tokenToUse = shareToken;
+        
+        console.log('copyShareLink called, current shareToken:', shareToken);
+        console.log('Event access type:', event?.accessType);
+        
+        if (!tokenToUse && event && event.accessType !== 'public') {
+            console.log('No existing token, generating new one...');
+            tokenToUse = await generateShareToken();
+            console.log('New token generated:', tokenToUse);
+        } else {
+            console.log('Using existing token or public event, no need to generate');
+        }
+        
+        // Copy the share URL to clipboard
+        const shareUrl = getShareUrl();
+        console.log('Final share URL being copied:', shareUrl);
+        navigator.clipboard.writeText(shareUrl);
         toast.success("Share link copied to clipboard");
     };
 
@@ -308,23 +376,55 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                             <DialogHeader>
                                 <DialogTitle>Share Event</DialogTitle>
                                 <DialogDescription>
-                                    Scan this QR code to join the event and view photos
+                                    Scan this QR code or share the link to invite others
                                 </DialogDescription>
                             </DialogHeader>
 
                             <div className="flex flex-col items-center py-4">
                                 <div className="bg-white p-4 rounded-lg shadow-sm">
-                                    {/* QR code would go here */}
+                                    {/* QR code would be generated based on the share URL */}
+                                    {/* We'd use a QR code library in a real implementation */}
                                 </div>
 
                                 <div className="mt-4 text-center">
                                     <p className="text-sm font-medium mb-1">{event.name}</p>
-                                    <p className="text-xs text-gray-500">Access Code: {event.accessCode}</p>
+                                    {event.accessType === 'restricted' && !shareToken && (
+                                        <p className="text-xs text-yellow-600">
+                                            This event requires an access code
+                                        </p>
+                                    )}
+                                    {shareToken && (
+                                        <p className="text-xs text-green-600">
+                                            Using secure share token
+                                        </p>
+                                    )}
                                 </div>
                             </div>
 
-                            <DialogFooter>
-                                <Button variant="outline" className="w-full sm:w-auto" onClick={copyShareLink}>
+                            <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-between w-full">
+                                {!shareToken && event?.accessType !== 'public' && (
+                                    <Button 
+                                        variant="outline" 
+                                        className="w-full sm:w-auto" 
+                                        onClick={generateShareToken}
+                                        disabled={isCreatingShareToken}
+                                    >
+                                        {isCreatingShareToken ? (
+                                            <span>Creating...</span>
+                                        ) : (
+                                            <>
+                                                <RefreshCcwIcon className="h-4 w-4 mr-2" />
+                                                Create Secure Link
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
+                                
+                                <Button 
+                                    variant={shareToken ? "default" : "outline"}
+                                    className="w-full sm:w-auto" 
+                                    onClick={copyShareLink}
+                                >
                                     <ShareIcon className="h-4 w-4 mr-2" />
                                     Copy Link
                                 </Button>

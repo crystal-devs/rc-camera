@@ -513,3 +513,81 @@ const handleApiError = (error: any): string => {
   // Generic error handling
   return error instanceof Error ? error.message : 'Unknown API error';
 }
+
+// Get event media with guest token
+export const getEventMediaWithGuestToken = async (
+    eventId: string, 
+    guestToken: string,
+    includeAllAlbums: boolean = true
+) => {
+    try {
+        console.log(`Fetching media for event ID: ${eventId} with guest token (includeAllAlbums: ${includeAllAlbums})`);
+        
+        // Use the appropriate endpoint for guest access
+        const endpoint = `${API_BASE_URL}/media/event/${eventId}/guest`;
+            
+        console.log(`Making guest API request to: ${endpoint}`);
+        
+        // Make the API request with the guest token as a parameter
+        const response = await axios.get(endpoint, {
+            params: {
+                token: guestToken,
+                includeAllAlbums: includeAllAlbums
+            },
+            timeout: 15000 // 15 seconds timeout
+        });
+        
+        if (response.data && (response.data.status === true || response.data.success)) {
+            console.log(`Successfully fetched ${response.data.data?.length || 0} media items as guest`);
+            return response.data.data || [];
+        }
+        
+        console.error('Invalid response format from guest media API:', response.data);
+        throw new Error(response.data?.message || 'Failed to fetch event media');
+    } catch (error) {
+        console.error('Error fetching event media with guest token:', error);
+        
+        if (axios.isAxiosError(error)) {
+            if (error.code === 'ERR_NETWORK') {
+                throw new Error('Network error - API server may be down');
+            } else if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Share link has expired or is no longer valid');
+            }
+        }
+        
+        throw error;
+    }
+};
+
+// Get album media with guest token
+export const getAlbumMediaWithGuestToken = async (albumId: string, guestToken: string) => {
+    try {
+        console.log(`Fetching media for album ID: ${albumId} with guest token`);
+        
+        // Make the API request with the guest token as a parameter
+        const response = await axios.get(`${API_BASE_URL}/media/album/${albumId}/guest`, {
+            params: { token: guestToken },
+            timeout: 15000 // 15 seconds timeout
+        });
+        
+        if (response.data && (response.data.status === true || response.data.success)) {
+            console.log(`Successfully fetched ${response.data.data?.length || 0} media items from album as guest`);
+            return response.data.data || [];
+        }
+        
+        console.error('Invalid response format from guest album media API:', response.data);
+        throw new Error(response.data?.message || 'Failed to fetch album media');
+    } catch (error) {
+        console.error('Error fetching album media with guest token:', error);
+        
+        if (axios.isAxiosError(error)) {
+            if (error.code === 'ERR_NETWORK') {
+                throw new Error('Network error - API server may be down');
+            } else if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Share link has expired or is no longer valid');
+            }
+        }
+        
+        throw error;
+    }
+};

@@ -89,9 +89,10 @@ interface PhotoGalleryProps {
   eventId: string;
   albumId?: string | null; // Now optional to handle default album scenarios
   canUpload?: boolean;
+  guestToken?: string; // Token for guest access without authentication
 }
 
-export default function PhotoGallery({ eventId, albumId, canUpload = true }: PhotoGalleryProps) {
+export default function PhotoGallery({ eventId, albumId, canUpload = true, guestToken }: PhotoGalleryProps) {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -226,11 +227,14 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
 
   // Function to load photos from the backend API
   const fetchPhotosFromAPI = useCallback(async () => {
-    console.log('asdfasdfasdfasdfasdfasdf');
     // Get token from localStorage if not available through hook
     const authToken = token || localStorage.getItem('authToken');
-    if (!authToken) {
-      console.error('No auth token available - please ensure you are logged in');
+    
+    // If we have a guest token, we can fetch photos without authentication
+    const isGuestAccess = Boolean(guestToken);
+    
+    if (!authToken && !isGuestAccess) {
+      console.error('No auth token or guest token available - please ensure you are logged in or using a valid share link');
       return false;
     }
 
@@ -248,18 +252,48 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
         eventId: currentEventId
       });
 
+      // Import the necessary functions for guest access if needed
+      let getEventMediaFn, getAlbumMediaFn;
+      if (isGuestAccess && guestToken) {
+        // Dynamic imports to avoid loading unused code
+        const { getEventMediaWithGuestToken, getAlbumMediaWithGuestToken } = await import('@/services/apis/media.api');
+        getEventMediaFn = getEventMediaWithGuestToken;
+        getAlbumMediaFn = getAlbumMediaWithGuestToken;
+      } else {
+        // Regular import
+        const { getEventMedia, getAlbumMedia } = await import('@/services/apis/media.api');
+        getEventMediaFn = getEventMedia;
+        getAlbumMediaFn = getAlbumMedia;
+      }
+
       // Prioritize by eventId if albumId is explicitly set to null - for the Photos tab in event page
       if (currentAlbumId === null && currentEventId) {
         // Intentionally fetch ALL photos for this event (across all albums)
         console.log(`Intentionally fetching ALL photos for event: ${currentEventId} (Photos tab)`);
+        
         // Make sure to set includeAllAlbums=true to get photos from all albums in this event
-        mediaItems = await getEventMedia(currentEventId, authToken, true);
+        if (isGuestAccess && guestToken) {
+          mediaItems = await getEventMediaFn(currentEventId, guestToken, true);
+        } else if (authToken) {
+          mediaItems = await getEventMediaFn(currentEventId, authToken, true);
+        } else {
+          console.error('No auth or guest token available');
+          return false;
+        }
       } else if (currentAlbumId || currentDefaultAlbumId) {
         // Fetch photos for a specific album
         const targetAlbumId = currentAlbumId || currentDefaultAlbumId;
         if (targetAlbumId) {
           console.log(`Fetching photos for album: ${targetAlbumId}`);
-          mediaItems = await getAlbumMedia(targetAlbumId, authToken);
+          
+          if (isGuestAccess && guestToken) {
+            mediaItems = await getAlbumMediaFn(targetAlbumId, guestToken);
+          } else if (authToken) {
+            mediaItems = await getAlbumMediaFn(targetAlbumId, authToken);
+          } else {
+            console.error('No auth or guest token available');
+            return false;
+          }
         } else {
           console.error('Album ID is null, cannot fetch photos');
           return false;
@@ -267,7 +301,15 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
       } else if (currentEventId) {
         // Fetch all photos for an event (across all albums)
         console.log(`Fetching photos for event: ${currentEventId}`);
-        mediaItems = await getEventMedia(currentEventId, authToken, true); // Explicitly set includeAllAlbums=true
+        
+        if (isGuestAccess && guestToken) {
+          mediaItems = await getEventMediaFn(currentEventId, guestToken, true);
+        } else if (authToken) {
+          mediaItems = await getEventMediaFn(currentEventId, authToken, true);
+        } else {
+          console.error('No auth or guest token available');
+          return false;
+        }
       } else {
         console.error('No albumId, defaultAlbumId, or eventId provided');
         return false;
@@ -295,7 +337,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
       console.error('Error fetching photos from API:', error);
       return false;
     }
-  }, [token, albumId, defaultAlbumId, eventId]);
+  }, [token, albumId, defaultAlbumId, eventId, guestToken]);
 
   // Load photos when component mounts or dependencies change
   useEffect(() => {
@@ -440,7 +482,7 @@ export default function PhotoGallery({ eventId, albumId, canUpload = true }: Pho
       }
     };
     // Removed isLoading from dependency array to prevent infinite loops
-  }, [albumId, defaultAlbumId, eventId, fetchPhotosFromAPI, isRealtime]);
+  }, [albumId, defaultAlbumId, eventId, fetchPhotosFromAPI, isRealtime, guestToken]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
