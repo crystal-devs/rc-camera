@@ -1,6 +1,7 @@
 'use client';
 
 import { SidebarProvider } from "./ui/sidebar";
+import { ThemeProvider } from "@/lib/ThemeContext";
 
 interface ProvidersProps {
     children: React.ReactNode;
@@ -9,10 +10,11 @@ interface ProvidersProps {
 function Providers({ children }: ProvidersProps) {
     return (
         <>
-            <SidebarProvider>
-                {children}
-            </SidebarProvider>
-
+            <ThemeProvider>
+                <SidebarProvider>
+                    {children}
+                </SidebarProvider>
+            </ThemeProvider>
         </>
     );
 }

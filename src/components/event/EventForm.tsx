@@ -29,6 +29,7 @@ import { Event, EventTemplate } from '@/types/events';
 import { EventAccessLevel } from '@/types/sharing';
 import { createEvent, updateEvent } from '@/services/apis/events.api';
 import { useAuthToken } from '@/hooks/use-auth';
+import { useSubscriptionLimits } from '@/hooks/use-subscription-limits';
 
 // Event template options
 const eventTemplates = [
@@ -48,6 +49,7 @@ export const EventForm = ({ event }: EventFormProps) => {
   const router = useRouter();
   const authToken = useAuthToken();
   const isEditMode = Boolean(event);
+  const { canCreateEvent, navigateToUpgrade } = useSubscriptionLimits();
 
   // Form state
   const [formState, setFormState] = useState({
@@ -77,6 +79,12 @@ export const EventForm = ({ event }: EventFormProps) => {
     
     if (!formState.title.trim()) {
       toast.error('Event title is required');
+      return;
+    }
+    
+    // Check subscription limits before creating a new event
+    if (!isEditMode && !canCreateEvent()) {
+      // The canCreateEvent function already shows toast notifications
       return;
     }
     
