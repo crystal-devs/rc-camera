@@ -30,6 +30,7 @@ import { EventAccessLevel } from '@/types/sharing';
 import { createEvent, updateEvent } from '@/services/apis/events.api';
 import { useAuthToken } from '@/hooks/use-auth';
 import { useSubscriptionLimits } from '@/hooks/use-subscription-limits';
+import { useStore } from '@/lib/store';
 
 // Event template options
 const eventTemplates = [
@@ -74,6 +75,8 @@ export const EventForm = ({ event }: EventFormProps) => {
     });
   };
 
+  const { fetchUsage } = useStore();
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -83,9 +86,15 @@ export const EventForm = ({ event }: EventFormProps) => {
     }
     
     // Check subscription limits before creating a new event
-    if (!isEditMode && !canCreateEvent()) {
-      // The canCreateEvent function already shows toast notifications
-      return;
+    // We'll use the cached result if it's recent, otherwise check with the server
+    if (!isEditMode) {
+      // Don't force a refresh if we recently checked (the hook will manage this)
+      // This avoids redundant API calls if the form is submitted shortly after the page loaded
+      const canCreate = await canCreateEvent(false, false);
+      if (!canCreate) {
+        // canCreateEvent already shows toast notifications and upgrade option
+        return;
+      }
     }
     
     setIsSubmitting(true);
@@ -112,6 +121,10 @@ export const EventForm = ({ event }: EventFormProps) => {
         };
         
         await updateEvent(event.id, updatePayload, authToken || '');
+        
+        // Ensure usage is refreshed after update
+        fetchUsage();
+        
         router.push(`/events/${event.id}`);
       } else {
         // Create new event
@@ -134,6 +147,10 @@ export const EventForm = ({ event }: EventFormProps) => {
         };
         
         const newEvent = await createEvent(createPayload, authToken || '');
+        
+        // Ensure usage is refreshed after creation
+        fetchUsage();
+        
         router.push(`/events/${newEvent.id}`);
       }
     } catch (error) {

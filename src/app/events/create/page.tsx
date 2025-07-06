@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { format } from 'date-fns';
@@ -44,10 +44,57 @@ import { createEvent } from '@/services/apis/events.api';
 import { Event } from '@/types/events';
 import { uploadCoverImage } from '@/services/apis/media.api';
 
+import { useSubscriptionLimits } from '@/hooks/use-subscription-limits';
+import { useStore } from '@/lib/store';
+
 export default function CreateEventPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const { canCreateEvent, navigateToUpgrade } = useSubscriptionLimits();
+  const { fetchUsage } = useStore();
+  
+  // Check if the user can create an event when the page loads
+  // Use a ref to track if we've already redirected to avoid duplicate redirects
+  const hasRedirectedRef = useRef(false);
+  
+  useEffect(() => {
+    // Avoid unnecessary checks if we've already redirected
+    if (hasRedirectedRef.current) return;
+    
+    const checkEventLimit = async () => {
+      setIsLoading(true);
+      
+      try {
+        // Check if user can create an event (use cache if available, force refresh if not)
+        // We'll pass true for forceFetchUsage ONLY if this is the first page load
+        // This prevents multiple API calls when the component re-renders
+        console.log('Create event page: Checking event creation limit...');
+        const canCreate = await canCreateEvent(true, false); // Force refresh but don't bypass cache
+        
+        if (!canCreate) {
+          // User has reached their event limit - mark that we're redirecting
+          console.log('Create event page: User has reached event limit, redirecting to upgrade');
+          hasRedirectedRef.current = true;
+          
+          // Add a small delay before redirecting to ensure the UI updates
+          setTimeout(() => {
+            navigateToUpgrade();
+          }, 1000);
+        } else {
+          console.log('Create event page: User can create more events');
+        }
+      } catch (error) {
+        console.error('Error checking event limits:', error);
+        toast.error('Something went wrong while checking your subscription. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    checkEventLimit();
+  }, [canCreateEvent, navigateToUpgrade]);
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null); // Add this state
   const [previewUrl, setPreviewUrl] = useState<string | null>(null); // Renamed from previewImage
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -192,6 +239,36 @@ export default function CreateEventPage() {
     { id: 'corporate', name: 'Corporate', icon: '👔', description: 'Professional gatherings' },
     { id: 'vacation', name: 'Vacation', icon: '🏖️', description: 'Travel memories' },
   ];
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-lg">
+        <Card className="border shadow-lg">
+          <CardHeader className="border-b pb-3">
+            <CardTitle className="text-2xl font-bold">Create New Event</CardTitle>
+            <CardDescription>
+              Checking your subscription limits...
+            </CardDescription>
+          </CardHeader>
+          
+          <CardContent className="pt-6 pb-8">
+            <div className="flex flex-col items-center justify-center space-y-6 py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+              <div className="text-center space-y-2">
+                <p className="text-lg font-medium text-gray-700">
+                  Verifying event limits
+                </p>
+                <p className="text-sm text-gray-500 max-w-md">
+                  We're checking your subscription to ensure you can create another event.
+                  This will only take a moment...
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-lg">

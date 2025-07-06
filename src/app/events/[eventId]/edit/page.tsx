@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { format } from 'date-fns';
+import { useStore } from '@/lib/store';
 import {
   CalendarIcon,
   MapPinIcon,
@@ -74,8 +75,8 @@ interface PageProps {
 
 export default function EditEventPage({ params }: { params: PageProps }) {
   const { eventId } = params;
-
   const router = useRouter();
+  const { fetchUsage } = useStore();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [originalEvent, setOriginalEvent] = useState<Event | null>(null);
@@ -278,6 +279,9 @@ export default function EditEventPage({ params }: { params: PageProps }) {
     try {
       // Call API to delete the event
       await deleteEvent(eventId, authToken);
+
+      // Refresh usage data
+      fetchUsage();
 
       toast.success("The event has been permanently removed.");
 

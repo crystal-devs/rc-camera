@@ -3,6 +3,7 @@
 import axios from 'axios';
 import { API_BASE_URL } from '@/lib/api-config';
 import { Event, ApiEvent } from '@/types/events';
+import { useStore } from '@/lib/store';
 
 // Map API response to frontend Event format
 const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
@@ -134,6 +135,11 @@ export const createEvent = async (eventData: Partial<Event>, authToken: string):
     });
 
     console.log('Event created response:', response.data);
+    
+    // Refresh usage data to update event count
+    const { fetchUsage } = useStore.getState();
+    fetchUsage();
+    
     return mapApiEventToEvent(response.data.data);
   } catch (error) {
     console.error('Error creating event:', error);
@@ -169,6 +175,11 @@ export const updateEvent = async (
         Authorization: `Bearer ${authToken}`,
       },
     });
+    
+    // Updating an event might change usage stats in some cases,
+    // so refresh usage data to be safe
+    const { fetchUsage } = useStore.getState();
+    fetchUsage();
 
     return mapApiEventToEvent(response.data.data);
   } catch (error) {
@@ -181,16 +192,49 @@ export const updateEvent = async (
 };
 
 // Delete an event
-export const deleteEvent = async (eventId: string, authToken: string): Promise<boolean> => {
+export const deleteEvent = async (eventId: string, authToken: string, retryCount = 0, maxRetries = 3): Promise<boolean> => {
   try {
-    await axios.delete(`${API_BASE_URL}/event/${eventId}`, {
+    console.log(`Deleting event ${eventId} (attempt ${retryCount + 1}/${maxRetries + 1})`);
+    
+    const response = await axios.delete(`${API_BASE_URL}/event/${eventId}`, {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
+      timeout: 15000 // 15 seconds timeout
     });
+    
+    console.log(`Delete event response:`, response.data);
+    
+    // Refresh usage data to update event count
+    const { fetchUsage } = useStore.getState();
+    fetchUsage();
+    
     return true;
   } catch (error) {
     console.error(`Error deleting event ${eventId}:`, error);
+    
+    // Handle rate limiting (429) with exponential backoff retry logic
+    if (axios.isAxiosError(error) && error.response?.status === 429 && retryCount < maxRetries) {
+      const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s, etc.
+      console.log(`Rate limited. Retrying in ${delay}ms...`);
+      
+      // Wait for the specified delay
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Retry the request with incremented retry count
+      return deleteEvent(eventId, authToken, retryCount + 1, maxRetries);
+    }
+    
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        throw new Error('Authentication error. Please log in again.');
+      } else if (error.response?.status === 404) {
+        throw new Error('Event not found. It may have been deleted already.');
+      } else if (error.response && error.response.status >= 500) {
+        throw new Error(`Server error (${error.response.status}). Please try again later.`);
+      }
+    }
+    
     throw error;
   }
 };

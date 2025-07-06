@@ -15,8 +15,8 @@ import {
     MoreHorizontalIcon
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { db } from '@/lib/db';
 import { toast } from 'sonner';
+import { useStore } from '@/lib/store';
 
 interface EventHeaderProps {
     event: {
@@ -32,6 +32,7 @@ interface EventHeaderProps {
 
 export default function EventHeader({ event }: EventHeaderProps) {
     const router = useRouter();
+    const { fetchUsage } = useStore();
     const [isFavorite, setIsFavorite] = useState(event.isFavorite || false);
 
     const toggleFavorite = () => {
@@ -97,14 +98,28 @@ export default function EventHeader({ event }: EventHeaderProps) {
                                 onClick={async () => {
                                     if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
                                         try {
-                                            // In a real app, you'd delete all related data too
-                                            await db.events.delete(event.id);
+                                            const authToken = localStorage.getItem('authToken');
+                                            if (!authToken) {
+                                                toast.error("You need to be logged in to delete this event");
+                                                return;
+                                            }
+                                            
+                                            // Import the deleteEvent function from the API
+                                            const { deleteEvent } = await import('@/services/apis/events.api');
+                                            
+                                            // Call the API to delete the event
+                                            await deleteEvent(event.id, authToken);
+                                            
+                                            // Refresh usage data
+                                            fetchUsage();
+                                            
                                             router.push('/events');
                                             toast.success(
                                                 "The event has been permanently removed.",
                                             );
                                         } catch (error) {
                                             console.error('Error deleting event:', error);
+                                            toast.error("Failed to delete the event. Please try again.");
                                         }
                                     }
                                 }}

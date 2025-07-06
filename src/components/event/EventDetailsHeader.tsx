@@ -10,7 +10,7 @@ import {
     DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-import { db } from '@/lib/db';
+import { useStore } from '@/lib/store';
 
 interface EventHeaderProps {
     event: {
@@ -22,6 +22,7 @@ interface EventHeaderProps {
 
 export default function EventDetailsHeader({ event }: EventHeaderProps) {
     const router = useRouter();
+    const { fetchUsage } = useStore();
     const [isFavorite, setIsFavorite] = useState(event.isFavorite || false);
 
     const toggleFavorite = () => {
@@ -38,13 +39,26 @@ export default function EventDetailsHeader({ event }: EventHeaderProps) {
     const handleDeleteEvent = async () => {
         if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
             try {
-                // In a real app, you'd delete all related data too
-                await db.events.delete(event.id);
+                const authToken = localStorage.getItem('authToken');
+                if (!authToken) {
+                    toast.error("You need to be logged in to delete this event");
+                    return;
+                }
+                
+                // Import the deleteEvent function from the API
+                const { deleteEvent } = await import('@/services/apis/events.api');
+                
+                // Call the API to delete the event
+                await deleteEvent(event.id, authToken);
+                
+                // Ensure usage data is refreshed
+                fetchUsage();
+                
                 router.push('/events');
                 toast.success("The event has been permanently removed.");
             } catch (error) {
                 console.error('Error deleting event:', error);
-                toast.error("Failed to delete the event");
+                toast.error("Failed to delete the event. Please try again.");
             }
         }
     };
