@@ -3,7 +3,7 @@ import Image from 'next/image';
 
 interface EventCoverProps {
     event: {
-        name: string;
+        title: string;
         location?: string;
         cover_image?: string;
         template?: string;
@@ -18,7 +18,7 @@ export default function EventCoverSection({ event }: EventCoverProps) {
                 {event.cover_image ? (
                     <Image
                         src={event.cover_image}
-                        alt={event.name}
+                        alt={event.title}
                         fill
                         className="object-cover"
                         priority
@@ -39,7 +39,7 @@ export default function EventCoverSection({ event }: EventCoverProps) {
 
             {/* Event Title and Location */}
             <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 md:p-6 text-white z-10">
-                <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-1 font-cursive">{event.name}</h1>
+                <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-1 font-cursive">{event.title}</h1>
                 {event.location && (
                     <div className="text-xs sm:text-sm md:text-base opacity-90">{event.location}</div>
                 )}

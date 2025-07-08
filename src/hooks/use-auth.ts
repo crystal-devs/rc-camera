@@ -2,12 +2,52 @@
 import { useEffect, useState } from 'react';
 
 export const useAuthToken = () => {
-  const [token, setToken] = useState('');
-
+  // Initialize with null to prevent SSR/hydration issues
+  const [token, setToken] = useState<string | null>(null);
+  
+  // Initialize token after component mounts to avoid hydration mismatch
   useEffect(() => {
-    const tokenFromStorage = localStorage.getItem('authToken') || '';
-    setToken(tokenFromStorage);
-  }, [setToken]);
+    // Try to get token from localStorage
+    try {
+      const tokenFromStorage = localStorage.getItem('authToken');
+      console.log('useAuthToken: Initial token check -', tokenFromStorage ? 'Found' : 'Not found');
+      setToken(tokenFromStorage);
+      
+      // Check for token in storage changes (for multi-tab support)
+      const handleStorageChange = (e: StorageEvent) => {
+        if (e.key === 'authToken') {
+          console.log('useAuthToken: Token changed in another tab');
+          setToken(e.newValue);
+        }
+      };
+      
+      // Poll localStorage periodically as an additional safety measure
+      // This helps in cases where the storage event might not fire
+      const intervalId = setInterval(() => {
+        try {
+          const currentToken = localStorage.getItem('authToken');
+          if (currentToken !== token) {
+            console.log('useAuthToken: Token updated via polling');
+            setToken(currentToken);
+          }
+        } catch (e) {
+          console.error('Error polling for token:', e);
+        }
+      }, 3000);
+      
+      // Listen for storage events
+      window.addEventListener('storage', handleStorageChange);
+      
+      return () => {
+        window.removeEventListener('storage', handleStorageChange);
+        clearInterval(intervalId);
+      };
+    } catch (e) {
+      console.error('Error in useAuthToken initialization:', e);
+      // Return a cleanup function even in the error case to satisfy TypeScript
+      return () => {};
+    }
+  }, [token]);
 
   return token;
 };

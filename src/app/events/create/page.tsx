@@ -1,114 +1,119 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import { format } from 'date-fns';
-import { CalendarIcon, MapPinIcon, ImageIcon } from 'lucide-react';
-
+import React, { useEffect, useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import { toast } from "sonner";
-
-// Import API client for event creation
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Calendar, MapPin, Users, Shield, Settings, Image, Tag, Plus, X, Clock, Globe } from 'lucide-react';
+import { toast } from 'sonner';
 import { createEvent } from '@/services/apis/events.api';
-import { Event } from '@/types/events';
-import { uploadCoverImage } from '@/services/apis/media.api';
+import { useRouter } from 'next/navigation';
 
-import { useSubscriptionLimits } from '@/hooks/use-subscription-limits';
-import { useStore } from '@/lib/store';
-
-export default function CreateEventPage() {
-  const router = useRouter();
-  const [step, setStep] = useState(1);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const { canCreateEvent, navigateToUpgrade } = useSubscriptionLimits();
-  const { fetchUsage } = useStore();
-  
-  // Check if the user can create an event when the page loads
-  // Use a ref to track if we've already redirected to avoid duplicate redirects
-  const hasRedirectedRef = useRef(false);
-  
-  useEffect(() => {
-    // Avoid unnecessary checks if we've already redirected
-    if (hasRedirectedRef.current) return;
-    
-    const checkEventLimit = async () => {
-      setIsLoading(true);
-      
-      try {
-        // Check if user can create an event (use cache if available, force refresh if not)
-        // We'll pass true for forceFetchUsage ONLY if this is the first page load
-        // This prevents multiple API calls when the component re-renders
-        console.log('Create event page: Checking event creation limit...');
-        const canCreate = await canCreateEvent(true, false); // Force refresh but don't bypass cache
-        
-        if (!canCreate) {
-          // User has reached their event limit - mark that we're redirecting
-          console.log('Create event page: User has reached event limit, redirecting to upgrade');
-          hasRedirectedRef.current = true;
-          
-          // Add a small delay before redirecting to ensure the UI updates
-          setTimeout(() => {
-            navigateToUpgrade();
-          }, 1000);
-        } else {
-          console.log('Create event page: User can create more events');
-        }
-      } catch (error) {
-        console.error('Error checking event limits:', error);
-        toast.error('Something went wrong while checking your subscription. Please try again.');
-      } finally {
-        setIsLoading(false);
-      }
+type EventFormData = {
+  title: string;
+  description: string;
+  start_date: string;
+  end_date: string;
+  timezone: string;
+  location: {
+    name: string;
+    address: string;
+    coordinates: any[]; // You can replace 'any' with a more specific type if needed
+  };
+  cover_image: {
+    url: string;
+    public_id: string;
+  };
+  template: string;
+  tags: string[];
+  privacy: {
+    visibility: string;
+    discoverable: boolean;
+    guest_management: {
+      anyone_can_invite: boolean;
+      require_approval: boolean;
+      auto_approve_domains: string[];
+      max_guests: number;
+      allow_anonymous: boolean;
     };
-    
-    checkEventLimit();
-  }, [canCreateEvent, navigateToUpgrade]);
-  const [coverImageFile, setCoverImageFile] = useState<File | null>(null); // Add this state
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null); // Renamed from previewImage
+    content_controls: {
+      allow_downloads: boolean;
+      allow_sharing: boolean;
+      require_watermark: boolean;
+      content_moderation: string;
+    };
+  };
+  default_guest_permissions: {
+    view: boolean;
+    upload: boolean;
+    download: boolean;
+    comment: boolean;
+    share: boolean;
+    create_albums: boolean;
+  };
+  co_hosts: string[];
+};
+
+const EventCreateForm = () => {
+  const router = useRouter();
+
+  const [formData, setFormData] = useState<EventFormData>({
+    title: '',
+    description: '',
+    start_date: '',
+    end_date: '',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    location: {
+      name: '',
+      address: '',
+      coordinates: []
+    },
+    cover_image: {
+      url: '',
+      public_id: ''
+    },
+    template: 'custom',
+    tags: [],
+    privacy: {
+      visibility: 'private',
+      discoverable: false,
+      guest_management: {
+        anyone_can_invite: false,
+        require_approval: true,
+        auto_approve_domains: [],
+        max_guests: 500,
+        allow_anonymous: false
+      },
+      content_controls: {
+        allow_downloads: true,
+        allow_sharing: false,
+        require_watermark: false,
+        content_moderation: 'auto'
+      }
+    },
+    default_guest_permissions: {
+      view: true,
+      upload: false,
+      download: false,
+      comment: true,
+      share: false,
+      create_albums: false
+    },
+    co_hosts: []
+  });
+
+  const [newTag, setNewTag] = useState('');
+  const [newDomain, setNewDomain] = useState('');
+  const [newCoHost, setNewCoHost] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
 
-  // Event details
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [date, setDate] = useState<Date>(new Date());
-  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
-  const [location, setLocation] = useState('');
-  const [template, setTemplate] = useState<'custom' | 'wedding' | 'birthday' | 'concert' | 'corporate' | 'vacation'>('custom');
-  const [accessType, setAccessType] = useState<'public' | 'restricted'>('restricted');
-
-  // Get auth token on page load
   useEffect(() => {
     const storedToken = localStorage.getItem('authToken');
     if (storedToken) {
@@ -120,358 +125,584 @@ export default function CreateEventPage() {
     }
   }, [router]);
 
-  // Handle cover image selection - renamed to match the usage in your JSX
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Always reset the value when nothing is selected
-    if (!e.target.files || e.target.files.length === 0) {
-      setCoverImageFile(null);
-      setPreviewUrl(null);
+  const eventTemplates = [
+    { value: 'wedding', label: 'Wedding', icon: '💒' },
+    { value: 'birthday', label: 'Birthday', icon: '🎂' },
+    { value: 'corporate', label: 'Corporate', icon: '🏢' },
+    { value: 'graduation', label: 'Graduation', icon: '🎓' },
+    { value: 'vacation', label: 'Vacation', icon: '🏖️' },
+    { value: 'party', label: 'Party', icon: '🎉' },
+    { value: 'custom', label: 'Custom', icon: '⚙️' }
+  ];
+
+  const timezones = [
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'Europe/London',
+    'Europe/Paris',
+    'Asia/Tokyo',
+    'Asia/Shanghai',
+    'Australia/Sydney'
+  ];
+
+  const addTag = () => {
+    if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...prev.tags, newTag.trim()]
+      }));
+      setNewTag('');
+    }
+  };
+
+  const removeTag = (tagToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
+
+  const addDomain = () => {
+    if (newDomain.trim() && !formData.privacy.guest_management.auto_approve_domains.includes(newDomain.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        privacy: {
+          ...prev.privacy,
+          guest_management: {
+            ...prev.privacy.guest_management,
+            auto_approve_domains: [...prev.privacy.guest_management.auto_approve_domains, newDomain.trim()]
+          }
+        }
+      }));
+      setNewDomain('');
+    }
+  };
+
+  const removeDomain = (domainToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      privacy: {
+        ...prev.privacy,
+        guest_management: {
+          ...prev.privacy.guest_management,
+          auto_approve_domains: prev.privacy.guest_management.auto_approve_domains.filter(domain => domain !== domainToRemove)
+        }
+      }
+    }));
+  };
+
+  const addCoHost = () => {
+    if (newCoHost.trim() && !formData.co_hosts.includes(newCoHost.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        co_hosts: [...prev.co_hosts, newCoHost.trim()]
+      }));
+      setNewCoHost('');
+    }
+  };
+
+  const removeCoHost = (hostToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      co_hosts: prev.co_hosts.filter(host => host !== hostToRemove)
+    }));
+  };
+
+  const handleInputChange = (field, value) => {
+    if (field.includes('.')) {
+      const [parent, child, grandchild] = field.split('.');
+      setFormData(prev => ({
+        ...prev,
+        [parent]: {
+          ...prev[parent],
+          [child]: grandchild ? {
+            ...prev[parent][child],
+            [grandchild]: value
+          } : value
+        }
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+  };
+
+  const validateForm = () => {
+    const errors = [];
+
+    if (!formData.title.trim()) errors.push('Event title is required');
+    if (formData.title.length > 100) errors.push('Title must be less than 100 characters');
+    if (formData.description.length > 1000) errors.push('Description must be less than 1000 characters');
+
+    const startDate = new Date(formData.start_date);
+    const endDate = new Date(formData.end_date);
+
+    if (formData.start_date && isNaN(startDate.getTime())) errors.push('Invalid start date');
+    if (formData.end_date && isNaN(endDate.getTime())) errors.push('Invalid end date');
+    if (formData.start_date && formData.end_date && startDate >= endDate) {
+      errors.push('End date must be after start date');
+    }
+
+    return errors;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const errors = validateForm();
+    if (errors.length > 0) {
+      toast("Validation Error", {
+        description: errors.join(', '),
+        // variant: "destructive"
+      });
       return;
     }
-    
-    // Get the actual File object
-    const selectedFile = e.target.files[0];
-    
-    // Store the File object (not the URL)
-    setCoverImageFile(selectedFile);
-    
-    // For preview only, create an object URL
-    const objectUrl = URL.createObjectURL(selectedFile);
-    setPreviewUrl(objectUrl);
-    
-    // Log for debugging
-    console.log('Selected file:', {
-      name: selectedFile.name,
-      size: selectedFile.size,
-      type: selectedFile.type,
-      lastModified: selectedFile.lastModified
-    });
-  };
-
-  const handleTemplateSelect = (template: string) => {
-    setTemplate(template as any);
-
-    // Set defaults based on template
-    switch (template) {
-      case 'wedding':
-        setName('Our Wedding');
-        setDescription('Join us on our special day');
-        break;
-      case 'birthday':
-        setName('Birthday Celebration');
-        setDescription('Let\'s celebrate together!');
-        break;
-      case 'concert':
-        setName('Concert Memories');
-        setDescription('Photos from the show');
-        break;
-      case 'corporate':
-        setName('Company Event');
-        setDescription('Official photos from our corporate event');
-        break;
-      case 'vacation':
-        setName('Vacation Photos');
-        setDescription('Memories from our trip');
-        break;
-      case 'custom':
-        setName('');
-        setDescription('');
-        break;
-    }
-  };
-
-  const handleCreateEvent = async () => {
-    if (!name.trim() || !authToken) return;
 
     setIsSubmitting(true);
 
     try {
-      let coverImageUrl;
-      // Use the actual File object, not the preview URL
-      if (coverImageFile) {
-        coverImageUrl = await uploadCoverImage(coverImageFile, 'new-event', authToken);
-      }
-
-      // Generate a shorter, user-friendly access code
-      const accessCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-      // Prepare event data for API
-      const eventData: Partial<Event> = {
-        name: name.trim(),
-        description: description.trim(),
-        date,
-        endDate,
-        location,
-        cover_image: coverImageUrl || undefined,
-        accessType,
-        accessCode,
-        template,
-        isActive: true
+      // Prepare the data for submission
+      const submitData = {
+        ...formData,
+        start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
+        end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
       };
 
-      // Call the API to create the event
-      const createdEvent = await createEvent(eventData, authToken);
+      console.log(submitData, 'submitDatasubmitData');
+      const createdEvent = await createEvent(submitData, authToken);
 
-      // Navigate to the new event page
-      toast.success("Event created successfully!");
       router.push(`/events/${createdEvent.id}`);
+
+      toast("Success!", {
+        description: "Event created successfully",
+      });
     } catch (error) {
-      console.error('Error creating event:', error);
-      toast.error("Failed to create event. Please try again.");
+      toast("Error", {
+        description: error.message || "Failed to create event",
+        // variant: "destructive"
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const nextStep = () => {
-    if (step < 3) setStep(step + 1);
-  };
-
-  const prevStep = () => {
-    if (step > 1) setStep(step - 1);
-  };
-
-  const templateOptions = [
-    { id: 'custom', name: 'Custom Event', icon: '🎪', description: 'Start from scratch' },
-    { id: 'wedding', name: 'Wedding', icon: '💍', description: 'For your special day' },
-    { id: 'birthday', name: 'Birthday', icon: '🎂', description: 'Celebrate another year' },
-    { id: 'concert', name: 'Concert', icon: '🎵', description: 'Music event photos' },
-    { id: 'corporate', name: 'Corporate', icon: '👔', description: 'Professional gatherings' },
-    { id: 'vacation', name: 'Vacation', icon: '🏖️', description: 'Travel memories' },
-  ];
-
-  if (isLoading) {
-    return (
-      <div className="container mx-auto px-4 py-8 max-w-lg">
-        <Card className="border shadow-lg">
-          <CardHeader className="border-b pb-3">
-            <CardTitle className="text-2xl font-bold">Create New Event</CardTitle>
-            <CardDescription>
-              Checking your subscription limits...
-            </CardDescription>
-          </CardHeader>
-          
-          <CardContent className="pt-6 pb-8">
-            <div className="flex flex-col items-center justify-center space-y-6 py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-              <div className="text-center space-y-2">
-                <p className="text-lg font-medium text-gray-700">
-                  Verifying event limits
-                </p>
-                <p className="text-sm text-gray-500 max-w-md">
-                  We're checking your subscription to ensure you can create another event.
-                  This will only take a moment...
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="container mx-auto px-4 py-8 max-w-lg">
-      <Card className="border shadow-lg">
-        <CardHeader className="border-b pb-3">
-          <CardTitle className="text-2xl font-bold">Create New Event</CardTitle>
-          <CardDescription>
-            Let's set up a photo collection for your event
-          </CardDescription>
-        </CardHeader>
+    <div className="min-h-screen py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Create New Event
+          </h1>
+          <p className="text-gray-600 mt-2">Set up your photo gallery event with advanced settings</p>
+        </div>
 
-        <div>
-          {step === 1 && (
-            /* Step 1: Choose Template */
-            <CardContent className="pt-6">
-              <div className="mb-4">
-                <h3 className="text-lg font-semibold mb-2">Choose an Event Type</h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  Select a template for quick setup or create a custom event
-                </p>
+        <div className="space-y-6">
+          {/* Basic Information */}
+          <Card className="shadow-lg border-0 backdrop-blur">
+            <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Basic Information
+              </CardTitle>
+              <CardDescription className="text-blue-100">
+                Essential details about your event
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="title" className="text-sm font-medium">Event Title *</Label>
+                  <Input
+                    id="title"
+                    value={formData.title}
+                    onChange={(e) => handleInputChange('title', e.target.value)}
+                    placeholder="Amazing Wedding Reception"
+                    className="mt-1"
+                    maxLength={100}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">{formData.title.length}/100 characters</p>
+                </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {templateOptions.map((option) => (
-                    <div
-                      key={option.id}
-                      onClick={() => handleTemplateSelect(option.id)}
-                      className={`cursor-pointer border rounded-lg p-3 transition-all ${template === option.id
-                        ? 'border-primary bg-primary/5 shadow-sm'
-                        : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                    >
-                      <div className="text-2xl mb-1">{option.icon}</div>
-                      <h4 className="font-medium text-sm">{option.name}</h4>
-                      <p className="text-xs text-gray-500">{option.description}</p>
-                    </div>
+                <div>
+                  <Label htmlFor="template" className="text-sm font-medium">Event Template</Label>
+                  <Select value={formData.template} onValueChange={(value) => handleInputChange('template', value)}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {eventTemplates.map(template => (
+                        <SelectItem key={template.value} value={template.value}>
+                          <span className="flex items-center gap-2">
+                            <span>{template.icon}</span>
+                            {template.label}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="description" className="text-sm font-medium">Description</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => handleInputChange('description', e.target.value)}
+                  placeholder="Describe your event..."
+                  className="mt-1 min-h-20"
+                  maxLength={1000}
+                />
+                <p className="text-xs text-gray-500 mt-1">{formData.description.length}/1000 characters</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="start_date" className="text-sm font-medium">Start Date & Time</Label>
+                  <Input
+                    id="start_date"
+                    type="datetime-local"
+                    value={formData.start_date}
+                    onChange={(e) => handleInputChange('start_date', e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="end_date" className="text-sm font-medium">End Date & Time</Label>
+                  <Input
+                    id="end_date"
+                    type="datetime-local"
+                    value={formData.end_date}
+                    onChange={(e) => handleInputChange('end_date', e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="timezone" className="text-sm font-medium">
+                    <Clock className="h-4 w-4 inline mr-1" />
+                    Timezone
+                  </Label>
+                  <Select value={formData.timezone} onValueChange={(value) => handleInputChange('timezone', value)}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select timezone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {timezones.map(tz => (
+                        <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Location & Media */}
+          <Card className="shadow-lg border-0  backdrop-blur">
+            <CardHeader className="bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                Location & Media
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="location_name" className="text-sm font-medium">Location Name</Label>
+                  <Input
+                    id="location_name"
+                    value={formData.location.name}
+                    onChange={(e) => handleInputChange('location.name', e.target.value)}
+                    placeholder="Central Park"
+                    className="mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="location_address" className="text-sm font-medium">Address</Label>
+                  <Input
+                    id="location_address"
+                    value={formData.location.address}
+                    onChange={(e) => handleInputChange('location.address', e.target.value)}
+                    placeholder="New York, NY 10024"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="cover_image" className="text-sm font-medium">
+                  <Image className="h-4 w-4 inline mr-1" />
+                  Cover Image URL
+                </Label>
+                <Input
+                  id="cover_image"
+                  value={formData.cover_image.url}
+                  onChange={(e) => handleInputChange('cover_image.url', e.target.value)}
+                  placeholder="https://example.com/image.jpg"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-sm font-medium">
+                  <Tag className="h-4 w-4 inline mr-1" />
+                  Tags
+                </Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    placeholder="Add a tag..."
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                  />
+                  <Button type="button" onClick={addTag} size="sm">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {formData.tags.map(tag => (
+                    <Badge key={tag} variant="secondary" className="flex items-center gap-1">
+                      {tag}
+                      <X className="h-3 w-3 cursor-pointer" onClick={() => removeTag(tag)} />
+                    </Badge>
                   ))}
                 </div>
               </div>
             </CardContent>
-          )}
+          </Card>
 
-          {step === 2 && (
-            /* Step 2: Event Details */
-            <CardContent className="space-y-4 pt-6">
-              <div className="space-y-2">
-                <Label htmlFor="name">Event Name</Label>
-                <Input
-                  id="name"
-                  placeholder="Summer Beach Party"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
-              </div>
+          {/* Privacy & Access Control */}
+          <Card className="shadow-lg border-0 backdrop-blur">
+            <CardHeader className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Privacy & Access Control
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label className="text-sm font-medium">
+                    <Globe className="h-4 w-4 inline mr-1" />
+                    Event Visibility
+                  </Label>
+                  <Select value={formData.privacy.visibility} onValueChange={(value) => handleInputChange('privacy.visibility', value)}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">🌍 Public - Anyone can find and view</SelectItem>
+                      <SelectItem value="unlisted">🔗 Unlisted - Only with link</SelectItem>
+                      <SelectItem value="private">🔒 Private - Invited guests only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="description">Description (Optional)</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Share details about your event"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                />
+                <div>
+                  <Label className="text-sm font-medium">Content Moderation</Label>
+                  <Select value={formData.privacy.content_controls.content_moderation} onValueChange={(value) => handleInputChange('privacy.content_controls.content_moderation', value)}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">Off - No moderation</SelectItem>
+                      <SelectItem value="manual">Manual - Host approval required</SelectItem>
+                      <SelectItem value="auto">Auto - AI + Manual moderation</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="date">Event Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date ? format(date, 'PPP') : 'Select date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={date}
-                        onSelect={(date) => date && setDate(date)}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Make Discoverable</Label>
+                    <Switch
+                      checked={formData.privacy.discoverable}
+                      onCheckedChange={(checked) => handleInputChange('privacy.discoverable', checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Require Guest Approval</Label>
+                    <Switch
+                      checked={formData.privacy.guest_management.require_approval}
+                      onCheckedChange={(checked) => handleInputChange('privacy.guest_management.require_approval', checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Allow Anonymous Guests</Label>
+                    <Switch
+                      checked={formData.privacy.guest_management.allow_anonymous}
+                      onCheckedChange={(checked) => handleInputChange('privacy.guest_management.allow_anonymous', checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Anyone Can Invite</Label>
+                    <Switch
+                      checked={formData.privacy.guest_management.anyone_can_invite}
+                      onCheckedChange={(checked) => handleInputChange('privacy.guest_management.anyone_can_invite', checked)}
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="location">Location (Optional)</Label>
-                  <div className="flex">
-                    <MapPinIcon className="h-4 w-4 mt-3 mr-2 text-gray-400" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Allow Downloads</Label>
+                    <Switch
+                      checked={formData.privacy.content_controls.allow_downloads}
+                      onCheckedChange={(checked) => handleInputChange('privacy.content_controls.allow_downloads', checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Allow Sharing</Label>
+                    <Switch
+                      checked={formData.privacy.content_controls.allow_sharing}
+                      onCheckedChange={(checked) => handleInputChange('privacy.content_controls.allow_sharing', checked)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Require Watermark</Label>
+                    <Switch
+                      checked={formData.privacy.content_controls.require_watermark}
+                      onCheckedChange={(checked) => handleInputChange('privacy.content_controls.require_watermark', checked)}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="max_guests" className="text-sm font-medium">Max Guests</Label>
                     <Input
-                      id="location"
-                      placeholder="Event location"
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
+                      id="max_guests"
+                      type="number"
+                      value={formData.privacy.guest_management.max_guests}
+                      onChange={(e) => handleInputChange('privacy.guest_management.max_guests', parseInt(e.target.value))}
+                      className="mt-1"
+                      min="1"
+                      max="10000"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="accessType">Who can upload photos?</Label>
-                <Select
-                  value={accessType}
-                  onValueChange={(value: 'public' | 'restricted') => setAccessType(value)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select access type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="public">Anyone with the link</SelectItem>
-                    <SelectItem value="restricted">Only invited people</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          )}
-
-          {step === 3 && (
-            /* Step 3: Cover Image */
-            <CardContent className="space-y-4 pt-6">
-              <div className="space-y-2">
-                <Label htmlFor="cover_image">Event Cover Image (Optional)</Label>
-                <div className="border-2 border-dashed rounded-lg p-4 text-center">
-                  {previewUrl ? (
-                    <div className="relative h-48 w-full mb-2">
-                      <Image
-                        src={previewUrl}
-                        alt="Cover preview"
-                        fill
-                        className="object-cover rounded-lg"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-48 bg-gray-50 rounded-lg">
-                      <ImageIcon size={48} className="text-gray-300 mb-2" />
-                      <p className="text-sm text-gray-500">Click to upload a cover image</p>
-                    </div>
-                  )}
+              <div>
+                <Label className="text-sm font-medium">Auto-Approve Email Domains</Label>
+                <div className="flex gap-2 mt-1">
                   <Input
-                    id="cover_image"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageUpload}
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    placeholder="company.com"
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addDomain())}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => document.getElementById('cover_image')?.click()}
-                    className="mt-2"
-                  >
-                    {previewUrl ? 'Change Image' : 'Select Image'}
+                  <Button type="button" onClick={addDomain} size="sm">
+                    <Plus className="h-4 w-4" />
                   </Button>
                 </div>
-              </div>
-
-              <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100">
-                <h4 className="font-medium text-yellow-800 text-sm">Almost Ready!</h4>
-                <p className="text-yellow-700 text-xs mt-1">
-                  After creating your event, you'll get a shareable link and QR code to invite people.
-                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {formData.privacy.guest_management.auto_approve_domains.map(domain => (
+                    <Badge key={domain} variant="outline" className="flex items-center gap-1">
+                      {domain}
+                      <X className="h-3 w-3 cursor-pointer" onClick={() => removeDomain(domain)} />
+                    </Badge>
+                  ))}
+                </div>
               </div>
             </CardContent>
-          )}
+          </Card>
 
-          <CardFooter className="flex justify-between border-t pt-4">
-            {step > 1 ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={prevStep}
-              >
-                Back
-              </Button>
-            ) : (
-              <div></div>
-            )}
+          {/* Guest Permissions */}
+          <Card className="shadow-lg border-0 backdrop-blur">
+            <CardHeader className="bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Default Guest Permissions
+              </CardTitle>
+              <CardDescription className="text-orange-100">
+                Set default permissions for new guests
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {Object.entries(formData.default_guest_permissions).map(([permission, enabled]) => (
+                  <div key={permission} className="flex items-center justify-between p-3 border rounded-lg">
+                    <Label className="text-sm font-medium capitalize">
+                      {permission.replace('_', ' ')}
+                    </Label>
+                    <Switch
+                      checked={enabled}
+                      onCheckedChange={(checked) => handleInputChange(`default_guest_permissions.${permission}`, checked)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
-            {step === 3 ? (
-              <Button
-                type="button"
-                onClick={handleCreateEvent}
-                disabled={isSubmitting || !name.trim()}
-              >
-                {isSubmitting ? 'Creating...' : 'Create Event'}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={nextStep}
-                disabled={step === 2 && !name.trim()}
-              >
-                Continue
-              </Button>
-            )}
-          </CardFooter>
+          {/* Co-hosts */}
+          <Card className="shadow-lg border-0 backdrop-blur">
+            <CardHeader className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Co-hosts
+              </CardTitle>
+              <CardDescription className="text-indigo-100">
+                Add users who can help manage this event
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="flex gap-2 mb-4">
+                <Input
+                  value={newCoHost}
+                  onChange={(e) => setNewCoHost(e.target.value)}
+                  placeholder="Enter email or user ID..."
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCoHost())}
+                />
+                <Button type="button" onClick={addCoHost} size="sm">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {formData.co_hosts.map(host => (
+                  <Badge key={host} variant="secondary" className="flex items-center gap-1">
+                    {host}
+                    <X className="h-3 w-3 cursor-pointer" onClick={() => removeCoHost(host)} />
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-center pt-6">
+            <Button
+              onClick={handleSubmit}
+              size="lg"
+              disabled={isSubmitting}
+              className="px-12 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-lg transform transition hover:scale-105"
+            >
+              {isSubmitting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Creating Event...
+                </>
+              ) : (
+                'Create Event'
+              )}
+            </Button>
+          </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
-}
+};
+
+export default EventCreateForm;

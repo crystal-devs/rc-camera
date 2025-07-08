@@ -8,18 +8,19 @@ const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
 export const LoginCosmetics = () => {
     return (
-        <div className="hidden md:flex md:flex-col w-full h-full min-h-screen bg-gradient-to-b from-primary to-primary/80 text-white">
-            <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden p-8">
-                <div className="absolute top-8 left-8">
+        <div className="hidden md:flex md:flex-col w-full h-full min-h-screen p-0  text-white">
+        {/* <div className="hidden md:flex md:flex-col w-full h-full min-h-screen bg-gradient-to-r from-violet-200 to-pink-200 text-white"> */}
+            <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden p-8 bg-gradient-to-l from-red-400 to-rose-600">
+                {/* <div className="absolute top-8 left-8">
                     <h2 className="text-3xl font-bold flex items-center">
                         <Camera className="mr-2 h-8 w-8" />
                         Rose Click
                     </h2>
-                </div>
+                </div> */}
                 
-                <div className="z-10">
+                {/* <div className="z-10">
                     <Lottie animationData={cameAnimation} loop={true} className="h-[500px]" />
-                </div>
+                </div> */}
                 
                 <div className="mt-8 max-w-md text-center">
                     <h1 className="text-4xl font-bold mb-4">Share Memories Together</h1>

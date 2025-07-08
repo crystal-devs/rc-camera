@@ -16,12 +16,15 @@ export function useSubscriptionLimits() {
   const { subscription, usage, isAuthenticated, hydrated } = useStore();
   const router = useRouter();
   
-  // Add a ref to cache the latest check result to prevent redundant API calls
+  // Add refs to cache the latest check result and track ongoing requests
   const eventLimitCheckRef = useRef({
     lastCheckedAt: 0,
     canCreate: null as boolean | null,
     checkedEventCount: 0
   });
+  
+  // Add a ref to track ongoing check requests to prevent duplicate calls
+  const checkInProgressRef = useRef(false);
   
   /**
    * Navigate to the subscription upgrade page
@@ -50,6 +53,25 @@ export function useSubscriptionLimits() {
     if (!isAuthenticated) {
       toast.error('You need to be logged in to create events.');
       return false;
+    }
+    
+    // Check if another check is already in progress to avoid race conditions
+    if (checkInProgressRef.current) {
+      console.log('Subscription check: Another check is already in progress, waiting...');
+      
+      // Wait for the ongoing check to complete (max 2 seconds)
+      let waitCount = 0;
+      while (checkInProgressRef.current && waitCount < 20) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        waitCount++;
+      }
+      
+      // If we have a cached result after waiting, use it
+      if (eventLimitCheckRef.current.canCreate !== null) {
+        console.log('Subscription check: Using result from completed check:', 
+          eventLimitCheckRef.current.canCreate ? 'CAN create event' : 'CANNOT create event');
+        return eventLimitCheckRef.current.canCreate;
+      }
     }
     
     // Check if we have a recent cached result (within last 30 seconds) and usage count matches
@@ -91,6 +113,9 @@ export function useSubscriptionLimits() {
       return cachedResult.canCreate;
     }
     
+    // Set the check in progress flag to prevent concurrent checks
+    checkInProgressRef.current = true;
+    
     try {
       // Need to check with fresh data
       let subToCheck = subscription;
@@ -100,18 +125,24 @@ export function useSubscriptionLimits() {
       if (forceFetchUsage || !usage) {
         console.log('Subscription check: Fetching fresh usage data from server');
         const { fetchUsage } = useStore.getState();
-        await fetchUsage();
         
-        // Get updated state after fetching usage
-        const storeState = useStore.getState();
-        subToCheck = storeState.subscription;
-        usageToCheck = storeState.usage;
-        
-        // Check if we still don't have usage data after trying to fetch it
-        if (!usageToCheck) {
-          console.error('Subscription check: Failed to fetch usage data from server');
-          toast.error('Unable to verify your subscription limits. Please try again.');
-          return false;
+        try {
+          await fetchUsage();
+          
+          // Get updated state after fetching usage
+          const storeState = useStore.getState();
+          subToCheck = storeState.subscription;
+          usageToCheck = storeState.usage;
+          
+          // Check if we still don't have usage data after trying to fetch it
+          if (!usageToCheck) {
+            console.error('Subscription check: Failed to fetch usage data from server');
+            toast.error('Unable to verify your subscription limits. Please try again.');
+            return false;
+          }
+        } catch (fetchError) {
+          console.error('Subscription check: Error fetching usage data:', fetchError);
+          // Continue with existing data if fetch fails
         }
       }
       
@@ -141,6 +172,9 @@ export function useSubscriptionLimits() {
       console.error('Error checking event creation limits:', error);
       toast.error('Something went wrong checking your subscription limits. Please try again.');
       return false;
+    } finally {
+      // Clear the in-progress flag
+      checkInProgressRef.current = false;
     }
   }, [subscription, usage, isAuthenticated, hydrated, navigateToUpgrade]);
   

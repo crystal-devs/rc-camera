@@ -26,11 +26,12 @@ import { useStore } from '@/lib/store';
 
 interface EventActionsProps {
     eventId: string;
-    accessCode?: string;
+    accessCode?: string; // Keep for backward compatibility, but now optional
     name: string;
     qrDialogOpen: boolean;
     setQrDialogOpen: (open: boolean) => void;
     copyShareLink: () => void;
+    invitedGuests?: string[]; // Add support for invited guests
 }
 
 const EventActions: React.FC<EventActionsProps> = ({
@@ -40,6 +41,7 @@ const EventActions: React.FC<EventActionsProps> = ({
     qrDialogOpen,
     setQrDialogOpen,
     copyShareLink,
+    invitedGuests,
 }) => {
     const router = useRouter();
     const { fetchUsage } = useStore();
@@ -68,7 +70,13 @@ const EventActions: React.FC<EventActionsProps> = ({
 
                         <div className="mt-4 text-center">
                             <p className="text-sm font-medium mb-1">{name}</p>
-                            <p className="text-xs text-gray-500">Access Code: {accessCode}</p>
+                            {invitedGuests && invitedGuests.length > 0 ? (
+                                <p className="text-xs text-gray-500">
+                                    Invited Guests: {invitedGuests.length} {invitedGuests.length === 1 ? 'person' : 'people'}
+                                </p>
+                            ) : (
+                                <p className="text-xs text-gray-500">Share this QR code with your guests</p>
+                            )}
                         </div>
                     </div>
 

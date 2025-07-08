@@ -1,8 +1,8 @@
 // components/events/EventForm.tsx
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarIcon, MapPinIcon, ImageIcon, LockIcon } from 'lucide-react';
+import { CalendarIcon, MapPinIcon, ImageIcon, LockIcon, PlusIcon, XIcon, UserIcon } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -24,10 +24,16 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { toast } from 'sonner';
+import {
+  Card,
+  CardContent
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { GuestInput } from '@/components/event/GuestInput';
 
 import { Event, EventTemplate } from '@/types/events';
 import { EventAccessLevel } from '@/types/sharing';
-import { createEvent, updateEvent } from '@/services/apis/events.api';
+import { createEvent, updateEvent, addGuests } from '@/services/apis/events.api';
 import { useAuthToken } from '@/hooks/use-auth';
 import { useSubscriptionLimits } from '@/hooks/use-subscription-limits';
 import { useStore } from '@/lib/store';
@@ -59,8 +65,8 @@ export const EventForm = ({ event }: EventFormProps) => {
     startDate: event?.date || new Date(),
     endDate: event?.endDate || undefined,
     location: event?.location || '',
-    isPrivate: event?.accessType === 'restricted',
-    accessCode: event?.accessCode || '',
+    accessLevel: event?.access?.level === 'invited_only' ? 'invited_only' : event?.is_private ? 'link_only' : 'public',
+    guestList: event?.invitedGuests || [], // Store guests as array for better management
     template: event?.template || 'custom' as EventTemplate,
     thumbnailPic: event?.cover_image || ''
   });
@@ -77,24 +83,74 @@ export const EventForm = ({ event }: EventFormProps) => {
 
   const { fetchUsage } = useStore();
   
+  const validateForm = () => {
+    if (!formState.title.trim()) {
+      toast.error('Event title is required');
+      return false;
+    }
+    
+    // For invited-only events, we must have at least one guest
+    if (formState.accessLevel === 'invited_only' && formState.guestList.length === 0) {
+      toast.error('At least one invited guest is required for invited-only events');
+      return false;
+    }
+    
+    return true;
+  };
+  
+  // Handle bulk guest import from a text area
+  const handleBulkGuestImport = (guestList: string) => {
+    if (!guestList.trim()) return;
+    
+    const emails = guestList
+      .split(/[,;\n\s]+/) // Split by commas, semicolons, newlines, or spaces
+      .map(email => email.trim().toLowerCase())
+      .filter(email => email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)); // Filter valid emails
+    
+    // Filter out duplicates
+    const uniqueEmails = [...new Set([...formState.guestList, ...emails])];
+    
+    if (uniqueEmails.length > formState.guestList.length) {
+      handleChange('guestList', uniqueEmails);
+      toast.success(`Added ${uniqueEmails.length - formState.guestList.length} new guests`);
+    } else if (emails.length > 0) {
+      toast.info('All these guests were already added');
+    } else {
+      toast.error('No valid email addresses found');
+    }
+  };
+  
+  // Add a ref to track if we've already checked subscription limits
+  const [limitChecked, setLimitChecked] = useState(false);
+  const [canCreateNewEvent, setCanCreateNewEvent] = useState(true);
+  
+  // Check subscription limits when component mounts, but only once
+  useEffect(() => {
+    // Skip for edit mode, only check for new events
+    if (isEditMode || limitChecked) return;
+    
+    const checkEventLimit = async () => {
+      // Use cached result if available, but don't force a refresh
+      const canCreate = await canCreateEvent(false, false);
+      setCanCreateNewEvent(canCreate);
+      setLimitChecked(true);
+    };
+    
+    checkEventLimit();
+  }, [isEditMode, canCreateEvent, limitChecked]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formState.title.trim()) {
-      toast.error('Event title is required');
+    // Validate form fields
+    if (!validateForm()) {
       return;
     }
     
-    // Check subscription limits before creating a new event
-    // We'll use the cached result if it's recent, otherwise check with the server
-    if (!isEditMode) {
-      // Don't force a refresh if we recently checked (the hook will manage this)
-      // This avoids redundant API calls if the form is submitted shortly after the page loaded
-      const canCreate = await canCreateEvent(false, false);
-      if (!canCreate) {
-        // canCreateEvent already shows toast notifications and upgrade option
-        return;
-      }
+    // For new events, use the pre-checked subscription limit result
+    if (!isEditMode && !canCreateNewEvent) {
+      // We already showed the error message in the useEffect
+      return;
     }
     
     setIsSubmitting(true);
@@ -108,19 +164,33 @@ export const EventForm = ({ event }: EventFormProps) => {
           date: formState.startDate,
           endDate: formState.endDate,
           location: formState.location || undefined,
-          accessType: formState.isPrivate ? 'restricted' as const : 'public' as const,
-          accessCode: formState.isPrivate ? formState.accessCode : undefined,
           template: formState.template,
           cover_image: formState.thumbnailPic || undefined,
           // New access model
-          access: {
-            level: formState.isPrivate ? EventAccessLevel.RESTRICTED : EventAccessLevel.PUBLIC,
-            allowGuestUploads: false,
-            requireApproval: false
+          is_private: formState.accessLevel !== 'public',
+          share_settings: {
+            restricted_to_guests: formState.accessLevel === 'invited_only',
+            has_password_protection: false
           }
         };
         
         await updateEvent(event.id, updatePayload, authToken || '');
+        
+        // If it's a private event with invited guests, update the guest list
+        if (formState.accessLevel === 'invited_only') {
+          try {
+            if (formState.guestList.length > 0) {
+              await addGuests(event.id, formState.guestList, authToken || '');
+              toast.success(`Successfully updated guest list with ${formState.guestList.length} guests`);
+            } else {
+              // This is an invited-only event but no guests are added
+              toast.warning('No guests were added to this invited-only event. Please add guests or change access level.');
+            }
+          } catch (error) {
+            console.error('Error updating guest list:', error);
+            toast.error('Failed to update guest list, but event was updated');
+          }
+        }
         
         // Ensure usage is refreshed after update
         fetchUsage();
@@ -134,19 +204,33 @@ export const EventForm = ({ event }: EventFormProps) => {
           date: formState.startDate,
           endDate: formState.endDate,
           location: formState.location,
-          accessType: formState.isPrivate ? 'restricted' as const : 'public' as const,
-          accessCode: formState.isPrivate ? formState.accessCode : undefined,
           template: formState.template,
           cover_image: formState.thumbnailPic,
           // New access model
-          access: {
-            level: formState.isPrivate ? EventAccessLevel.RESTRICTED : EventAccessLevel.PUBLIC,
-            allowGuestUploads: false,
-            requireApproval: false
+          is_private: formState.accessLevel !== 'public',
+          share_settings: {
+            restricted_to_guests: formState.accessLevel === 'invited_only',
+            has_password_protection: false
           }
         };
         
         const newEvent = await createEvent(createPayload, authToken || '');
+        
+        // If it's a private event with invited guests, update the guest list
+        if (formState.accessLevel === 'invited_only') {
+          try {
+            if (formState.guestList.length > 0) {
+              await addGuests(newEvent.id, formState.guestList, authToken || '');
+              toast.success(`Successfully added ${formState.guestList.length} guests to the event`);
+            } else {
+              // This is an invited-only event but no guests are added
+              toast.warning('No guests were added to this invited-only event. Please add guests or change access level.');
+            }
+          } catch (error) {
+            console.error('Error adding guests:', error);
+            toast.error('Failed to add guests, but event was created');
+          }
+        }
         
         // Ensure usage is refreshed after creation
         fetchUsage();
@@ -293,9 +377,16 @@ export const EventForm = ({ event }: EventFormProps) => {
         <div className="space-y-2">
           <Label htmlFor="accessLevel">Access Level</Label>
           <Select
-            value={formState.isPrivate ? "restricted" : "public"}
+            value={formState.accessLevel}
             onValueChange={(value) => {
-              handleChange('isPrivate', value === "restricted");
+              // If changing from invited-only to another access level but we have guests
+              if (formState.accessLevel === 'invited_only' && value !== 'invited_only' && formState.guestList.length > 0) {
+                if (confirm(`You have ${formState.guestList.length} guests in your invite list. Changing the access level will not remove them, but they will no longer be required for access. Continue?`)) {
+                  handleChange('accessLevel', value);
+                }
+              } else {
+                handleChange('accessLevel', value);
+              }
             }}
           >
             <SelectTrigger>
@@ -304,28 +395,40 @@ export const EventForm = ({ event }: EventFormProps) => {
             <SelectContent>
               <SelectItem value="public">Public (Anyone can view)</SelectItem>
               <SelectItem value="link_only">Link Only (Anyone with link)</SelectItem>
-              <SelectItem value="restricted">Restricted (Requires access code)</SelectItem>
+              <SelectItem value="invited_only">Invited Only (Only specified guests)</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-gray-500 mt-1">
-            {formState.isPrivate ? 
-              "Only people with the access code can view this event" : 
+            {formState.accessLevel === 'invited_only' ? 
+              "Only invited guests can view this event" : 
+              formState.accessLevel === 'link_only' ?
+              "Anyone with the link can view this event" :
               "Anyone can view this event without restrictions"}
           </p>
         </div>
 
-        {formState.isPrivate && (
+        {formState.accessLevel === 'invited_only' && (
           <div className="pt-2">
-            <Label htmlFor="accessCode">Access Code</Label>
-            <div className="relative mt-1">
-              <LockIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                id="accessCode"
-                value={formState.accessCode}
-                onChange={(e) => handleChange('accessCode', e.target.value)}
-                placeholder="Create an access code"
-                className="pl-10"
+            <div className="flex items-center justify-between">
+              <Label htmlFor="invitedGuests" className="text-md font-medium">Invited Guests</Label>
+              <Badge variant="outline" className="font-normal">
+                {formState.guestList.length} {formState.guestList.length === 1 ? 'guest' : 'guests'}
+              </Badge>
+            </div>
+            <div className="mt-2">
+              <GuestInput 
+                guestList={formState.guestList}
+                onChange={(guests) => handleChange('guestList', guests)}
               />
+            </div>
+            <div className="bg-blue-50 p-3 rounded-md mt-3 text-sm text-blue-800">
+              <p className="font-medium">About Invited Guests</p>
+              <ul className="list-disc pl-5 mt-1 text-xs space-y-1">
+                <li>Only these people will be able to view and participate in this event</li>
+                <li>Each guest will receive a personalized access link</li>
+                <li>Guests must use the exact email you entered to access the event</li>
+                <li>You can add or remove guests at any time</li>
+              </ul>
             </div>
           </div>
         )}
