@@ -14,39 +14,8 @@ const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
     : startDate > new Date();
 
   return {
-    id: apiEvent._id,
-    title: apiEvent.title,
-    description: apiEvent.description,
-    date: startDate,
-    endDate: apiEvent.end_date ? new Date(apiEvent.end_date) : undefined,
-    location: apiEvent.location.address || '',
-    cover_image: apiEvent.cover_image.url || undefined,
-    createdAt: new Date(apiEvent.created_at),
-    createdById: apiEvent.created_by,
-    is_private: apiEvent.is_private,
-    // Map invited guests
-    invitedGuests: apiEvent.invited_guests || [],
-    template: apiEvent.template || 'custom',
-    isActive,
-    photoCount: 0,  // Will be populated later if available
-    albumCount: 0,   // Will be populated later if available
-    privacy:{
-      visibility: apiEvent?.privacy?.visibility || 'private',
-      discoverable: apiEvent?.privacy?.discoverable || false,
-      guest_management: {
-        anyone_can_invite: apiEvent?.privacy?.guest_management?.anyone_can_invite || false,
-        require_approval: apiEvent?.privacy?.guest_management?.require_approval || false,
-        auto_approve_domains: apiEvent?.privacy?.guest_management?.auto_approve_domains || [],
-        max_guests: apiEvent?.privacy?.guest_management?.max_guests || 100,
-        allow_anonymous: apiEvent?.privacy?.guest_management?.allow_anonymous || false,
-      },
-      content_controls: {
-        allow_downloads: apiEvent?.privacy?.content_controls?.allow_downloads || false,
-        allow_sharing: apiEvent?.privacy?.content_controls?.allow_sharing || false,
-        require_watermark: apiEvent?.privacy?.content_controls?.require_watermark || false,
-        content_moderation: apiEvent?.privacy?.content_controls?.content_moderation || 'none',
-      }
-    }
+
+    ...apiEvent,
   };
 };
 

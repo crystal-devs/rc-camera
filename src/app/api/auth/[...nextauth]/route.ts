@@ -1,15 +1,15 @@
+// app/api/auth/[...nextauth]/route.ts - Updated with better redirect handling
+
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import InstagramProvider from 'next-auth/providers/instagram';
 import { NextAuthOptions } from 'next-auth';
-// import { saveUserToDatabase, updateUserToken } from '@/lib/db';
 
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-      // Request more scopes if you need additional data
       authorization: {
         params: {
           scope: 'openid email profile',
@@ -34,9 +34,9 @@ export const authOptions: NextAuthOptions = {
       console.log('========= END AUTH PROVIDER RESPONSE =========');
 
       // Save user data to your database
-    //   if (user && account && profile) {
-    //     await saveUserToDatabase(user, account, profile);
-    //   }
+      // if (user && account && profile) {
+      //   await saveUserToDatabase(user, account, profile);
+      // }
 
       return true;
     },
@@ -44,12 +44,12 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         // Add the user ID to the session
         session.user.id = token.sub as string;
-        
+
         // Add provider to the session
         session.user.provider = token.provider as string;
-        
-        // Add any other custom fields from your database
-        // This requires extending the Session type in next-auth.d.ts
+
+        // Add access token if available
+        session.accessToken = token.accessToken as string;
       }
       return session;
     },
@@ -58,7 +58,7 @@ export const authOptions: NextAuthOptions = {
       if (account && user) {
         token.provider = account.provider;
         token.providerAccountId = account.providerAccountId;
-        
+
         // Store access token info in the token
         if (account.access_token) {
           token.accessToken = account.access_token;
@@ -66,13 +66,31 @@ export const authOptions: NextAuthOptions = {
           token.expiresAt = account.expires_at;
         }
       }
-      
-      // Check if token needs refreshing (if you implement token refresh)
-      // if (token.expiresAt && Date.now() > token.expiresAt * 1000) {
-      //   // Refresh token logic here
-      // }
-      
+
       return token;
+    },
+    async redirect({ url, baseUrl }) {
+      console.log('NextAuth redirect:', { url, baseUrl });
+
+      // Allows relative callback URLs
+      if (url.startsWith('/')) {
+        return `${baseUrl}${url}`;
+      }
+
+      // Allows callback URLs on the same origin
+      if (new URL(url).origin === baseUrl) {
+        return url;
+      }
+
+      // For co-host invites, preserve the full URL
+      if (url.includes('/events/join-cohost/')) {
+        const urlObj = new URL(url);
+        if (urlObj.origin === baseUrl) {
+          return url;
+        }
+      }
+
+      return baseUrl;
     }
   },
   events: {
@@ -91,3 +109,25 @@ export const authOptions: NextAuthOptions = {
 
 const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };
+
+// types/next-auth.d.ts - Add this to extend NextAuth types
+declare module 'next-auth' {
+  interface Session {
+    accessToken?: string;
+    user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+      provider?: string;
+    }
+  }
+
+  interface JWT {
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+    provider?: string;
+    providerAccountId?: string;
+  }
+}

@@ -48,13 +48,16 @@ import { toast } from "sonner"
 import { fetchEvents } from '@/services/apis/events.api';
 
 interface Event {
-  id: string;
+  _id: string;
   title: string;
   description?: string;
   date: Date;
   endDate?: Date;
   location?: string;
-  cover_image?: string;
+  cover_image?: {
+    url: string;
+    thumbnail_url?: string;
+  };
   createdAt: Date;
   createdById: number;
   accessType: 'public' | 'restricted';
@@ -292,16 +295,16 @@ export default function EventsPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {filteredAndSortedEvents.map((event) => (
               <div
-                key={event.id}
+                key={event._id}
                 className="relative rounded-xl overflow-hidden cursor-pointer h-48 md:h-52 shadow-sm hover:shadow-md transition-shadow"
-                onClick={() => navigateToEvent(event.id)}
+                onClick={() => navigateToEvent(event._id)}
               >
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
-                  {event.cover_image ? (
+                  {event?.cover_image?.thumbnail_url ? (
                     <Image
-                      src={event.cover_image}
-                      alt={title}
+                      src={event?.cover_image?.thumbnail_url}
+                      alt={'title'}
                       fill
                       className="object-cover"
                     />
@@ -345,13 +348,13 @@ export default function EventsPage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
-                        router.push(`/events/${event.id}`);
+                        router.push(`/events/${event._id}`);
                       }}>
                         View Event
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
-                        router.push(`/events/${event.id}/edit`);
+                        router.push(`/events/${event._id}/edit`);
                       }}>
                         Edit Event
                       </DropdownMenuItem>
@@ -371,14 +374,18 @@ export default function EventsPage() {
                   <h3 className="font-medium text-lg line-clamp-1">{event.title}</h3>
                   <div className="flex items-center text-sm">
                     <CalendarIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                    {format(new Date(event.date), 'MMM d, yyyy')}
+                    {/* {format(new Date(event.date), 'MMM d, yyyy')} */}
                   </div>
-                  {event.location && (
-                    <div className="flex items-center text-sm">
-                      <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                      <span className="truncate">{event.location}</span>
-                    </div>
-                  )}
+  {event.location && (
+    <div className="flex items-center text-sm">
+      <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+      <span className="truncate">
+        {typeof event.location === 'object' && event.location !== null
+          ? (event.location as any).name || (event.location as any).address || ''
+          : event.location}
+      </span>
+    </div>
+  )}
                 </div>
               </div>
             ))}
@@ -388,14 +395,14 @@ export default function EventsPage() {
           <div className="space-y-3">
             {filteredAndSortedEvents.map((event) => (
               <div
-                key={event.id}
+                key={event._id}
                 className="flex border rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => navigateToEvent(event.id)}
+                onClick={() => navigateToEvent(event._id)}
               >
                 <div className="relative h-24 w-24 sm:h-32 sm:w-32 flex-shrink-0">
-                  {event.cover_image ? (
+                  {event?.cover_image?.thumbnail_url ? (
                     <Image
-                      src={event.cover_image}
+                      src={event?.cover_image?.thumbnail_url}
                       alt={event.title}
                       fill
                       className="object-cover"
@@ -431,13 +438,13 @@ export default function EventsPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={(e) => {
                           e.stopPropagation();
-                          router.push(`/events/${event.id}`);
+                          router.push(`/events/${event._id}`);
                         }}>
                           View Event
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => {
                           e.stopPropagation();
-                          router.push(`/events/${event.id}/edit`);
+                          router.push(`/events/${event._id}/edit`);
                         }}>
                           Edit Event
                         </DropdownMenuItem>
@@ -451,12 +458,16 @@ export default function EventsPage() {
                       {format(new Date(event.date), 'MMM d, yyyy')}
                     </div>
 
-                    {event.location && (
-                      <div className="flex items-center">
-                        <MapPinIcon className="h-3 w-3 mr-1" />
-                        <span className="truncate max-w-[120px]">{event.location}</span>
-                      </div>
-                    )}
+                {event.location && (
+                  <div className="flex items-center">
+                    <MapPinIcon className="h-3 w-3 mr-1" />
+                    <span className="truncate max-w-[120px]">
+                      {typeof event.location === 'object' && event.location !== null
+                        ? (event.location as any).name || (event.location as any).address || ''
+                        : event.location}
+                    </span>
+                  </div>
+                )}
 
                     <div className="flex items-center">
                       <CameraIcon className="h-3 w-3 mr-1" />

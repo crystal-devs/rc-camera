@@ -26,6 +26,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <Providers>
+          
           <AppProvider>
             <FullscreenProvider>
               {/* SidebarProvider is in AppSidebar component */}

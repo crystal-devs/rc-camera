@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { getEventById, getEventGuests, inviteGuestsToEvent, updateInvitedGuests } from '@/services/apis/events.api';
 import { useAuthToken } from '@/hooks/use-auth';
-import { createShareToken, getTokenByEventId } from '@/services/apis/sharing.api';
+// import { createShareToken, getTokenByEventId } from '@/services/apis/sharing.api';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -302,11 +302,11 @@ export default function GuestManagementPage({ params }: PageProps) {
     if (!token) return null;
     
     try {
-      const tokenData = await getTokenByEventId(eventId, token as string);
-      if (tokenData && tokenData.token) {
-        setShareToken(tokenData.token);
-        return tokenData.token;
-      }
+      // const tokenData = await getTokenByEventId(eventId, token as string);
+      // if (tokenData && tokenData.token) {
+      //   setShareToken(tokenData.token);
+      //   return tokenData.token;
+      // }
     } catch (error) {
       console.error('Error getting share token:', error);
     }

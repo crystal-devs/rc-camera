@@ -15,7 +15,7 @@ export default function EventCoverSection({ event }: EventCoverProps) {
         <div className="relative w-full h-56 sm:h-64 md:h-72 lg:h-80">
             {/* Background Image with Gradient Overlay */}
             <div className="absolute inset-0">
-                {event.cover_image ? (
+                {/* {event.cover_image ? (
                     <Image
                         src={event.cover_image}
                         alt={event.title}
@@ -32,7 +32,7 @@ export default function EventCoverSection({ event }: EventCoverProps) {
                         {event.template === 'vacation' && <span className="text-7xl sm:text-8xl">🏖️</span>}
                         {(!event.template || event.template === 'custom') && <span className="text-7xl sm:text-8xl">📸</span>}
                     </div>
-                )}
+                )} */}
                 {/* Gradient overlay for better text visibility */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20"></div>
             </div>
