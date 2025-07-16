@@ -40,6 +40,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import TeamTab from '@/components/event/TeamTab';
 
 type EventFormData = {
   title: string;
@@ -753,80 +754,9 @@ const EventSettingsPage = () => {
 
         {/* Team Tab */}
         <TabsContent value="team" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Event Managers</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Invite other members who can access and manage this event
-              </p>
-
-              <div className="flex gap-2">
-                <Input
-                  value={newCoHost}
-                  onChange={(e) => setNewCoHost(e.target.value)}
-                  placeholder="Enter email address..."
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCoHost())}
-                />
-                <Button type="button" onClick={addCoHost}>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Invite
-                </Button>
-              </div>
-
-              {formData.co_hosts.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Current Managers</Label>
-                  <div className="space-y-2">
-                    {formData.co_hosts.map(host => (
-                      <div key={host} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">{host}</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeCoHost(host)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {formData.co_hosts.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No managers added yet</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Manager Permissions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3 text-sm text-muted-foreground">
-                <p>Event managers can:</p>
-                <ul className="space-y-1 ml-4">
-                  <li>• View and manage all event photos</li>
-                  <li>• Moderate and approve uploaded content</li>
-                  <li>• Invite additional guests</li>
-                  <li>• Update event settings</li>
-                  <li>• Download event content</li>
-                </ul>
-                <p className="text-xs mt-3 p-3 bg-muted rounded-lg">
-                  <strong>Note:</strong> Managers cannot delete the event or remove the event creator.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          {
+            eventId && authToken && <TeamTab eventId={eventId as string} authToken={authToken} isEventCreator={true} />
+          }
         </TabsContent>
       </Tabs>
     </div>

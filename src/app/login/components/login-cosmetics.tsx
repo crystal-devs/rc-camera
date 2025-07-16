@@ -8,9 +8,9 @@ const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
 export const LoginCosmetics = () => {
     return (
-        <div className="hidden md:flex md:flex-col w-full h-full min-h-screen p-0  text-white">
+        <div className="hidden md:flex md:flex-col w-full h-full min-h-screen p-4 text-white">
         {/* <div className="hidden md:flex md:flex-col w-full h-full min-h-screen bg-gradient-to-r from-violet-200 to-pink-200 text-white"> */}
-            <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden p-8 bg-gradient-to-l from-red-400 to-rose-600">
+            <div className="relative w-full h-full flex flex-col items-center rounded-2xl justify-center overflow-hidden p-8 bg-gradient-to-b from-violet-300 to-rose-300">
                 {/* <div className="absolute top-8 left-8">
                     <h2 className="text-3xl font-bold flex items-center">
                         <Camera className="mr-2 h-8 w-8" />
@@ -28,12 +28,12 @@ export const LoginCosmetics = () => {
                         Capture, share, and relive special moments with friends and family in one place.
                     </p>
                     
-                    <div className="grid grid-cols-2 gap-4 mt-8">
+                    {/* <div className="grid grid-cols-2 gap-4 mt-8">
                         <FeatureItem icon={<Image className="h-6 w-6" />} title="Create Albums" />
                         <FeatureItem icon={<Users className="h-6 w-6" />} title="Group Events" />
                         <FeatureItem icon={<Share className="h-6 w-6" />} title="Easy Sharing" />
                         <FeatureItem icon={<Heart className="h-6 w-6" />} title="Save Favorites" />
-                    </div>
+                    </div> */}
                 </div>
                 
                 {/* Background decorative elements */}

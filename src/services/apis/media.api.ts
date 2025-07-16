@@ -44,11 +44,14 @@ export const getEventMedia = async (
         page?: number;
         limit?: number;
         quality?: 'thumbnail' | 'display' | 'full';
-        since?: string; // For incremental updates
+        since?: string;
     } = {}
 ): Promise<MediaItem[]> => {
     try {
         const cacheKey = `event_${eventId}`;
+
+        // Log to verify function call
+        console.log(`Fetching event media for eventId: ${eventId}, includeAllAlbums: ${includeAllAlbums}, options:`, options);
 
         // Check cache for incremental updates
         if (!options.since && !options.includeProcessing && !options.includePending) {
@@ -59,12 +62,7 @@ export const getEventMedia = async (
             }
         }
 
-        console.log(`Fetching event media: ${eventId} (includeAllAlbums: ${includeAllAlbums})`);
-
-        const endpoint = `${API_BASE_URL}/media/event/${eventId}`
-        // ? `${API_BASE_URL}/media/event/${eventId}`
-        // : `${API_BASE_URL}/media/event/${eventId}/default`;
-
+        const endpoint = `${API_BASE_URL}/media/event/${eventId}`;
         const params = new URLSearchParams();
         if (options.includeProcessing) params.append('include_processing', 'true');
         if (options.includePending) params.append('include_pending', 'true');
@@ -73,22 +71,26 @@ export const getEventMedia = async (
         if (options.quality) params.append('quality', options.quality);
         if (options.since) params.append('since', options.since);
 
+        console.log(`Calling API: ${endpoint}?${params}`);
+
         const response = await axios.get(`${endpoint}?${params}`, {
             headers: {
                 'Authorization': `Bearer ${authToken}`,
-                'If-Modified-Since': imageCache.getLastModified(cacheKey) || ''
+                'If-Modified-Since': imageCache.getLastModified(cacheKey) || '',
             },
-            timeout: 15000
+            timeout: 15000,
         });
 
+        console.log('API Response:', response.status, response.data);
+
         if (response.status === 304) {
-            // Not modified, use cache
             const cached = imageCache.get(cacheKey);
+            console.log('Returning cached media due to 304 Not Modified');
             return cached || [];
         }
 
         if (response.data && response.data.status === true) {
-            const mediaItems = response.data.data || [];
+            const mediaItems: MediaItem[] = response.data.data || [];
 
             // Handle incremental updates
             if (options.since) {
@@ -97,7 +99,6 @@ export const getEventMedia = async (
                 imageCache.set(cacheKey, combined, response.headers['last-modified']);
                 return combined;
             } else {
-                // Full refresh
                 const lastModified = response.headers['last-modified'];
                 imageCache.set(cacheKey, mediaItems, lastModified);
             }
@@ -118,9 +119,10 @@ export const getEventMedia = async (
                 throw new Error('Authentication error. Please log in again.');
             }
             if (error.response?.status === 404) {
+                console.log('No media found for event, returning empty array');
                 return []; // Event has no photos yet
             }
-            if (error?.response?.status >= 500) {
+            if (error.response?.status >= 500) {
                 throw new Error('Server error. Please try again later.');
             }
         }
