@@ -13,9 +13,7 @@ function Providers({ children }: ProvidersProps) {
         <>
             <SessionProvider>
                 <ThemeProvider>
-                    <SidebarProvider>
-                        {children}
-                    </SidebarProvider>
+                    {children}
                 </ThemeProvider>
             </SessionProvider>
         </>

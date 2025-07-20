@@ -11,6 +11,7 @@ export interface EventAccess {
 }
 
 export interface Event {
+  _id: string;
   title: string;
   description: string;
   start_date: string;

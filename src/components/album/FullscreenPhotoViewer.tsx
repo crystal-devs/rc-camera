@@ -117,22 +117,6 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
             className="text-white hover:bg-white/20"
             onClick={(e) => {
               e.stopPropagation();
-              const shareUrl = `${window.location.origin}/shared/photos/${selectedPhoto.id}`;
-              if (navigator.share) {
-                navigator.share({ title: 'Check out this photo', url: shareUrl });
-              } else {
-                navigator.clipboard.writeText(shareUrl);
-              }
-            }}
-          >
-            <ShareIcon className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-white hover:bg-white/20"
-            onClick={(e) => {
-              e.stopPropagation();
               setPhotoInfoOpen(true);
             }}
           >

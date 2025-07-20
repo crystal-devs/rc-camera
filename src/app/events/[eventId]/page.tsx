@@ -70,14 +70,6 @@ import { getEventById } from '@/services/apis/events.api';
 import { fetchEventAlbums } from '@/services/apis/albums.api';
 import ShareManagement from '@/components/event/ShareManagement';
 import {
-    createShareToken,
-    getEventShareTokens,
-    inviteParticipants,
-    getEventParticipants,
-    updateParticipant,
-    removeParticipant,
-    ShareToken,
-    Participant,
     getTokenInfo
 } from '@/services/apis/sharing.api';
 import { SharedWelcomeBanner } from '@/components/event/SharedWelcomeBanner';
@@ -325,8 +317,8 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 }
             };
 
-            const shareToken = await createShareToken(eventId, tokenData, authToken);
-            const shareUrl = `${window.location.origin}/join/${shareToken.token}`;
+            const shareToken = 'asdfasdfasd';
+            const shareUrl = `${window.location.origin}/join/${shareToken}`;
 
             await navigator.clipboard.writeText(shareUrl);
             toast.success('Share link copied to clipboard!');

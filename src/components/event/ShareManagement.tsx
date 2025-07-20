@@ -5,8 +5,6 @@ import {
     UsersIcon, LinkIcon, MailIcon, UserPlusIcon, EyeIcon, ShareIcon, RefreshCcwIcon, XIcon, CheckIcon, CopyIcon, ShieldIcon, UserCheckIcon, TrashIcon
 } from 'lucide-react';
 import {
-    createShareToken,
-    getEventShareTokens,
     inviteParticipants,
     getEventParticipants,
     updateParticipant,
@@ -51,64 +49,6 @@ const ShareManagement = ({ eventId, event, authToken, onClose }: { eventId: stri
     }, [eventId]);
 
     const loadData = async () => {
-        setIsLoading(true);
-        try {
-            const [tokensData, participantsData] = await Promise.all([
-                getEventShareTokens(eventId, authToken),
-                getEventParticipants(eventId, authToken)
-            ]);
-            setShareTokens(tokensData.tokens);
-            setParticipants(participantsData.participants);
-        } catch (error) {
-            console.error('Error loading share data:', error);
-            toast.error('Failed to load sharing data');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleCreateToken = async () => {
-        if (!newTokenData.name.trim()) {
-            toast.error('Please enter a token name');
-            return;
-        }
-        setIsCreatingToken(true);
-        try {
-            const tokenData = {
-                tokenType: newTokenData.tokenType,
-                name: newTokenData.name,
-                permissions: newTokenData.permissions,
-                restrictions: {
-                    maxUses: newTokenData.restrictions.maxUses ? parseInt(newTokenData.restrictions.maxUses) : undefined,
-                    expiresAt: newTokenData.restrictions.expiresAt ? new Date(newTokenData.restrictions.expiresAt) : undefined,
-                    requiresApproval: newTokenData.restrictions.requiresApproval
-                }
-            };
-            const newToken = await createShareToken(eventId, tokenData, authToken);
-            setShareTokens(prev => [newToken, ...prev]);
-            setNewTokenData({
-                name: '',
-                tokenType: 'invite',
-                permissions: {
-                    view: true,
-                    upload: false,
-                    download: false,
-                    share: false,
-                    comment: true
-                },
-                restrictions: {
-                    maxUses: '',
-                    expiresAt: '',
-                    requiresApproval: false
-                }
-            });
-            toast.success('Share token created successfully');
-        } catch (error) {
-            console.error('Error creating token:', error);
-            toast.error('Failed to create share token');
-        } finally {
-            setIsCreatingToken(false);
-        }
     };
 
     const handleInviteParticipants = async () => {
@@ -144,24 +84,6 @@ const ShareManagement = ({ eventId, event, authToken, onClose }: { eventId: stri
         } finally {
             setIsInviting(false);
         }
-    };
-
-    const copyToClipboard = async (text: string, tokenId: string) => {
-        try {
-            await navigator.clipboard.writeText(text);
-            setCopiedToken(tokenId);
-            toast.success('Link copied to clipboard');
-            setTimeout(() => setCopiedToken(null), 2000);
-        } catch (error) {
-            toast.error('Failed to copy link');
-        }
-    };
-
-    const addEmailField = () => {
-        setInviteData(prev => ({
-            ...prev,
-            emails: [...prev.emails, '']
-        }));
     };
 
     const removeEmailField = (index: number) => {

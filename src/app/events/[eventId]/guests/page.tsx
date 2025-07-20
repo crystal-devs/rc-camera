@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { getEventById, getEventGuests, inviteGuestsToEvent, updateInvitedGuests } from '@/services/apis/events.api';
 import { useAuthToken } from '@/hooks/use-auth';
-// import { createShareToken, getTokenByEventId } from '@/services/apis/sharing.api';
 
 import { Button } from '@/components/ui/button';
 import {

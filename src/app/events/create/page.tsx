@@ -11,12 +11,9 @@ import { useRouter } from 'next/navigation';
 
 type SimpleEventData = {
   title: string;
-  template: string;
-  start_date: string;
-  end_date: string;
-  location: {
-    name: string;
-  };
+  template: 'wedding' | 'birthday' | 'concert' | 'corporate' | 'vacation' | 'custom';
+  start_date?: string;
+  end_date?: string;
 };
 
 const SimpleEventCreateForm = () => {
@@ -24,12 +21,9 @@ const SimpleEventCreateForm = () => {
 
   const [formData, setFormData] = useState<SimpleEventData>({
     title: '',
-    template: '',
+    template: 'custom',
     start_date: '',
     end_date: '',
-    location: {
-      name: ''
-    }
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,51 +34,43 @@ const SimpleEventCreateForm = () => {
     if (storedToken) {
       setAuthToken(storedToken);
     } else {
-      toast.error("You need to be logged in to create an event");
+      toast.error('You need to be logged in to create an event');
       router.push('/events');
     }
 
     // Set default start date to today
     const today = new Date();
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      start_date: today.toISOString().slice(0, 16)
+      start_date: today.toISOString().slice(0, 16),
     }));
   }, [router]);
 
   const eventTemplates = [
     { value: 'wedding', label: 'Wedding' },
     { value: 'birthday', label: 'Birthday' },
+    { value: 'concert', label: 'Concert' },
     { value: 'corporate', label: 'Corporate Event' },
-    { value: 'party', label: 'Party' },
-    { value: 'graduation', label: 'Graduation' },
     { value: 'vacation', label: 'Vacation' },
-    { value: 'custom', label: 'Other' }
+    { value: 'custom', label: 'Other' },
   ];
 
-  const handleInputChange = (field: string, value: string) => {
-    if (field === 'location.name') {
-      setFormData(prev => ({
-        ...prev,
-        location: { ...prev.location, name: value }
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [field]: value
-      }));
-    }
+  const handleInputChange = (field: keyof SimpleEventData, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const validateForm = () => {
-    const errors = [];
+    const errors: string[] = [];
     if (!formData.title.trim()) errors.push('Event name is required');
     if (!formData.template) errors.push('Please select event type');
     if (!formData.start_date) errors.push('Start date is required');
 
     const startDate = new Date(formData.start_date);
-    const endDate = new Date(formData.end_date);
-    if (formData.end_date && startDate >= endDate) {
+    const endDate = formData.end_date ? new Date(formData.end_date) : null;
+    if (endDate && startDate >= endDate) {
       errors.push('End date must be after start date');
     }
 
@@ -103,65 +89,19 @@ const SimpleEventCreateForm = () => {
     setIsSubmitting(true);
 
     try {
-      const submitData = {
+      const submitData: SimpleEventData = {
         title: formData.title.trim(),
         template: formData.template,
-        start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
-        end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
-        location: {
-          name: formData.location.name.trim(),
-          address: '',
-          coordinates: []
-        },
-        description: '',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        cover_image: { url: '', public_id: '' },
-        tags: [],
-        privacy: {
-          visibility: 'private',
-          discoverable: false,
-          guest_management: {
-            anyone_can_invite: false,
-            require_approval: false,
-            auto_approve_domains: [],
-            max_guests: 200,
-            allow_anonymous: false,
-            whatsapp_invites: true,
-            sms_invites: true,
-            auto_approve_invited: true
-          },
-          content_controls: {
-            allow_downloads: true,
-            allow_sharing: false,
-            require_watermark: false,
-            approval_mode: 'auto',
-            allowed_media_types: {
-              images: true,
-              videos: true
-            },
-            auto_compress_uploads: true,
-            max_file_size_mb: 50,
-            allow_offline_uploads: true
-          }
-        },
-        default_guest_permissions: {
-          view: true,
-          upload: true,
-          download: true,
-          comment: true,
-          share: false,
-          create_albums: false
-        },
-        co_hosts: []
+        start_date: formData.start_date ? new Date(formData.start_date).toISOString() : undefined,
+        end_date: formData.end_date ? new Date(formData.end_date).toISOString() : undefined,
       };
 
-      const createdEvent = await createEvent(submitData, authToken);
-      
-      toast.success("Event created successfully!");
-      router.push(`/events/${createdEvent.id}`);
+      const createdEvent = await createEvent(submitData, authToken!);
 
+      toast.success('Event created successfully!');
+      router.push(`/events/${createdEvent._id}`);
     } catch (error: any) {
-      toast.error(error.message || "Failed to create event");
+      toast.error(error.message || 'Failed to create event');
     } finally {
       setIsSubmitting(false);
     }
@@ -175,7 +115,7 @@ const SimpleEventCreateForm = () => {
           <p className="text-gray-600 text-sm">Share photos with your guests</p>
         </div>
 
-        <div className=" rounded-lg shadow-sm border p-6">
+        <div className="rounded-lg shadow-sm border p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="title" className="text-sm font-medium">Event Name</Label>
@@ -191,29 +131,21 @@ const SimpleEventCreateForm = () => {
 
             <div>
               <Label htmlFor="template" className="text-sm font-medium">Event Type</Label>
-              <Select value={formData.template} onValueChange={(value) => handleInputChange('template', value)}>
+              <Select
+                value={formData.template}
+                onValueChange={(value) => handleInputChange('template', value)}
+              >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {eventTemplates.map(template => (
+                  {eventTemplates.map((template) => (
                     <SelectItem key={template.value} value={template.value}>
                       {template.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="location" className="text-sm font-medium">Location (Optional)</Label>
-              <Input
-                id="location"
-                value={formData.location.name}
-                onChange={(e) => handleInputChange('location.name', e.target.value)}
-                placeholder="Paradise Resort"
-                className="mt-1"
-              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -228,7 +160,7 @@ const SimpleEventCreateForm = () => {
                 />
               </div>
               <div>
-                <Label htmlFor="end_date" className="text-sm font-medium">End Date</Label>
+                <Label htmlFor="end_date" className="text-sm font-medium">End Date (Optional)</Label>
                 <Input
                   id="end_date"
                   type="datetime-local"
@@ -239,11 +171,7 @@ const SimpleEventCreateForm = () => {
               </div>
             </div>
 
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full mt-6"
-            >
+            <Button type="submit" disabled={isSubmitting} className="w-full mt-6">
               {isSubmitting ? 'Creating...' : 'Create Event'}
             </Button>
           </form>

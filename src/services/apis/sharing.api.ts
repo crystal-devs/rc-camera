@@ -69,152 +69,54 @@ export interface Participant {
   shareTokenUsed?: string;
 }
 
-// ============= SHARE TOKEN MANAGEMENT =============
-
-export const createShareToken = async (
-  eventId: string,
-  tokenData: {
-    tokenType?: 'invite' | 'view_only' | 'collaborate';
+interface EventDetails {
+  _id: string;
+  title: string;
+  description: string;
+  start_date: string;
+  end_date?: string;
+  template: string;
+  visibility: 'anyone_with_link' | 'invited_only' | 'private';
+  cover_image?: { url: string };
+  location?: { name: string };
+  permissions: {
+    can_view: boolean;
+    can_upload: boolean;
+    can_download: boolean;
+    require_approval: boolean;
+  };
+  created_by: {
     name?: string;
-    description?: string;
-    permissions?: Partial<ShareToken['permissions']>;
-    restrictions?: Partial<ShareToken['restrictions']>;
-    albumId?: string;
-  },
-  authToken: string
-): Promise<ShareToken> => {
-  try {
-    const response = await axios.post(
-      `${API_BASE_URL}/token/event/${eventId}/tokens`,
-      {
-        token_type: tokenData.tokenType || 'invite',
-        name: tokenData.name,
-        description: tokenData.description,
-        permissions: {
-          view: true,
-          upload: false,
-          download: false,
-          share: false,
-          comment: true,
-          ...tokenData.permissions
-        },
-        restrictions: {
-          max_uses: null,
-          expires_at: null,
-          allowed_emails: [],
-          requires_approval: false,
-          ...tokenData.restrictions
-        },
-        album_id: tokenData.albumId
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    email?: string;
+    avatar_url?: string;
+  };
+  stats?: {
+    participants: number;
+  };
+  share_settings?: {
+    is_active: boolean;
+    expires_at?: string;
+  };
+}
 
-    if (response.data?.status) {
-      return response.data.data;
-    } else {
-      throw new Error(response.data?.message || 'Failed to create share token');
-    }
-  } catch (error) {
-    console.error('Error creating share token:', error);
-    throw error;
-  }
-};
+interface ShareTokenResponse {
+  status: boolean;
+  code: number;
+  message: string;
+  data: {
+    event: EventDetails;
+    analytics: {
+      total_uses: number;
+      successful_joins: number;
+      pending_approvals: number;
+      recent_users: { email: string; status: string; joined_at: string }[];
+    };
+    invitation_link: string;
+  } | null;
+  error: { message: string; stack?: string } | null;
+  other: any;
+}
 
-export const getEventShareTokens = async (
-  eventId: string,
-  authToken: string,
-  filters?: {
-    page?: number;
-    limit?: number;
-    type?: string;
-    status?: string;
-  }
-): Promise<{ tokens: ShareToken[]; pagination: any }> => {
-  try {
-    const params = new URLSearchParams();
-    if (filters?.page) params.append('page', filters.page.toString());
-    if (filters?.limit) params.append('limit', filters.limit.toString());
-    if (filters?.type) params.append('type', filters.type);
-    if (filters?.status) params.append('status', filters.status);
-
-    const response = await axios.get(
-      `${API_BASE_URL}/event/${eventId}/tokens?${params.toString()}`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`
-        }
-      }
-    );
-
-    if (response.data?.status) {
-      return response.data.data;
-    } else {
-      throw new Error(response.data?.message || 'Failed to fetch share tokens');
-    }
-  } catch (error) {
-    console.error('Error fetching share tokens:', error);
-    throw error;
-  }
-};
-
-export const updateShareToken = async (
-  eventId: string,
-  tokenId: string,
-  updateData: Partial<ShareToken>,
-  authToken: string
-): Promise<ShareToken> => {
-  try {
-    const response = await axios.patch(
-      `${API_BASE_URL}/event/${eventId}/tokens/${tokenId}`,
-      updateData,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    if (response.data?.status) {
-      return response.data.data;
-    } else {
-      throw new Error(response.data?.message || 'Failed to update share token');
-    }
-  } catch (error) {
-    console.error('Error updating share token:', error);
-    throw error;
-  }
-};
-
-export const revokeShareToken = async (
-  eventId: string,
-  tokenId: string,
-  reason: string,
-  authToken: string
-): Promise<boolean> => {
-  try {
-    const response = await axios.delete(
-      `${API_BASE_URL}/event/${eventId}/tokens/${tokenId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`
-        },
-        data: { reason }
-      }
-    );
-
-    return response.data?.status || false;
-  } catch (error) {
-    console.error('Error revoking share token:', error);
-    return false;
-  }
-};
 
 // ============= PARTICIPANT MANAGEMENT =============
 

@@ -5,6 +5,15 @@ import { API_BASE_URL } from '@/lib/api-config';
 import { Event, ApiEvent } from '@/types/events';
 import { useStore } from '@/lib/store';
 
+export interface ApiEventResponse {
+  status: boolean;
+  code: number;
+  message: string;
+  data: Event | null;
+  error: { message: string; stack?: string } | null;
+  other: any;
+}
+
 // Map API response to frontend Event format
 const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
   const startDate = new Date(apiEvent.start_date);
@@ -55,7 +64,7 @@ export const getEventById = async (eventId: string, authToken: string): Promise<
       timeout: 10000 // 10 seconds timeout for better UX
     });
 
-    console.log(`API response status: ${response.status}`);
+    console.log(`API response status: ${response.data}`);
 
     if (response.data && response.data.data) {
       console.log('Event data received:', response.data.data);
@@ -103,7 +112,6 @@ let createEventInProgress = false;
 
 // Create a new event
 export const createEvent = async (eventData: Partial<Event>, authToken: string): Promise<Event> => {
-  // Check if a creation is already in progress to prevent duplicates
   if (createEventInProgress) {
     console.warn('Event creation already in progress, preventing duplicate creation');
     throw new Error('Event creation already in progress. Please wait for the current operation to complete.');
@@ -112,20 +120,22 @@ export const createEvent = async (eventData: Partial<Event>, authToken: string):
   createEventInProgress = true;
 
   try {
-    // Transform frontend event format to API format - based on backend requirements
-    const apiEventData = eventData
-    console.log('Sending event data to API:', apiEventData);
+    console.log('Sending event data to API:', eventData);
 
-    const response = await axios.post(`${API_BASE_URL}/event`, apiEventData, {
+    const response = await axios.post<ApiEventResponse>(`${API_BASE_URL}/event`, eventData, {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
-      timeout: 15000 // Increase timeout to 15 seconds for more reliable creation
+      timeout: 15000, // 15 seconds timeout
     });
 
     console.log('Event created response:', response.data);
 
-    // Refresh usage data to update event count
+    if (!response.data.status || !response.data.data) {
+      throw new Error(response.data.error?.message || 'Failed to create event');
+    }
+
+    // Refresh usage data
     try {
       const { fetchUsage } = useStore.getState();
       await fetchUsage();
@@ -134,16 +144,15 @@ export const createEvent = async (eventData: Partial<Event>, authToken: string):
       // Continue even if usage refresh fails
     }
 
-    const createdEvent = mapApiEventToEvent(response.data.data);
-    return createdEvent;
+    return response.data.data; // Return the created event
   } catch (error) {
     console.error('Error creating event:', error);
     if (axios.isAxiosError(error) && error.response) {
       console.error('API error response:', error.response.data);
+      throw new Error(error.response.data.error?.message || 'Failed to create event');
     }
     throw error;
   } finally {
-    // Always reset the in-progress flag
     createEventInProgress = false;
   }
 };
@@ -181,18 +190,6 @@ export const updateEvent = async (
       timeout: 15000 // Increase timeout to 15 seconds for more reliable updates
     });
 
-    // If this is a private event and we have invited guests,
-    // make sure to update the share token as well
-    // if (eventData.is_private && eventData.invitedGuests && eventData.invitedGuests.length > 0) {
-    //   try {
-    //     await updateShareTokenWithGuests(eventId, eventData.invitedGuests, authToken);
-    //   } catch (shareTokenError) {
-    //     console.error('Error updating share token with guests:', shareTokenError);
-    //     // Continue even if share token update fails
-    //   }
-    // }
-
-    // Updating an event might change usage stats in some cases,
     // so refresh usage data to be safe
     try {
       const { fetchUsage } = useStore.getState();

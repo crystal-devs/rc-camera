@@ -102,7 +102,7 @@ export const generateCoHostInvite = async (
     return response.data;
   } catch (error) {
     console.error(`Error generating co-host invite for event ${eventId}:`, error);
-    
+
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 401 || error.response?.status === 403) {
         throw new Error('You don\'t have permission to generate co-host invites for this event');
@@ -110,7 +110,7 @@ export const generateCoHostInvite = async (
         throw new Error('Event not found');
       }
     }
-    
+
     throw error;
   }
 };
@@ -196,7 +196,7 @@ export const joinAsCoHost = async (
     return response.data;
   } catch (error) {
     console.error(`Error joining as co-host with token ${token}:`, error);
-    
+
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 400) {
         const errorMessage = error.response.data?.message || 'Invalid or expired invite token';
@@ -205,7 +205,7 @@ export const joinAsCoHost = async (
         throw new Error('You need to be logged in to join as co-host');
       }
     }
-    
+
     throw error;
   }
 };
@@ -267,7 +267,7 @@ export const manageCoHost = async (
     return response.data;
   } catch (error) {
     console.error(`Error managing co-host for event ${eventId}:`, error);
-    
+
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 404) {
         throw new Error('Co-host not found');
@@ -276,7 +276,7 @@ export const manageCoHost = async (
         throw new Error(errorMessage);
       }
     }
-    
+
     throw error;
   }
 };
@@ -334,11 +334,12 @@ export const validateCoHostInvite = (invite: CoHostInvite | null): {
   isValid: boolean;
   reason?: string;
 } => {
+  console.log(invite, 'asdfasdfasdf')
   if (!invite) {
     return { isValid: false, reason: 'No invite found' };
   }
 
-  if (!invite.is_active) {
+  if (!invite.invite_link) {
     return { isValid: false, reason: 'Invite has been deactivated' };
   }
 

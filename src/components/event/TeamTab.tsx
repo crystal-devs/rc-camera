@@ -88,7 +88,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
   const loadCoHostData = async () => {
     try {
       setIsLoadingCoHosts(true);
-      
+
       // Load co-hosts and invite details in parallel
       const [coHostsResponse, inviteResponse] = await Promise.allSettled([
         getEventCoHosts(eventId, authToken),
@@ -115,7 +115,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
   const handleGenerateInvite = async () => {
     try {
       setIsGeneratingInvite(true);
-      
+
       const response = await generateCoHostInvite(
         eventId,
         inviteSettings.expiresInHours,
@@ -138,7 +138,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
   const handleDeactivateInvite = async () => {
     try {
       const response = await deactivateCoHostInvite(eventId, authToken);
-      
+
       if (response.status) {
         setCoHostInvite(null);
         toast.success('Co-host invite deactivated successfully!');
@@ -159,7 +159,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
   const handleManageCoHost = async (userId: string, action: 'approve' | 'reject' | 'remove') => {
     try {
       const response = await manageCoHost(eventId, userId, action, authToken);
-      
+
       if (response.status) {
         toast.success(`Co-host ${action}d successfully!`);
         // Reload co-host data
@@ -192,7 +192,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
     if (permissions.manage_guests) icons.push(<Users key="guests" className="w-4 h-4" title="Manage Guests" />);
     if (permissions.manage_settings) icons.push(<Settings key="settings" className="w-4 h-4" title="Manage Settings" />);
     if (permissions.approve_content) icons.push(<Shield key="approve" className="w-4 h-4" title="Approve Content" />);
-    
+
     return (
       <div className="flex gap-1 text-muted-foreground">
         {icons.length > 0 ? icons : <span className="text-xs">No permissions</span>}
@@ -218,7 +218,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
               <p className="text-sm text-muted-foreground">
                 Generate a secure invite link that others can use to request co-host access to your event.
               </p>
-              
+
               {!inviteValidation.isValid && coHostInvite && (
                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <div className="flex items-center gap-2">
@@ -230,38 +230,8 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="expiresIn">Expires in (hours)</Label>
-                  <Input
-                    id="expiresIn"
-                    type="number"
-                    min="1"
-                    max="168"
-                    value={inviteSettings.expiresInHours}
-                    onChange={(e) => setInviteSettings(prev => ({
-                      ...prev,
-                      expiresInHours: parseInt(e.target.value) || 24
-                    }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="maxUses">Maximum uses</Label>
-                  <Input
-                    id="maxUses"
-                    type="number"
-                    min="1"
-                    max="50"
-                    value={inviteSettings.maxUses}
-                    onChange={(e) => setInviteSettings(prev => ({
-                      ...prev,
-                      maxUses: parseInt(e.target.value) || 10
-                    }))}
-                  />
-                </div>
-              </div>
 
-              <Button 
+              <Button
                 onClick={handleGenerateInvite}
                 disabled={isGeneratingInvite || !isEventCreator}
                 className="w-full"
@@ -279,11 +249,11 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-green-800">Active Invite Link</span>
-                  <Badge className="bg-green-100 text-green-800">
+                  {/* <Badge className="bg-green-100 text-green-800">
                     {coHostInvite.used_count}/{coHostInvite.max_uses} uses
-                  </Badge>
+                  </Badge> */}
                 </div>
-                
+
                 <div className="flex items-center gap-2 mb-2">
                   <Input
                     value={coHostInvite.invite_link}
@@ -294,15 +264,11 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
                     <Copy className="w-4 h-4" />
                   </Button>
                 </div>
-                
-                <div className="text-xs text-green-700">
-                  Expires: {new Date(coHostInvite.expires_at).toLocaleString()}
-                </div>
               </div>
 
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={handleCopyInviteLink}
                   className="flex-1"
@@ -310,31 +276,6 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
                   <Copy className="w-4 h-4 mr-2" />
                   Copy Link
                 </Button>
-                
-                {isEventCreator && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="destructive" size="sm">
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Deactivate
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Deactivate Invite Link</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will make the current invite link unusable. Anyone with the link will no longer be able to request co-host access.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeactivateInvite}>
-                          Deactivate
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
               </div>
             </div>
           )}
@@ -428,7 +369,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   onClick={() => handleManageCoHost(coHost.user_id._id, 'remove')}
                                   className="text-red-600"
                                 >
@@ -464,8 +405,8 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
                         {isEventCreator && (
                           <TableCell className="text-right">
                             <div className="flex gap-1 justify-end">
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 variant="outline"
                                 onClick={() => handleManageCoHost(coHost.user_id._id, 'reject')}
                               >
@@ -500,8 +441,8 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
                           </TableCell>
                           {isEventCreator && (
                             <TableCell className="text-right">
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 variant="outline"
                                 onClick={() => handleManageCoHost(coHost.user_id._id, 'approve')}
                               >
