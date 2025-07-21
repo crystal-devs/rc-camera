@@ -9,6 +9,7 @@ import FloatingNav from '@/components/navigation/FloatingNav';
 import { BottomNavigationWithFullscreenAwareness } from '@/components/navigation/FullscreenAwareBottomNav';
 import { Toaster } from "@/components/ui/sonner";
 import { AppSidebar } from '@/components/app-sidebar';
+import { ConditionalNavigation } from '@/components/navigation/ConditionalNavigation';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -28,12 +29,9 @@ export default function RootLayout({
         <Providers>
           <AppProvider>
             <FullscreenProvider>
-              {/* SidebarProvider is in AppSidebar component */}
-              <AppSidebar>
+              <ConditionalNavigation>
                 {children}
-              </AppSidebar>
-              
-              <BottomNavigationWithFullscreenAwareness />
+              </ConditionalNavigation>
               
               {/* Toaster notification system */}
               <Toaster />
@@ -44,5 +42,3 @@ export default function RootLayout({
     </html>
   );
 }
-
-

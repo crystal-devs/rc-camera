@@ -3,591 +3,927 @@
 import axios from 'axios';
 import { API_BASE_URL } from '@/lib/api-config';
 
+// Enhanced media response type with progressive loading support
+export interface MediaItem {
+    _id: string;
+    id: string;
+    album_id: string;
+    event_id: string;
+    url: string;
+    thumbnail_url?: string;
+    compressed_versions?: Array<{
+        quality: 'low' | 'medium' | 'high';
+        url: string;
+        size_mb: number;
+    }>;
+    processing: {
+        status: 'pending' | 'processing' | 'completed' | 'failed';
+        thumbnails_generated: boolean;
+        ai_analysis?: {
+            content_score: number;
+            tags: string[];
+            faces_detected: number;
+        };
+    };
+    created_at: string;
+    created_by: number;
+    updated_at: string;
+}
+
+
 /**
- * Upload a cover image and get URL back
- * 
- * @param file File to upload
- * @param folder Optional folder name to organize uploads (e.g., 'event_covers', 'album_covers')
- * @param authToken Authentication token
- * @returns URL of the uploaded image
+ * Fetch event media with smart caching and progressive loading
+ */
+export const getEventMedia = async (
+    eventId: string,
+    authToken: string,
+    includeAllAlbums: boolean = true,
+    options: {
+        includeProcessing?: boolean;
+        includePending?: boolean;
+        page?: number;
+        limit?: number;
+        quality?: 'thumbnail' | 'display' | 'full';
+        since?: string;
+    } = {}
+): Promise<MediaItem[]> => {
+    try {
+        const cacheKey = `event_${eventId}`;
+
+        // Log to verify function call
+        console.log(`Fetching event media for eventId: ${eventId}, includeAllAlbums: ${includeAllAlbums}, options:`, options);
+
+        // Check cache for incremental updates
+        if (!options.since && !options.includeProcessing && !options.includePending) {
+            const cached = imageCache.get(cacheKey);
+            if (cached) {
+                console.log(`Using cached event media (${cached.length} items)`);
+                return cached;
+            }
+        }
+
+        const endpoint = `${API_BASE_URL}/media/event/${eventId}`;
+        const params = new URLSearchParams();
+        if (options.includeProcessing) params.append('include_processing', 'true');
+        if (options.includePending) params.append('include_pending', 'true');
+        if (options.page) params.append('page', options.page.toString());
+        if (options.limit) params.append('limit', options.limit.toString());
+        if (options.quality) params.append('quality', options.quality);
+        if (options.since) params.append('since', options.since);
+
+        console.log(`Calling API: ${endpoint}?${params}`);
+
+        const response = await axios.get(`${endpoint}?${params}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'If-Modified-Since': imageCache.getLastModified(cacheKey) || '',
+            },
+            timeout: 15000,
+        });
+
+        console.log('API Response:', response.status, response.data);
+
+        if (response.status === 304) {
+            const cached = imageCache.get(cacheKey);
+            console.log('Returning cached media due to 304 Not Modified');
+            return cached || [];
+        }
+
+        if (response.data && response.data.status === true) {
+            const mediaItems: MediaItem[] = response.data.data || [];
+
+            // Handle incremental updates
+            if (options.since) {
+                const cached = imageCache.get(cacheKey) || [];
+                const combined = mergeMediaUpdates(cached, mediaItems);
+                imageCache.set(cacheKey, combined, response.headers['last-modified']);
+                return combined;
+            } else {
+                const lastModified = response.headers['last-modified'];
+                imageCache.set(cacheKey, mediaItems, lastModified);
+            }
+
+            console.log(`Fetched ${mediaItems.length} media items for event`);
+            return mediaItems;
+        }
+
+        throw new Error(response.data?.message || 'Failed to fetch event media');
+    } catch (error) {
+        console.error('Error fetching event media:', error);
+
+        if (axios.isAxiosError(error)) {
+            if (error.code === 'ERR_NETWORK') {
+                throw new Error('Network error - API server may be down');
+            }
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Authentication error. Please log in again.');
+            }
+            if (error.response?.status === 404) {
+                console.log('No media found for event, returning empty array');
+                return []; // Event has no photos yet
+            }
+            if (error.response?.status >= 500) {
+                throw new Error('Server error. Please try again later.');
+            }
+        }
+
+        throw error;
+    }
+};
+
+/**
+ * Merge incremental media updates with cached data
+ */
+function mergeMediaUpdates(cached: MediaItem[], updates: MediaItem[]): MediaItem[] {
+    const updatedMap = new Map(updates.map(item => [item._id, item]));
+
+    // Update existing items and add new ones
+    const merged = cached.map(item =>
+        updatedMap.has(item._id) ? updatedMap.get(item._id)! : item
+    );
+
+    // Add completely new items
+    const existingIds = new Set(cached.map(item => item._id));
+    const newItems = updates.filter(item => !existingIds.has(item._id));
+
+    return [...newItems, ...merged].sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+}
+
+/**
+ * Guest access functions with progressive loading
+ */
+export const getEventMediaWithGuestToken = async (
+    eventId: string,
+    guestToken: string,
+    includeAllAlbums: boolean = true,
+    options: {
+        page?: number;
+        limit?: number;
+        quality?: 'thumbnail' | 'display' | 'full';
+    } = {}
+): Promise<MediaItem[]> => {
+    try {
+        const cacheKey = `guest_event_${eventId}_${guestToken}`;
+
+        // Check cache first
+        const cached = imageCache.get(cacheKey);
+        if (cached && !options.page) {
+            console.log(`Using cached guest event media (${cached.length} items)`);
+            return cached;
+        }
+
+        console.log(`Fetching guest event media: ${eventId}`);
+
+        const params = new URLSearchParams({
+            token: guestToken,
+            includeAllAlbums: includeAllAlbums.toString()
+        });
+
+        if (options.page) params.append('page', options.page.toString());
+        if (options.limit) params.append('limit', options.limit.toString());
+        if (options.quality) params.append('quality', options.quality);
+
+        const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/guest?${params}`, {
+            timeout: 15000
+        });
+
+        if (response.data && (response.data.status === true || response.data.success)) {
+            const mediaItems = response.data.data || [];
+
+            if (!options.page) {
+                imageCache.set(cacheKey, mediaItems);
+            }
+
+            console.log(`Fetched ${mediaItems.length} media items as guest`);
+            return mediaItems;
+        }
+
+        throw new Error(response.data?.message || 'Failed to fetch event media');
+    } catch (error) {
+        console.error('Error fetching event media with guest token:', error);
+
+        if (axios.isAxiosError(error)) {
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Share link has expired or is no longer valid');
+            }
+        }
+
+        throw error;
+    }
+};
+
+export const getAlbumMediaWithGuestToken = async (
+    albumId: string,
+    guestToken: string,
+    options: {
+        page?: number;
+        limit?: number;
+        quality?: 'thumbnail' | 'display' | 'full';
+    } = {}
+): Promise<MediaItem[]> => {
+    try {
+        const cacheKey = `guest_album_${albumId}_${guestToken}`;
+
+        const cached = imageCache.get(cacheKey);
+        if (cached && !options.page) {
+            console.log(`Using cached guest album media (${cached.length} items)`);
+            return cached;
+        }
+
+        console.log(`Fetching guest album media: ${albumId}`);
+
+        const params = new URLSearchParams({ token: guestToken });
+        if (options.page) params.append('page', options.page.toString());
+        if (options.limit) params.append('limit', options.limit.toString());
+        if (options.quality) params.append('quality', options.quality);
+
+        const response = await axios.get(`${API_BASE_URL}/media/album/${albumId}/guest?${params}`, {
+            timeout: 15000
+        });
+
+        if (response.data && (response.data.status === true || response.data.success)) {
+            const mediaItems = response.data.data || [];
+
+            if (!options.page) {
+                imageCache.set(cacheKey, mediaItems);
+            }
+
+            console.log(`Fetched ${mediaItems.length} media items from album as guest`);
+            return mediaItems;
+        }
+
+        throw new Error(response.data?.message || 'Failed to fetch album media');
+    } catch (error) {
+        console.error('Error fetching album media with guest token:', error);
+
+        if (axios.isAxiosError(error)) {
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Share link has expired or is no longer valid');
+            }
+        }
+
+        throw error;
+    }
+};
+
+/**
+ * Moderate media items (approve/reject)
+ */
+export const moderateMedia = async (
+    mediaId: string,
+    action: 'approve' | 'reject',
+    authToken: string,
+    reason?: string
+): Promise<boolean> => {
+    try {
+        console.log(`${action === 'approve' ? 'Approving' : 'Rejecting'} media: ${mediaId}`);
+
+        const response = await axios.post(`${API_BASE_URL}/media/${mediaId}/moderate`, {
+            action,
+            reason
+        }, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (response.data && response.data.status === true) {
+            // Clear relevant caches to force refresh
+            imageCache.clear();
+            return true;
+        }
+
+        throw new Error(response.data?.message || `Failed to ${action} media`);
+    } catch (error) {
+        console.error(`Error ${action === 'approve' ? 'approving' : 'rejecting'} media:`, error);
+
+        if (axios.isAxiosError(error)) {
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('You do not have permission to moderate content.');
+            }
+        }
+
+        throw error;
+    }
+};
+
+/**
+ * Get pending media for moderation
+ */
+export const getPendingMedia = async (
+    eventId: string,
+    authToken: string,
+    options: {
+        page?: number;
+        limit?: number;
+    } = {}
+): Promise<MediaItem[]> => {
+    try {
+        console.log(`Fetching pending media for event: ${eventId}`);
+
+        const params = new URLSearchParams();
+        if (options.page) params.append('page', options.page.toString());
+        if (options.limit) params.append('limit', options.limit.toString());
+
+        const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/pending?${params}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data || [];
+        }
+
+        throw new Error(response.data?.message || 'Failed to fetch pending media');
+    } catch (error) {
+        console.error('Error fetching pending media:', error);
+
+        if (axios.isAxiosError(error)) {
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('You do not have permission to view pending content.');
+            }
+        }
+
+        throw error;
+    }
+};
+
+/**
+ * Upload cover image with compression options
  */
 export const uploadCoverImage = async (
     file: File,
     folder: string = 'covers',
-    authToken: string
+    authToken: string,
+    options: {
+        compressionQuality?: 'auto' | 'high' | 'medium' | 'low';
+        maxWidth?: number;
+        maxHeight?: number;
+    } = {}
 ): Promise<string> => {
     try {
-        // Validate file
         if (!file || !(file instanceof File)) {
-            console.error('Invalid file object provided:', file);
             throw new Error('Invalid file object provided');
         }
 
-        // Create form data for upload - DO NOT modify the file in any way
         const formData = new FormData();
-        
-        // Add the actual file object, not its URL
         formData.append('image', file);
         formData.append('folder', folder);
-        
-        // Debug logging
-        console.log('File being uploaded:', {
-            name: file.name,
-            type: file.type,
-            size: file.size + ' bytes',
-            isFile: file instanceof File // Should be true
-        });
-        
-        // Log FormData entries
-        for (const pair of formData.entries()) {
-            console.log(`FormData entry - ${pair[0]}:`, 
-                pair[1] instanceof File ? 
-                `File object: ${(pair[1] as File).name}` : 
-                pair[1]);
+
+        if (options.compressionQuality) {
+            formData.append('compression_quality', options.compressionQuality);
         }
-        
-        // Send with the correct content type
+        if (options.maxWidth) {
+            formData.append('max_width', options.maxWidth.toString());
+        }
+        if (options.maxHeight) {
+            formData.append('max_height', options.maxHeight.toString());
+        }
+
+        console.log('Uploading cover image with options:', options);
+
         const response = await axios.post(`${API_BASE_URL}/media/upload-cover`, formData, {
             headers: {
                 'Authorization': `Bearer ${authToken}`,
-                // IMPORTANT: Let axios set the content type - do not specify it manually
-                // for multipart/form-data with files
-            }
+            },
+            timeout: 60000
         });
-
-        console.log('Cover image upload response:', response.data);
 
         if (response.data && response.data.status === true && response.data.data?.url) {
             return response.data.data.url;
         }
 
-        throw new Error('Invalid response from media upload API');
+        throw new Error('Invalid response from cover image upload API');
     } catch (error) {
         console.error('Error uploading cover image:', error);
-        if (axios.isAxiosError(error) && error.response) {
-            console.error('API error status:', error.response.status);
-            console.error('API error details:', error.response.data);
-        }
-        throw error;
-    }
-};
 
-/**
- * Upload media to an album with enhanced error handling and diagnostics
- * 
- * @param file File to upload
- * @param albumId ID of the album (can be null if eventId is provided)
- * @param authToken Authentication token
- * @param eventId Optional ID of the event (for default album)
- * @returns Response from the API
- */
-export const uploadAlbumMedia = async (
-    file: File,
-    albumId: string | null,
-    authToken: string,
-    eventId?: string
-) => {
-    try {
-        // Validate inputs
-        if (!file || !(file instanceof File)) {
-            console.error('Invalid file object provided:', file);
-            throw new Error('Invalid file object provided');
-        }
-
-        if (!authToken) {
-            console.error('No auth token provided for media upload');
-            throw new Error('Authentication required');
-        }
-
-        // Matching backend controller requirements: event_id is required
-        if (!eventId) {
-            console.error('eventId is required by the backend but not provided');
-            throw new Error('Event ID is required for uploading photos');
-        }
-
-        // Additional validation for albumId format if provided
-        if (albumId && (typeof albumId !== 'string' || albumId.trim() === '')) {
-            console.error('Invalid album ID format:', albumId);
-            throw new Error('Invalid album ID format');
-        }
-
-        // Validate file type and size client-side to avoid server errors
-        if (!file.type.startsWith('image/')) {
-            throw new Error(`File type not supported: ${file.type}. Only images are allowed.`);
-        }
-
-        const maxSize = 10 * 1024 * 1024; // 10MB
-        if (file.size > maxSize) {
-            throw new Error(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds max size of 10MB.`);
-        }
-
-        // Create form data for upload
-        const formData = new FormData();
-
-        // IMPORTANT: Use 'image' as the field name to match Multer config
-        formData.append('image', file);
-        
-        // Only add album_id if it exists
-        if (albumId) {
-            formData.append('album_id', albumId);
-        }
-        
-        // Add event_id - required by backend controller
-        formData.append('event_id', eventId);
-        
-        // Add extra metadata to help debug on server
-        formData.append('file_size', file.size.toString());
-        formData.append('file_type', file.type);
-        formData.append('file_name', file.name);
-
-        console.log('Uploading media with data:', {
-            albumId: albumId || 'Not provided - will use default album',
-            eventId: eventId || 'Not provided',
-            token: authToken ? 'Valid token provided' : 'No token',
-            fileInfo: {
-                name: file.name,
-                size: `${(file.size / 1024).toFixed(2)} KB`,
-                type: file.type,
-                lastModified: new Date(file.lastModified).toISOString()
-            }
-        });
-
-        // Diagnostics: Log FormData entries
-        console.log('FormData entries being sent:');
-        for (const pair of formData.entries()) {
-            console.log(`- ${pair[0]}:`, 
-                pair[1] instanceof File ? 
-                `File object: ${(pair[1] as File).name} (${(pair[1] as File).size} bytes, ${(pair[1] as File).type})` : 
-                pair[1]);
-        }
-
-        // Set a longer timeout for large uploads
-        const uploadUrl = `${API_BASE_URL}/media/upload`;
-        console.log(`Making upload request to: ${uploadUrl}`);
-        
-        // Retry mechanism for transient issues
-        let retries = 0;
-        const maxRetries = 2;
-        
-        while (retries <= maxRetries) {
-            try {
-                // Delay between retries (except first attempt)
-                if (retries > 0) {
-                    console.log(`Retry attempt ${retries}/${maxRetries} after delay...`);
-                    await new Promise(resolve => setTimeout(resolve, 1000 * retries));
-                }
-                
-                const uploadResponse = await axios.post(uploadUrl, formData, {
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`,
-                        // Don't manually set Content-Type for FormData with files
-                    },
-                    timeout: 60000, // 60 seconds
-                    responseType: 'json',
-                    onUploadProgress: (progressEvent) => {
-                        const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
-                        console.log(`Upload progress: ${percentCompleted}%`);
-                    }
-                });
-                
-                console.log('Album media upload response:', uploadResponse.data);
-                
-                if (uploadResponse.data && uploadResponse.data.status === true) {
-                    return uploadResponse.data.data;
-                }
-                
-                // If we got here but status is false, there might be a server-side validation issue
-                if (uploadResponse.data && uploadResponse.data.status === false) {
-                    const message = uploadResponse.data?.message || 'Unknown server validation error';
-                    console.error(`Server validation error: ${message}`);
-                    throw new Error(message);
-                }
-                
-                throw new Error(uploadResponse.data?.message || 'Invalid response from media upload API');
-            } catch (err) {
-                console.error(`Upload error (attempt ${retries + 1}/${maxRetries + 1}):`, err);
-                
-                // Only retry on network errors or 500 errors
-                if (axios.isAxiosError(err) && 
-                    (err.code === 'ECONNABORTED' || 
-                     err.code === 'ECONNRESET' || 
-                     err.response?.status === 500)) {
-                    retries++;
-                    if (retries <= maxRetries) {
-                        continue; // Try again
-                    }
-                }
-                
-                // Either not a retryable error or we're out of retries
-                throw err; // Re-throw to be handled by the outer catch block
-            }
-        }
-    } catch (error) {
-        console.error('Error uploading album media:', error);
-        
-        // Enhanced error handling with detailed diagnostics
         if (axios.isAxiosError(error)) {
-            // Print detailed information about the error
-            console.error('API error status:', error.response?.status);
-            console.error('API error details:', error.response?.data);
-            console.error('Request config:', {
-                url: error.config?.url,
-                method: error.config?.method,
-                headers: error.config?.headers,
-                // Don't log auth tokens
-                hasAuthHeader: !!error.config?.headers?.Authorization,
-            });
-            
             if (error.response?.status === 413) {
-                throw new Error('The image file is too large for the server to accept. Please use a smaller file.');
+                throw new Error('Image file is too large. Please use a smaller file.');
             }
-            
             if (error.response?.status === 415) {
-                throw new Error('Unsupported file type. Please use JPEG, PNG, or other supported image formats.');
+                throw new Error('Unsupported file type. Please use JPEG, PNG, or WebP format.');
             }
-            
-            if (error.response?.status === 401 || error.response?.status === 403) {
+            if (error.response?.status === 401) {
                 throw new Error('Authentication error. Please log in again.');
             }
-            
-            if (error.response?.status === 400) {
-                // Handle validation errors from your controller
-                const errorMessage = error.response?.data?.message || 'Missing required fields';
-                console.error('Validation error:', error.response?.data);
-                throw new Error(`Upload failed: ${errorMessage}`);
-            }
-            
-            if (error.response?.status === 500) {
-                console.error('Server error details:', error.response?.data);
-                if (error.response?.data?.stack) {
-                    console.error('Server stack trace:', error.response.data.stack);
-                }
-                
-                // Check for specific errors we found in the backend controller
-                if (error.response?.data?.error?.message?.includes('default album')) {
-                    throw new Error('Failed to create default album. Please try again or create an album first.');
-                }
-                
-                // Generic 500 error
-                throw new Error('Server error occurred. The file may be corrupted, too large, or in an unsupported format.');
-            }
-            
-            if (error.response?.data?.message) {
-                throw new Error(`Upload failed: ${error.response.data.message}`);
-            }
         }
-        
-        // If it's another type of error or if we couldn't handle the axios error
-        throw new Error(error instanceof Error ? error.message : 'Failed to upload image');
-    }
-};
 
-/**
- * Fetch all media for a specific album
- * 
- * @param albumId ID of the album to fetch media from
- * @param authToken Authentication token
- * @returns Array of media items
- */
-export const getAlbumMedia = async (albumId: string, authToken: string) => {
-    try {
-        console.log(`Fetching media for album ID: ${albumId}`);
-        
-        const response = await axios.get(`${API_BASE_URL}/media/album/${albumId}`, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
-        });
-        
-        if (response.data && response.data.status === true) {
-            console.log(`Successfully fetched ${response.data.data?.length || 0} media items for album`);
-            return response.data.data || [];
-        }
-        
-        console.error('Invalid response format from album media API:', response.data);
-        throw new Error(response.data?.message || 'Failed to fetch album media');
-    } catch (error) {
-        console.error('Error fetching album media:', error);
-        
-        if (axios.isAxiosError(error)) {
-            console.error('API error status:', error.response?.status);
-            console.error('API error details:', error.response?.data);
-            
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Authentication error. Please log in again.');
-            }
-        }
-        
         throw error;
     }
 };
 
 /**
- * Fetch all media for a specific event
- * This could be across multiple albums or just from the default album
- * 
- * @param eventId ID of the event to fetch media from
- * @param authToken Authentication token
- * @param includeAllAlbums Whether to include media from all albums in this event (true) or just default album (false)
- * @returns Array of media items
+ * Delete a media item
  */
-export const getEventMedia = async (
-    eventId: string, 
-    authToken: string,
-    includeAllAlbums: boolean = true
-) => {
+export const deleteMedia = async (mediaId: string, authToken: string): Promise<boolean> => {
     try {
-        console.log(`Fetching media for event ID: ${eventId} (includeAllAlbums: ${includeAllAlbums})`);
-        
-        // Use the appropriate endpoint based on whether we want all albums or just default
-        const endpoint = includeAllAlbums 
-            ? `${API_BASE_URL}/media/event/${eventId}` 
-            : `${API_BASE_URL}/media/event/${eventId}/default`;
-            
-        console.log(`Making API request to: ${endpoint}`);
-        
-        // Make the API request with timeout for better user experience
-        const response = await axios.get(endpoint, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            },
-            timeout: 15000 // 15 seconds timeout
-        });
-        
-        if (response.data && response.data.status === true) {
-            console.log(`Successfully fetched ${response.data.data?.length || 0} media items for event`);
-            return response.data.data || [];
-        }
-        
-        console.error('Invalid response format from event media API:', response.data);
-        throw new Error(response.data?.message || 'Failed to fetch event media');
-    } catch (error) {
-        console.error('Error fetching event media:', error);
-        
-        if (axios.isAxiosError(error)) {
-            if (error.code === 'ERR_NETWORK') {
-                console.error('Network error - API server may be down or not accessible');
-                console.error('API_BASE_URL:', API_BASE_URL);
-                throw new Error('Cannot connect to server. Please check if your API server is running at ' + API_BASE_URL);
-            }
-            
-            console.error('API error status:', error.response?.status);
-            console.error('API error details:', error.response?.data);
-            console.error('Request URL:', error.config?.url);
-            console.error('Request method:', error.config?.method);
-            
-            // Log headers but remove authorization token
-            const sanitizedHeaders = { ...error.config?.headers };
-            if (sanitizedHeaders && sanitizedHeaders.Authorization) {
-                sanitizedHeaders.Authorization = '[REDACTED]';
-            }
-            console.error('Request headers:', sanitizedHeaders);
-            
-            if (error.response) {
-                if (error.response.status === 401 || error.response.status === 403) {
-                    throw new Error('Authentication error. Please log in again.');
-                } else if (error.response.status === 404) {
-                    throw new Error('The requested media was not found. The event may not have any photos yet.');
-                } else if (error.response.status >= 500) {
-                    throw new Error('Server error. Please try again later.');
-                }
-            } else if (error.code === 'ECONNABORTED') {
-                throw new Error('Request timed out. The server may be overloaded or unresponsive.');
-            } else if (error.message && error.message.includes('CORS')) {
-                throw new Error('CORS error. The API server may not allow requests from this origin.');
-            }
-        }
-        
-        // Rethrow with more descriptive message that helps with troubleshooting
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error(`Media API Error Details: ${errorMessage}`);
-        throw new Error(`Failed to load photos: ${errorMessage}. Check that your API server is running at ${API_BASE_URL}`);
-    }
-};
+        console.log(`Deleting media: ${mediaId}`);
 
-/**
- * Transform API media item to frontend Photo format
- * Use this to standardize the media items returned from the API
- * 
- * @param mediaItem The media item from the API
- * @returns Transformed Photo object
- */
-export const transformMediaToPhoto = (mediaItem: any) => {
-    return {
-        id: mediaItem._id || mediaItem.id,
-        albumId: mediaItem.album_id,
-        eventId: mediaItem.event_id,
-        takenBy: mediaItem.created_by || mediaItem.user_id,
-        imageUrl: mediaItem.url,
-        thumbnail: mediaItem.thumbnail_url || mediaItem.url,
-        createdAt: mediaItem.created_at ? new Date(mediaItem.created_at) : new Date(),
-        metadata: {
-            location: mediaItem.location,
-            device: mediaItem.device,
-            fileName: mediaItem.file_name,
-            fileType: mediaItem.file_type,
-            fileSize: mediaItem.file_size
-        }
-    };
-};
-
-/**
- * Delete a media item from the backend
- * 
- * @param mediaId ID of the media item to delete
- * @param authToken Authentication token
- * @returns Response from the API
- */
-export const deleteMedia = async (mediaId: string, authToken: string) => {
-    try {
-        console.log(`Deleting media with ID: ${mediaId}`);
-        
         const response = await axios.delete(`${API_BASE_URL}/media/${mediaId}`, {
             headers: {
                 'Authorization': `Bearer ${authToken}`
             }
         });
-        
+
         if (response.data && response.data.status === true) {
-            console.log('Media deleted successfully');
+            // Clear caches to force refresh
+            imageCache.clear();
             return true;
         }
-        
-        console.error('Invalid response format from delete media API:', response.data);
+
         throw new Error(response.data?.message || 'Failed to delete media');
     } catch (error) {
         console.error('Error deleting media:', error);
-        
+
         if (axios.isAxiosError(error)) {
-            console.error('API error status:', error.response?.status);
-            console.error('API error details:', error.response?.data);
-            
             if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Authentication error. Please log in again.');
+                throw new Error('You do not have permission to delete this photo.');
             }
-            
             if (error.response?.status === 404) {
                 console.warn('Media not found on server, may have been already deleted');
-                return true; // Consider it deleted if not found
+                return true;
             }
         }
-        
+
         throw error;
     }
 };
 
 /**
- * Handle API errors and improve error messages
- * @param error The axios error
- * @returns Formatted error message
+ * Get media processing status
  */
-const handleApiError = (error: any): string => {
-  if (axios.isAxiosError(error)) {
-    // Network errors (like ECONNREFUSED)
-    if (error.code === 'ERR_NETWORK') {
-      console.error('Network error - API server may be down or not accessible');
-      return 'Cannot connect to API server. Make sure it is running and accessible.';
-    } 
-    // CORS errors
-    else if (error.code === 'ERR_NETWORK_ACCESS_DENIED' || 
-             (error.message && error.message.includes('CORS'))) {
-      return 'CORS error: The API server is not allowing requests from this origin.';
-    }
-    // Timeout errors
-    else if (error.code === 'ECONNABORTED') {
-      return 'Request timed out. The server may be overloaded or unresponsive.';
-    }
-    // HTTP errors
-    else if (error.response) {
-      if (error.response.status === 401 || error.response.status === 403) {
-        return 'Authentication error. Please log in again.';
-      } else if (error.response.status === 404) {
-        return 'The requested resource was not found on the server.';
-      } else if (error.response.status >= 500) {
-        return `Server error (${error.response.status}). Please try again later.`;
-      }
-      return `API error: ${error.response.status} - ${error.response.statusText || 'Unknown error'}`;
-    }
-  }
-  
-  // Generic error handling
-  return error instanceof Error ? error.message : 'Unknown API error';
-}
-
-// Get event media with guest token
-export const getEventMediaWithGuestToken = async (
-    eventId: string, 
-    guestToken: string,
-    includeAllAlbums: boolean = true
-) => {
+export const getMediaProcessingStatus = async (
+    mediaId: string,
+    authToken: string
+): Promise<{
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    progress?: number;
+    thumbnails_generated?: boolean;
+    compressed_versions?: Array<{
+        quality: string;
+        url: string;
+        size_mb: number;
+    }>;
+}> => {
     try {
-        console.log(`Fetching media for event ID: ${eventId} with guest token (includeAllAlbums: ${includeAllAlbums})`);
-        
-        // Use the appropriate endpoint for guest access
-        const endpoint = `${API_BASE_URL}/media/event/${eventId}/guest`;
-            
-        console.log(`Making guest API request to: ${endpoint}`);
-        
-        // Make the API request with the guest token as a parameter
-        const response = await axios.get(endpoint, {
-            params: {
-                token: guestToken,
-                includeAllAlbums: includeAllAlbums
-            },
-            timeout: 15000 // 15 seconds timeout
-        });
-        
-        if (response.data && (response.data.status === true || response.data.success)) {
-            console.log(`Successfully fetched ${response.data.data?.length || 0} media items as guest`);
-            return response.data.data || [];
-        }
-        
-        console.error('Invalid response format from guest media API:', response.data);
-        throw new Error(response.data?.message || 'Failed to fetch event media');
-    } catch (error) {
-        console.error('Error fetching event media with guest token:', error);
-        
-        if (axios.isAxiosError(error)) {
-            if (error.code === 'ERR_NETWORK') {
-                throw new Error('Network error - API server may be down');
-            } else if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Share link has expired or is no longer valid');
+        const response = await axios.get(`${API_BASE_URL}/media/${mediaId}/processing`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
             }
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data;
         }
-        
+
+        throw new Error('Failed to get processing status');
+    } catch (error) {
+        console.error('Error getting processing status:', error);
         throw error;
     }
 };
 
-// Get album media with guest token
-export const getAlbumMediaWithGuestToken = async (albumId: string, guestToken: string) => {
-    try {
-        console.log(`Fetching media for album ID: ${albumId} with guest token`);
-        
-        // Make the API request with the guest token as a parameter
-        const response = await axios.get(`${API_BASE_URL}/media/album/${albumId}/guest`, {
-            params: { token: guestToken },
-            timeout: 15000 // 15 seconds timeout
-        });
-        
-        if (response.data && (response.data.status === true || response.data.success)) {
-            console.log(`Successfully fetched ${response.data.data?.length || 0} media items from album as guest`);
-            return response.data.data || [];
+/**
+ * Enhanced photo transformation with progressive loading support
+ */
+export const transformMediaToPhoto = (mediaItem: MediaItem) => {
+    // Generate progressive URLs for ImageKit
+    const generateProgressiveUrls = (baseUrl: string) => {
+        if (!baseUrl.includes('imagekit.io') && !baseUrl.includes('ik.imagekit.io')) {
+            return {
+                placeholder: baseUrl,
+                thumbnail: baseUrl,
+                display: baseUrl,
+                full: baseUrl
+            };
         }
-        
-        console.error('Invalid response format from guest album media API:', response.data);
+
+        return {
+            placeholder: `${baseUrl}?tr=w-20,h-15,bl-10,q-20`,
+            thumbnail: `${baseUrl}?tr=w-300,h-200,q-60,f-webp`,
+            display: `${baseUrl}?tr=w-800,h-600,q-80,f-webp`,
+            full: `${baseUrl}?tr=q-90,f-webp`
+        };
+    };
+
+    const progressiveUrls = generateProgressiveUrls(mediaItem.url);
+
+    return {
+        id: mediaItem._id || mediaItem.id,
+        albumId: mediaItem.album_id,
+        eventId: mediaItem.event_id,
+        takenBy: mediaItem.created_by,
+        imageUrl: mediaItem.url,
+        thumbnail: mediaItem.thumbnail_url || progressiveUrls.thumbnail,
+        progressiveUrls,
+        createdAt: mediaItem.created_at ? new Date(mediaItem.created_at) : new Date(),
+        approval: mediaItem.approval,
+        processing: mediaItem.processing,
+        metadata: {
+            ...mediaItem.metadata,
+            width: mediaItem.metadata?.width,
+            height: mediaItem.metadata?.height,
+            fileName: mediaItem.metadata?.file_name,
+            fileType: mediaItem.metadata?.file_type,
+            fileSize: mediaItem.metadata?.file_size,
+            location: mediaItem.metadata?.location ? {
+                lat: mediaItem.metadata.location.latitude,
+                lng: mediaItem.metadata.location.longitude
+            } : undefined,
+            device: mediaItem.metadata?.device_info ?
+                `${mediaItem.metadata.device_info.brand} ${mediaItem.metadata.device_info.model}` :
+                undefined
+        }
+    };
+};
+
+/**
+ * Batch operations for better performance
+ */
+export const batchApproveMedia = async (
+    mediaIds: string[],
+    authToken: string
+): Promise<{ successful: string[]; failed: string[] }> => {
+    try {
+        const response = await axios.post(`${API_BASE_URL}/media/batch/approve`, {
+            media_ids: mediaIds
+        }, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (response.data && response.data.status === true) {
+            imageCache.clear(); // Clear cache after batch operation
+            return response.data.data;
+        }
+
+        throw new Error('Failed to batch approve media');
+    } catch (error) {
+        console.error('Error in batch approve:', error);
+        throw error;
+    }
+};
+
+export const batchRejectMedia = async (
+    mediaIds: string[],
+    reason: string,
+    authToken: string
+): Promise<{ successful: string[]; failed: string[] }> => {
+    try {
+        const response = await axios.post(`${API_BASE_URL}/media/batch/reject`, {
+            media_ids: mediaIds,
+            reason
+        }, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (response.data && response.data.status === true) {
+            imageCache.clear();
+            return response.data.data;
+        }
+
+        throw new Error('Failed to batch reject media');
+    } catch (error) {
+        console.error('Error in batch reject:', error);
+        throw error;
+    }
+};
+
+/**
+ * Clear all caches (useful for logout or manual refresh)
+ */
+export const clearMediaCache = () => {
+    imageCache.clear();
+    console.log('Media cache cleared');
+};
+
+/**
+ * Get cache statistics for debugging
+ */
+export const getCacheStats = () => {
+    return {
+        size: imageCache['cache'].size,
+        keys: Array.from(imageCache['cache'].keys())
+    };
+};
+
+
+// Progressive loading cache
+class ImageCache {
+    private cache = new Map<string, {
+        data: MediaItem[];
+        timestamp: number;
+        lastModified?: string;
+    }>();
+
+    private readonly CACHE_DURATION = 30000; // 30 seconds
+
+    set(key: string, data: MediaItem[], lastModified?: string) {
+        this.cache.set(key, {
+            data: [...data],
+            timestamp: Date.now(),
+            lastModified
+        });
+    }
+
+    get(key: string): MediaItem[] | null {
+        const cached = this.cache.get(key);
+        if (!cached) return null;
+
+        const age = Date.now() - cached.timestamp;
+        if (age > this.CACHE_DURATION) {
+            this.cache.delete(key);
+            return null;
+        }
+
+        return [...cached.data];
+    }
+
+    getLastModified(key: string): string | undefined {
+        return this.cache.get(key)?.lastModified;
+    }
+
+    invalidate(key: string) {
+        this.cache.delete(key);
+    }
+
+    clear() {
+        this.cache.clear();
+    }
+}
+
+const imageCache = new ImageCache();
+
+/**
+ * Upload media with progressive processing and approval workflow
+ */
+export const uploadAlbumMedia = async (
+    file: File,
+    albumId: string | null,
+    authToken: string,
+    eventId?: string,
+    options: {
+        compressionQuality?: 'auto' | 'high' | 'medium' | 'low';
+        generateThumbnails?: boolean;
+        autoApprove?: boolean;
+    } = {}
+) => {
+    try {
+        // Enhanced validation
+        if (!file || !(file instanceof File)) {
+            throw new Error('Invalid file object provided');
+        }
+
+        if (!authToken) {
+            throw new Error('Authentication required');
+        }
+
+        if (!eventId) {
+            throw new Error('Event ID is required for uploading photos');
+        }
+
+        // Validate file type more strictly
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
+        if (!allowedTypes.includes(file.type.toLowerCase())) {
+            throw new Error(`File type ${file.type} not supported. Allowed types: JPEG, PNG, WebP, HEIC`);
+        }
+
+        // Check file size based on new schema limits
+        const maxSize = 100 * 1024 * 1024; // 100MB from schema
+        if (file.size > maxSize) {
+            throw new Error(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds max size of 100MB.`);
+        }
+
+        // Create enhanced form data
+        const formData = new FormData();
+        formData.append('image', file);
+
+        if (albumId) {
+            formData.append('album_id', albumId);
+        }
+        formData.append('event_id', eventId);
+
+        // Add processing options
+        if (options.compressionQuality) {
+            formData.append('compression_quality', options.compressionQuality);
+        }
+        if (options.generateThumbnails !== undefined) {
+            formData.append('generate_thumbnails', options.generateThumbnails.toString());
+        }
+        if (options.autoApprove !== undefined) {
+            formData.append('auto_approve', options.autoApprove.toString());
+        }
+
+        // Add metadata for better server-side processing
+        formData.append('file_size', file.size.toString());
+        formData.append('file_type', file.type);
+        formData.append('file_name', file.name);
+        formData.append('client_timestamp', new Date().toISOString());
+
+        console.log('Uploading media with enhanced options:', {
+            albumId: albumId || 'Will use default album',
+            eventId,
+            fileInfo: {
+                name: file.name,
+                size: `${(file.size / 1024).toFixed(2)} KB`,
+                type: file.type
+            },
+            options
+        });
+
+        // Upload with progress tracking and retry logic
+        const uploadResponse = await uploadWithRetry(formData, authToken);
+
+        console.log('Enhanced media upload response:', uploadResponse.data);
+
+        if (uploadResponse.data && uploadResponse.data.status === true) {
+            // Invalidate relevant caches
+            const eventCacheKey = `event_${eventId}`;
+            const albumCacheKey = albumId ? `album_${albumId}` : null;
+
+            imageCache.invalidate(eventCacheKey);
+            if (albumCacheKey) {
+                imageCache.invalidate(albumCacheKey);
+            }
+
+            return uploadResponse.data.data;
+        }
+
+        throw new Error(uploadResponse.data?.message || 'Invalid response from media upload API');
+    } catch (error) {
+        console.error('Error uploading album media:', error);
+
+        if (axios.isAxiosError(error)) {
+            return handleUploadError(error);
+        }
+
+        throw new Error(error instanceof Error ? error.message : 'Failed to upload image');
+    }
+};
+
+/**
+ * Upload with retry logic for better reliability
+ */
+async function uploadWithRetry(formData: FormData, authToken: string, maxRetries = 2) {
+    let retries = 0;
+
+    while (retries <= maxRetries) {
+        try {
+            if (retries > 0) {
+                console.log(`Retry attempt ${retries}/${maxRetries}...`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+            }
+
+            return await axios.post(`${API_BASE_URL}/media/upload`, formData, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                },
+                timeout: 120000, // 2 minutes for large files
+                onUploadProgress: (progressEvent) => {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
+                    console.log(`Upload progress: ${percentCompleted}%`);
+                }
+            });
+        } catch (error) {
+            console.error(`Upload error (attempt ${retries + 1}/${maxRetries + 1}):`, error);
+
+            // Only retry on network errors or 500 errors
+            if (axios.isAxiosError(error) &&
+                (error.code === 'ECONNABORTED' ||
+                    error.code === 'ECONNRESET' ||
+                    error.response?.status === 500)) {
+                retries++;
+                if (retries <= maxRetries) {
+                    continue;
+                }
+            }
+
+            throw error;
+        }
+    }
+
+    throw new Error('Upload failed after all retry attempts');
+}
+
+/**
+ * Enhanced error handling for uploads
+ */
+function handleUploadError(error: any) {
+    console.error('API error details:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        url: error.config?.url
+    });
+
+    if (error.response?.status === 413) {
+        throw new Error('File too large. Please use a smaller image or enable compression.');
+    }
+
+    if (error.response?.status === 415) {
+        throw new Error('Unsupported file type. Please use JPEG, PNG, WebP, or HEIC format.');
+    }
+
+    if (error.response?.status === 401) {
+        throw new Error('Authentication expired. Please log in again.');
+    }
+
+    if (error.response?.status === 403) {
+        throw new Error('You do not have permission to upload to this album.');
+    }
+
+    if (error.response?.status === 400) {
+        const message = error.response?.data?.message || 'Invalid upload request';
+        throw new Error(`Upload failed: ${message}`);
+    }
+
+    if (error.response?.status === 500) {
+        if (error.response?.data?.error?.message?.includes('processing')) {
+            throw new Error('Server is busy processing images. Please try again in a moment.');
+        }
+        throw new Error('Server error. Please try again later.');
+    }
+
+    throw new Error(error.response?.data?.message || 'Upload failed. Please try again.');
+}
+
+/**
+ * Fetch album media with smart caching and progressive loading
+ */
+export const getAlbumMedia = async (
+    albumId: string,
+    authToken: string,
+    options: {
+        includeProcessing?: boolean;
+        includePending?: boolean;
+        page?: number;
+        limit?: number;
+        quality?: 'thumbnail' | 'display' | 'full';
+    } = {}
+): Promise<MediaItem[]> => {
+    try {
+        const cacheKey = `album_${albumId}`;
+
+        // Check cache first
+        const cached = imageCache.get(cacheKey);
+        if (cached && !options.includeProcessing && !options.includePending) {
+            console.log(`Using cached album media (${cached.length} items)`);
+            return cached;
+        }
+
+        console.log(`Fetching album media: ${albumId}`);
+
+        const params = new URLSearchParams();
+        if (options.includeProcessing) params.append('include_processing', 'true');
+        if (options.includePending) params.append('include_pending', 'true');
+        if (options.page) params.append('page', options.page.toString());
+        if (options.limit) params.append('limit', options.limit.toString());
+        if (options.quality) params.append('quality', options.quality);
+
+        const response = await axios.get(`${API_BASE_URL}/media/album/${albumId}?${params}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'If-Modified-Since': imageCache.getLastModified(cacheKey) || ''
+            },
+            timeout: 15000
+        });
+
+        if (response.status === 304) {
+            // Not modified, use cache
+            const cached = imageCache.get(cacheKey);
+            return cached || [];
+        }
+
+        if (response.data && response.data.status === true) {
+            const mediaItems = response.data.data || [];
+
+            // Cache the results
+            const lastModified = response.headers['last-modified'];
+            imageCache.set(cacheKey, mediaItems, lastModified);
+
+            console.log(`Fetched ${mediaItems.length} media items for album`);
+            return mediaItems;
+        }
+
         throw new Error(response.data?.message || 'Failed to fetch album media');
     } catch (error) {
-        console.error('Error fetching album media with guest token:', error);
-        
+        console.error('Error fetching album media:', error);
+
         if (axios.isAxiosError(error)) {
-            if (error.code === 'ERR_NETWORK') {
-                throw new Error('Network error - API server may be down');
-            } else if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Share link has expired or is no longer valid');
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Authentication error. Please log in again.');
+            }
+            if (error.response?.status === 404) {
+                return []; // Album has no photos yet
             }
         }
-        
+
         throw error;
     }
 };

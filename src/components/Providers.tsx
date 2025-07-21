@@ -1,5 +1,6 @@
 'use client';
 
+import { SessionProvider } from "next-auth/react";
 import { SidebarProvider } from "./ui/sidebar";
 import { ThemeProvider } from "@/lib/ThemeContext";
 
@@ -10,11 +11,11 @@ interface ProvidersProps {
 function Providers({ children }: ProvidersProps) {
     return (
         <>
-            <ThemeProvider>
-                <SidebarProvider>
+            <SessionProvider>
+                <ThemeProvider>
                     {children}
-                </SidebarProvider>
-            </ThemeProvider>
+                </ThemeProvider>
+            </SessionProvider>
         </>
     );
 }

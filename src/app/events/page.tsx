@@ -48,13 +48,16 @@ import { toast } from "sonner"
 import { fetchEvents } from '@/services/apis/events.api';
 
 interface Event {
-  id: string;
-  name: string;
+  _id: string;
+  title: string;
   description?: string;
   date: Date;
   endDate?: Date;
   location?: string;
-  cover_image?: string;
+  cover_image?: {
+    url: string;
+    thumbnail_url?: string;
+  };
   createdAt: Date;
   createdById: number;
   accessType: 'public' | 'restricted';
@@ -102,7 +105,7 @@ export default function EventsPage() {
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         return (
-          event.name.toLowerCase().includes(query) ||
+          event.title.toLowerCase().includes(query) ||
           (event.description && event.description.toLowerCase().includes(query)) ||
           (event.location && event.location.toLowerCase().includes(query))
         );
@@ -125,9 +128,9 @@ export default function EventsPage() {
         case 'date-asc':
           return new Date(a.date).getTime() - new Date(b.date).getTime();
         case 'name-asc':
-          return a.name.localeCompare(b.name);
+          return a.title.localeCompare(b.title);
         case 'name-desc':
-          return b.name.localeCompare(a.name);
+          return b.title.localeCompare(a.title);
         default:
           return 0;
       }
@@ -141,6 +144,7 @@ export default function EventsPage() {
     router.push('/events/create');
   };
 
+  console.log(filteredAndSortedEvents, 'filteredAndSortedEventsfilteredAndSortedEvents')
   return (
     <div className="container mx-auto px-4 py-8 pb-20">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8">
@@ -291,16 +295,16 @@ export default function EventsPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {filteredAndSortedEvents.map((event) => (
               <div
-                key={event.id}
+                key={event._id}
                 className="relative rounded-xl overflow-hidden cursor-pointer h-48 md:h-52 shadow-sm hover:shadow-md transition-shadow"
-                onClick={() => navigateToEvent(event.id)}
+                onClick={() => navigateToEvent(event._id)}
               >
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
-                  {event.cover_image ? (
+                  {event?.cover_image?.thumbnail_url ? (
                     <Image
-                      src={event.cover_image}
-                      alt={event.name}
+                      src={event?.cover_image?.thumbnail_url}
+                      alt={'title'}
                       fill
                       className="object-cover"
                     />
@@ -344,13 +348,13 @@ export default function EventsPage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
-                        router.push(`/events/${event.id}`);
+                        router.push(`/events/${event._id}`);
                       }}>
                         View Event
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
-                        router.push(`/events/${event.id}/edit`);
+                        router.push(`/events/${event._id}/edit`);
                       }}>
                         Edit Event
                       </DropdownMenuItem>
@@ -367,17 +371,21 @@ export default function EventsPage() {
 
                 {/* Bottom Text Content */}
                 <div className="absolute bottom-0 left-0 right-0 p-3 text-white z-10">
-                  <h3 className="font-medium text-lg line-clamp-1">{event.name}</h3>
+                  <h3 className="font-medium text-lg line-clamp-1">{event.title}</h3>
                   <div className="flex items-center text-sm">
                     <CalendarIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                    {format(new Date(event.date), 'MMM d, yyyy')}
+                    {/* {format(new Date(event.date), 'MMM d, yyyy')} */}
                   </div>
-                  {event.location && (
-                    <div className="flex items-center text-sm">
-                      <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                      <span className="truncate">{event.location}</span>
-                    </div>
-                  )}
+  {event.location && (
+    <div className="flex items-center text-sm">
+      <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+      <span className="truncate">
+        {typeof event.location === 'object' && event.location !== null
+          ? (event.location as any).name || (event.location as any).address || ''
+          : event.location}
+      </span>
+    </div>
+  )}
                 </div>
               </div>
             ))}
@@ -387,15 +395,15 @@ export default function EventsPage() {
           <div className="space-y-3">
             {filteredAndSortedEvents.map((event) => (
               <div
-                key={event.id}
+                key={event._id}
                 className="flex border rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => navigateToEvent(event.id)}
+                onClick={() => navigateToEvent(event._id)}
               >
                 <div className="relative h-24 w-24 sm:h-32 sm:w-32 flex-shrink-0">
-                  {event.cover_image ? (
+                  {event?.cover_image?.thumbnail_url ? (
                     <Image
-                      src={event.cover_image}
-                      alt={event.name}
+                      src={event?.cover_image?.thumbnail_url}
+                      alt={event.title}
                       fill
                       className="object-cover"
                     />
@@ -419,7 +427,7 @@ export default function EventsPage() {
 
                 <div className="flex-1 p-4 flex flex-col">
                   <div className="flex justify-between items-start">
-                    <h3 className="font-medium line-clamp-1">{event.name}</h3>
+                    <h3 className="font-medium line-clamp-1">{event.title}</h3>
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -430,13 +438,13 @@ export default function EventsPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={(e) => {
                           e.stopPropagation();
-                          router.push(`/events/${event.id}`);
+                          router.push(`/events/${event._id}`);
                         }}>
                           View Event
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => {
                           e.stopPropagation();
-                          router.push(`/events/${event.id}/edit`);
+                          router.push(`/events/${event._id}/edit`);
                         }}>
                           Edit Event
                         </DropdownMenuItem>
@@ -450,12 +458,16 @@ export default function EventsPage() {
                       {format(new Date(event.date), 'MMM d, yyyy')}
                     </div>
 
-                    {event.location && (
-                      <div className="flex items-center">
-                        <MapPinIcon className="h-3 w-3 mr-1" />
-                        <span className="truncate max-w-[120px]">{event.location}</span>
-                      </div>
-                    )}
+                {event.location && (
+                  <div className="flex items-center">
+                    <MapPinIcon className="h-3 w-3 mr-1" />
+                    <span className="truncate max-w-[120px]">
+                      {typeof event.location === 'object' && event.location !== null
+                        ? (event.location as any).name || (event.location as any).address || ''
+                        : event.location}
+                    </span>
+                  </div>
+                )}
 
                     <div className="flex items-center">
                       <CameraIcon className="h-3 w-3 mr-1" />

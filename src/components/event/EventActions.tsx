@@ -4,6 +4,7 @@ import {
     ShareIcon,
     SettingsIcon
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
     Dialog,
     DialogContent,
@@ -21,14 +22,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
+import { useStore } from '@/lib/store';
 
 interface EventActionsProps {
     eventId: string;
-    accessCode?: string;
+    accessCode?: string; // Keep for backward compatibility, but now optional
     name: string;
     qrDialogOpen: boolean;
     setQrDialogOpen: (open: boolean) => void;
     copyShareLink: () => void;
+    invitedGuests?: string[]; // Add support for invited guests
 }
 
 const EventActions: React.FC<EventActionsProps> = ({
@@ -38,8 +41,10 @@ const EventActions: React.FC<EventActionsProps> = ({
     qrDialogOpen,
     setQrDialogOpen,
     copyShareLink,
+    invitedGuests,
 }) => {
     const router = useRouter();
+    const { fetchUsage } = useStore();
 
     return (
         <div className="flex flex-wrap gap-2">
@@ -65,7 +70,13 @@ const EventActions: React.FC<EventActionsProps> = ({
 
                         <div className="mt-4 text-center">
                             <p className="text-sm font-medium mb-1">{name}</p>
-                            <p className="text-xs text-gray-500">Access Code: {accessCode}</p>
+                            {invitedGuests && invitedGuests.length > 0 ? (
+                                <p className="text-xs text-gray-500">
+                                    Invited Guests: {invitedGuests.length} {invitedGuests.length === 1 ? 'person' : 'people'}
+                                </p>
+                            ) : (
+                                <p className="text-xs text-gray-500">Share this QR code with your guests</p>
+                            )}
                         </div>
                     </div>
 
@@ -102,15 +113,26 @@ const EventActions: React.FC<EventActionsProps> = ({
                         onClick={async () => {
                             if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
                                 try {
-                                    // In a real app, you'd delete all related data too
-                                    // await db.events.delete(eventId);
+                                    const authToken = localStorage.getItem('authToken');
+                                    if (!authToken) {
+                                        toast.error("You need to be logged in to delete this event");
+                                        return;
+                                    }
+                                    
+                                    // Import the deleteEvent function from the API
+                                    const { deleteEvent } = await import('@/services/apis/events.api');
+                                    
+                                    // Call the API to delete the event
+                                    await deleteEvent(eventId, authToken);
+                                    
+                                    // Refresh usage data
+                                    fetchUsage();
+                                    
                                     router.push('/events');
-                                    // toast({
-                                    //   title: "Event Deleted",
-                                    //   description: "The event has been permanently removed.",
-                                    // });
+                                    toast.success("The event has been permanently removed.");
                                 } catch (error) {
                                     console.error('Error deleting event:', error);
+                                    toast.error("Failed to delete the event. Please try again.");
                                 }
                             }
                         }}

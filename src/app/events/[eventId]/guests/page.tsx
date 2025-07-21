@@ -21,6 +21,8 @@ import {
   SaveIcon,
   ChevronDownIcon
 } from 'lucide-react';
+import { getEventById, getEventGuests, inviteGuestsToEvent, updateInvitedGuests } from '@/services/apis/events.api';
+import { useAuthToken } from '@/hooks/use-auth';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -71,25 +73,11 @@ import {
 } from '@/components/ui/table';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 // import QRCode from 'qrcode.react';
-import { db } from '@/lib/db';
 import { toast } from "sonner"
 import { v4 as uuidv4 } from 'uuid';
 
-interface Event {
-  id: string;
-  name: string;
-  description?: string;
-  date: Date;
-  endDate?: Date;
-  location?: string;
-  cover_image?: string;
-  createdAt: Date;
-  createdById: number;
-  accessType: 'public' | 'restricted';
-  accessCode?: string;
-  template?: string;
-  isActive: boolean;
-}
+// Using the Event type from our types directory
+import { Event } from '@/types/events';
 
 interface EventAccess {
   id: string;
@@ -116,18 +104,34 @@ interface PageProps {
   };
 }
 
+// Augment React.use for proper typing
+declare module 'react' {
+  function use<T>(promise: Promise<T> | { then(cb: (val: T) => void): void } | T): T;
+}
+
 export default function GuestManagementPage({ params }: PageProps) {
-  // Use React.use to unwrap params
-  const { eventId } = use(params);
+  // Using a React reference version of params for better type safety
+  const { eventId } = params;
   
   const router = useRouter();
+  const authToken = useAuthToken();
   const [isLoading, setIsLoading] = useState(true);
+  const [tokenChecked, setTokenChecked] = useState(false);
   const [event, setEvent] = useState<Event | null>(null);
   const [guests, setGuests] = useState<EventAccess[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'contributors' | 'viewers'>('all');
+  
+  // Add a delayed check to avoid premature redirects
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTokenChecked(true);
+    }, 1000); // Give auth token 1 second to load
+    
+    return () => clearTimeout(timer);
+  }, []);
   
   // New invite form state
   const [newInvites, setNewInvites] = useState<GuestInvite[]>([
@@ -137,79 +141,134 @@ export default function GuestManagementPage({ params }: PageProps) {
   // User ID would come from auth in a real app
   const userId = 1;
   
+  // We no longer need the direct auth token check as we'll handle it more elegantly below
+  
+  
   useEffect(() => {
+    // Only proceed if either we have an authToken or the token check timeout has elapsed
+    if (!authToken && !tokenChecked) {
+      console.log('Waiting for auth token to load or timeout...');
+      return;
+    }
+    
     const loadEventAndGuests = async () => {
+      // Try to get the token from the hook or directly from localStorage as fallback
+      const token = authToken || localStorage.getItem('authToken');
+      
+      console.log('Using token for API request:', token ? 'Token available' : 'No token');
+      
+      // Only redirect if we've checked thoroughly for a token and still don't have one
+      if (!token && tokenChecked) {
+        console.log('No auth token found after timeout, redirecting to login...');
+        toast.error("You need to be logged in to manage guests.");
+        router.push('/login');
+        return;
+      }
+
       try {
-        // Load event details
-        const eventData = await db.events.get(eventId);
+        // Load event details from API using the token we just retrieved
+        // We can safely assert token is not null at this point
+        const eventData = await getEventById(eventId, token as string);
         if (!eventData) {
-          toast({
-            title: "Event Not Found",
-            description: "The event you're looking for doesn't exist.",
-            variant: "destructive"
-          });
+          toast.error("The event you're looking for doesn't exist.");
           router.push('/events');
           return;
         }
         
         setEvent(eventData);
         
-        // Load guests (event access records)
-        const guestList = await db.eventAccess
-          .where('eventId')
-          .equals(eventId)
-          .toArray();
+        // Try to get share token with invited guests info
+        let shareToken = null;
+        try {
+          shareToken = await getTokenByEventId(eventId, token as string);
+          console.log('Retrieved share token for event:', shareToken);
+        } catch (tokenError) {
+          console.error('Error fetching share token:', tokenError);
+        }
         
-        // In a real app, you'd fetch user details for each guest
-        // Here we'll simulate it with some mock data
-        const enhancedGuests = guestList.map(guest => {
-          if (guest.userId === userId) {
-            // This is the current user/owner
-            return {
-              ...guest,
-              name: 'You (Owner)',
-              email: 'you@example.com',
-              status: 'joined'
-            };
-          } else if (guest.userId === 2) {
-            return {
-              ...guest,
-              name: 'John Smith',
-              email: 'john@example.com',
-              status: 'joined'
-            };
-          } else if (guest.userId === 3) {
-            return {
-              ...guest,
-              name: 'Sarah Johnson',
-              email: 'sarah@example.com',
-              status: 'invited'
-            };
-          } else {
-            return {
-              ...guest,
-              name: `Guest ${guest.userId}`,
-              email: `guest${guest.userId}@example.com`,
-              status: Math.random() > 0.5 ? 'joined' : 'invited'
-            };
+        // Try to get guest data from API
+        let guestData = [];
+        try {
+          guestData = await getEventGuests(eventId, token as string);
+          console.log('Retrieved guest data from API:', guestData);
+        } catch (guestError) {
+          console.error('Error fetching guest data:', guestError);
+          // If we can't get guest data from API, use invited guests from event or share token
+          if (eventData.invitedGuests && eventData.invitedGuests.length > 0) {
+            console.log('Using invited guests from event data');
+            guestData = eventData.invitedGuests.map((email: string) => ({
+              email,
+              accessType: 'viewer'
+            }));
+          } else if (shareToken && shareToken.invitedGuests && shareToken.invitedGuests.length > 0) {
+            console.log('Using invited guests from share token');
+            guestData = shareToken.invitedGuests.map((email: string) => ({
+              email,
+              accessType: 'viewer'
+            }));
           }
+        }
+        
+        // Transform API guest data to our component format
+        const transformedGuests: EventAccess[] = [];
+        
+        // Add the owner (current user)
+        transformedGuests.push({
+          id: 'owner-1',
+          eventId,
+          userId: 1,
+          accessType: 'owner',
+          name: 'You (Owner)',
+          email: 'you@example.com',
+          status: 'joined' as 'joined'
         });
+        
+        // Add API guests or invited guests from event/share token
+        if (Array.isArray(guestData) && guestData.length > 0) {
+          // Process real guest data from API
+          guestData.forEach((guest, index) => {
+            // Handle different possible API formats
+            const email = guest.email || guest;
+            const name = guest.name || guest.userName || guest.user_name || (typeof email === 'string' ? email.split('@')[0] : `Guest ${index}`);
+            const accessType = guest.accessType || guest.access_type || (guest.permissions?.upload ? 'contributor' : 'viewer');
+            const status = guest.status || guest.joined_at ? 'joined' : 'invited';
+            
+            transformedGuests.push({
+              id: guest._id || guest.id || `guest-${index}`,
+              eventId,
+              userId: guest.userId || guest.user_id || index + 2,
+              accessType: accessType as 'contributor' | 'viewer',
+              name,
+              email,
+              status: status as 'joined' | 'invited'
+            });
+          });
+        } else if (eventData.invitedGuests && eventData.invitedGuests.length > 0) {
+          // Fall back to invited guests from event data if no API guest data
+          eventData.invitedGuests.forEach((email: string, index: number) => {
+            transformedGuests.push({
+              id: `guest-${index}`,
+              eventId,
+              userId: index + 2,
+              accessType: 'viewer',
+              name: email.split('@')[0],
+              email,
+              status: 'invited' as 'invited'
+            });
+          });
+        }
         
         setGuests(enhancedGuests);
       } catch (error) {
         console.error('Error loading event and guests:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load guest data. Please try again.",
-          variant: "destructive"
-        });
+        toast.error("Failed to load guest data. Please try again.");
       } finally {
         setIsLoading(false);
       }
     };
     
     loadEventAndGuests();
-  }, [eventId, router, toast, userId]);
+  }, [eventId, router, authToken, userId, isLoading, tokenChecked]);
   
   const filteredGuests = guests.filter(guest => {
     // Filter by search query
@@ -231,17 +290,42 @@ export default function GuestManagementPage({ params }: PageProps) {
     return true;
   });
   
+  // State to hold the share token for the event
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  
+  // Function to get and cache the share token
+  const getShareToken = async () => {
+    if (shareToken) return shareToken;
+    
+    const token = authToken || localStorage.getItem('authToken');
+    if (!token) return null;
+    
+    try {
+      // const tokenData = await getTokenByEventId(eventId, token as string);
+      // if (tokenData && tokenData.token) {
+      //   setShareToken(tokenData.token);
+      //   return tokenData.token;
+      // }
+    } catch (error) {
+      console.error('Error getting share token:', error);
+    }
+    
+    return null;
+  };
+  
   const getShareUrl = () => {
-    // In a real app, this would be a proper URL with your domain
-    return `${window.location.origin}/join?event=${eventId}&code=${event?.accessCode || ''}`;
+    if (event?.access?.level === 'invited_only') {
+      // For invited-only events, we need to use a token
+      return `${window.location.origin}/join?event=${eventId}${shareToken ? `&token=${shareToken}` : ''}`;
+    } else {
+      // For public events or link-only events
+      return `${window.location.origin}/join?event=${eventId}`;
+    }
   };
   
   const copyShareLink = () => {
     navigator.clipboard.writeText(getShareUrl());
-    toast({
-      title: "Link Copied!",
-      description: "Share link copied to clipboard",
-    });
+    toast.success("Share link copied to clipboard");
   };
   
   const addInviteField = () => {
@@ -264,59 +348,68 @@ export default function GuestManagementPage({ params }: PageProps) {
     const validInvites = newInvites.filter(invite => invite.email.trim() !== '');
     
     if (validInvites.length === 0) {
-      toast({
-        title: "No Valid Emails",
-        description: "Please enter at least one valid email address.",
-        variant: "destructive"
-      });
+      toast.error("Please enter at least one valid email address.");
       return;
     }
     
     try {
-      // In a real app, you'd send emails here
+      setIsLoading(true);
+      const token = authToken || localStorage.getItem('authToken');
       
-      // Create event access records for each invite
-      const newGuests = await Promise.all(
-        validInvites.map(async (invite) => {
-          // In a real app, you'd check if the user exists by email
-          // For now, we'll generate a random user ID
-          const guestUserId = Math.floor(Math.random() * 1000) + 10; // Random ID that's not the owner
-          
-          const accessRecord: EventAccess = {
-            id: uuidv4(),
-            eventId,
-            userId: guestUserId,
-            accessType: invite.accessType,
-            invitedBy: userId,
-            invitedAt: new Date(),
-            email: invite.email,
-            name: invite.name || invite.email.split('@')[0],
-            status: 'invited'
-          };
-          
-          await db.eventAccess.add(accessRecord);
-          return accessRecord;
-        })
-      );
+      if (!token) {
+        toast.error("You need to be logged in to invite guests.");
+        return;
+      }
       
-      // Update state with new guests
-      setGuests([...guests, ...newGuests]);
+      // First, get the current event to check if it has invited_guests already
+      const currentEvent = await getEventById(eventId, token as string);
+      if (!currentEvent) {
+        toast.error("Could not find event details");
+        return;
+      }
       
-      // Reset form and close dialog
-      setNewInvites([{ email: '', accessType: 'contributor' }]);
+      // Get the current list of invited guests
+      const currentInvitedGuests = currentEvent.invitedGuests || [];
+      console.log('Current invited guests:', currentInvitedGuests);
+      
+      // Add new invites to the list (avoiding duplicates)
+      const newInvitedEmails = validInvites.map(invite => invite.email);
+      const allInvitedGuests = [...new Set([...currentInvitedGuests, ...newInvitedEmails])];
+      
+      // Update the event with the new invited guests list
+      console.log('Updating event with invited guests:', allInvitedGuests);
+      await updateInvitedGuests(eventId, allInvitedGuests, token as string);
+      
+      // Create a share token with invited guests if it doesn't exist
+      const accessType = validInvites[0].accessType || 'viewer';
+      await inviteGuestsToEvent(eventId, validInvites, accessType, token as string);
+      
+      // Create new guest objects for UI update
+      const newGuestEntries = validInvites.map((invite, index) => {
+        return {
+          id: `new-guest-${Date.now()}-${index}`,
+          eventId,
+          userId: guests.length + index + 2,
+          accessType: invite.accessType as 'contributor' | 'viewer',
+          email: invite.email,
+          name: invite.name || invite.email.split('@')[0],
+          status: 'invited' as 'invited'
+        };
+      });
+      
+      // Update UI with new guests
+      setGuests([...guests, ...newGuestEntries]);
+      
+      // Close invite dialog and reset form
       setInviteDialogOpen(false);
+      setNewInvites([{ email: '', accessType: 'contributor' }]);
       
-      toast({
-        title: "Invitations Sent",
-        description: `Sent ${validInvites.length} invitation${validInvites.length > 1 ? 's' : ''}.`,
-      });
+      toast.success(`${validInvites.length} guest${validInvites.length > 1 ? 's' : ''} invited successfully!`);
     } catch (error) {
-      console.error('Error sending invitations:', error);
-      toast({
-        title: "Error",
-        description: "Failed to send invitations. Please try again.",
-        variant: "destructive"
-      });
+      console.error('Error inviting guests:', error);
+      toast.error("Failed to invite guests. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -328,23 +421,16 @@ export default function GuestManagementPage({ params }: PageProps) {
         return; // Can't remove the owner
       }
       
-      // Delete event access record
-      await db.eventAccess.delete(guestId);
+      // In a real app, send API request to remove guest
+      // For now just update the state
       
       // Update state
       setGuests(guests.filter(g => g.id !== guestId));
       
-      toast({
-        title: "Guest Removed",
-        description: `${guest.name || guest.email} has been removed from the event.`,
-      });
+      toast.success(`${guest.name || guest.email} has been removed from the event.`);
     } catch (error) {
       console.error('Error removing guest:', error);
-      toast({
-        title: "Error",
-        description: "Failed to remove guest. Please try again.",
-        variant: "destructive"
-      });
+      toast.error("Failed to remove guest. Please try again.");
     }
   };
   
@@ -356,10 +442,8 @@ export default function GuestManagementPage({ params }: PageProps) {
         return; // Can't change the owner's access
       }
       
-      // Update event access record
-      await db.eventAccess.update(guestId, {
-        accessType: newAccessType
-      });
+      // In a real app, send API request to update guest access
+      // For now just update the state
       
       // Update state
       setGuests(guests.map(g => 
@@ -368,17 +452,10 @@ export default function GuestManagementPage({ params }: PageProps) {
           : g
       ));
       
-      toast({
-        title: "Access Updated",
-        description: `${guest.name || guest.email}'s access level has been updated.`,
-      });
+      toast.success(`${guest.name || guest.email}'s access level has been updated.`);
     } catch (error) {
       console.error('Error changing guest access:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update guest access. Please try again.",
-        variant: "destructive"
-      });
+      toast.error("Failed to update guest access. Please try again.");
     }
   };
   
@@ -388,12 +465,7 @@ export default function GuestManagementPage({ params }: PageProps) {
       
       if (!guest) return;
       
-      // In a real app, you'd send another email here
-      
-      // Update invited timestamp
-      await db.eventAccess.update(guestId, {
-        invitedAt: new Date()
-      });
+      // In a real app, you'd send another email here and update the API
       
       // Update state
       setGuests(guests.map(g => 
@@ -402,17 +474,10 @@ export default function GuestManagementPage({ params }: PageProps) {
           : g
       ));
       
-      toast({
-        title: "Invitation Resent",
-        description: `Invitation has been resent to ${guest.name || guest.email}.`,
-      });
+      toast.success(`Invitation has been resent to ${guest.name || guest.email}.`);
     } catch (error) {
       console.error('Error resending invitation:', error);
-      toast({
-        title: "Error",
-        description: "Failed to resend invitation. Please try again.",
-        variant: "destructive"
-      });
+      toast.error("Failed to resend invitation. Please try again.");
     }
   };
   
@@ -492,7 +557,13 @@ export default function GuestManagementPage({ params }: PageProps) {
                 
                 <div className="mt-4 text-center">
                   <p className="text-sm font-medium mb-1">{event.name}</p>
-                  <p className="text-xs text-gray-500">Access Code: {event.accessCode}</p>
+                  <p className="text-xs text-gray-500">
+                    {event?.access?.level === 'invited_only' 
+                      ? 'Invited guests only'
+                      : event?.access?.level === 'link_only'
+                      ? 'Anyone with this link'
+                      : 'Public event'}
+                  </p>
                 </div>
               </div>
               
@@ -626,25 +697,22 @@ export default function GuestManagementPage({ params }: PageProps) {
               </div>
               
               <div className="flex flex-col space-y-2">
-                <Label>Access Code</Label>
+                <Label>Access Type</Label>
                 <div className="flex items-center space-x-2">
                   <Badge variant="outline" className="text-lg px-3 py-1 font-mono">
-                    {event.accessCode}
+                    {event.access?.level || event.accessType}
                   </Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={copyShareLink}
-                  >
-                    <CopyIcon className="h-4 w-4" />
-                  </Button>
                 </div>
               </div>
             </div>
           </CardContent>
           <CardFooter>
             <div className="text-xs text-gray-500">
-              Anyone with this link and code can view this event
+              {event?.access?.level === 'invited_only' 
+                ? 'Only invited guests can view this event'
+                : event?.access?.level === 'link_only'
+                ? 'Anyone with the link can view this event'
+                : 'Anyone can view this event'}
             </div>
           </CardFooter>
         </Card>
@@ -756,7 +824,7 @@ export default function GuestManagementPage({ params }: PageProps) {
       
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-          <Tabs value={activeTab} onValueChange={(value: 'all' | 'contributors' | 'viewers') => setActiveTab(value)}>
+          <Tabs value={activeTab} onValueChange={(value: string) => setActiveTab(value as 'all' | 'contributors' | 'viewers')}>
             <TabsList>
               <TabsTrigger value="all">All Guests</TabsTrigger>
               <TabsTrigger value="contributors">Contributors</TabsTrigger>

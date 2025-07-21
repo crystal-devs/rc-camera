@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { use } from 'react';
 import {
     CalendarIcon,
@@ -13,7 +13,21 @@ import {
     CameraIcon,
     FolderIcon,
     SettingsIcon,
-    RefreshCcwIcon
+    RefreshCcwIcon,
+    UserPlusIcon,
+    LinkIcon,
+    MailIcon,
+    CopyIcon,
+    CheckIcon,
+    XIcon,
+    EyeIcon,
+    UploadIcon,
+    DownloadIcon,
+    MessageCircleIcon,
+    ShieldIcon,
+    ClockIcon,
+    UserCheckIcon,
+    TrashIcon
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -27,8 +41,26 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+    SheetTrigger,
+} from '@/components/ui/sheet';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { db } from '@/lib/db';
+import { Separator } from '@/components/ui/separator';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { toast } from 'sonner';
+
 import PhotoGallery from '@/components/album/PhotoGallery';
 import AlbumManagement from '@/components/album/AlbumManagement';
 import EventHeader from '@/components/event/EventHeader';
@@ -36,27 +68,76 @@ import EventHeaderDetails from '@/components/event/EventDetailsHeader';
 import EventCoverSection from '@/components/event/EventCoverSection';
 import { getEventById } from '@/services/apis/events.api';
 import { fetchEventAlbums } from '@/services/apis/albums.api';
-import { Album, ApiAlbum } from '@/types/album';
-import { Event } from '@/types/events';
-import { toast } from 'sonner';
-import { API_BASE_URL } from '@/lib/api-config';
-import { mapApiAlbumToAlbum } from '@/lib/album-mappers';
+import ShareManagement from '@/components/event/ShareManagement';
+import {
+    getTokenInfo
+} from '@/services/apis/sharing.api';
+import { SharedWelcomeBanner } from '@/components/event/SharedWelcomeBanner';
 
+
+
+// Main Event Details Page Component
 export default function EventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
     const { eventId } = use(params);
     const router = useRouter();
-    const [event, setEvent] = useState<Event | null>(null);
+    const searchParams = useSearchParams();
+
+    const [event, setEvent] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('photos');
     const [qrDialogOpen, setQrDialogOpen] = useState(false);
+    const [shareSheetOpen, setShareSheetOpen] = useState(false);
     const [defaultAlbumId, setDefaultAlbumId] = useState<string | null>(null);
-    const [albums, setAlbums] = useState<Album[]>([]);
+    const [albums, setAlbums] = useState<any[]>([]);
     const [albumsLoaded, setAlbumsLoaded] = useState(false);
 
+    const isSharedAccess = searchParams.get('via') === 'share';
+    const shareToken = searchParams.get('token');
+    const showWelcome = searchParams.get('welcome') === 'true';
+    const isReturning = searchParams.get('returning') === 'true';
+    const status = searchParams.get('status');
+
+    // Authentication
+    const [authToken, setAuthToken] = useState<string>('');
+    const [sharePermissions, setSharePermissions] = useState(null);
+    const [isSharedUser, setIsSharedUser] = useState(false);
+
+    useEffect(() => {
+        const token = localStorage.getItem('authToken') || '';
+        setAuthToken(token);
+    }, []);
+
+    // Add this function inside your component
+    const validateShareAccess = async () => {
+        if (!isSharedAccess || !shareToken) return;
+
+        try {
+            const tokenInfo = await getTokenInfo(shareToken);
+            setSharePermissions(tokenInfo.token.permissions);
+            setIsSharedUser(true);
+
+            // Store sharing context in localStorage for consistent experience
+            localStorage.setItem('shareContext', JSON.stringify({
+                token: shareToken,
+                permissions: tokenInfo.token.permissions,
+                eventId: eventId
+            }));
+        } catch (error) {
+            console.error('Invalid share token:', error);
+            // Redirect to join page if token is invalid
+            router.push(`/join/${shareToken}`);
+        }
+    };
+
+    // Call this in useEffect
+    useEffect(() => {
+        validateShareAccess();
+    }, [isSharedAccess, shareToken]);
+
     // Add an album update function that can be passed to AlbumManagement
-    const updateAlbumsList = (newAlbum: Album) => {
+    const updateAlbumsList = (newAlbum: any) => {
         console.log(`EventDetailsPage: Updating albums list with new album: ${newAlbum.id}`, newAlbum);
-        
+
         setAlbums(prevAlbums => {
             // If it's a default album, remove any existing default album
             if (newAlbum.isDefault) {
@@ -75,7 +156,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
             console.log(`Setting default album ID to: ${newAlbum.id}`);
             setDefaultAlbumId(newAlbum.id);
         }
-        
+
         // Ensure we mark albums as loaded
         setAlbumsLoaded(true);
     };
@@ -85,7 +166,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
             try {
                 const token = localStorage.getItem('authToken') || '';
                 console.log(`Loading event data for ID: ${eventId}`);
-                
+
                 // Verify token presence
                 if (!token) {
                     console.error('No auth token available');
@@ -93,20 +174,20 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                     router.push('/login');
                     return;
                 }
-                
+
                 console.log('Attempting to fetch event details from API...');
                 const eventData = await getEventById(eventId, token);
-                
+
                 if (eventData) {
-                    console.log('Event data fetched successfully:', eventData.name);
-                    setEvent(eventData as Event);
+                    console.log('Event data fetched successfully:', eventData);
+                    setEvent(eventData);
                 } else {
                     console.error('No event data returned from API');
                     toast.error("Event not found. It may have been deleted or you don't have permission to view it.");
                 }
             } catch (error) {
                 console.error('Error loading event:', error);
-                
+
                 // More informative error messages based on error type
                 if (error instanceof Error) {
                     if (error.message.includes('Network Error') || error.message.includes('connect')) {
@@ -114,8 +195,8 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                             "Network error: Cannot connect to the server. The API server might be down or not running.",
                             { duration: 8000 }
                         );
-                    } else if (error.message.includes('401') || error.message.includes('403') || 
-                               error.message.includes('Authentication')) {
+                    } else if (error.message.includes('401') || error.message.includes('403') ||
+                        error.message.includes('Authentication')) {
                         toast.error("Authentication error. Please log in again.", { duration: 5000 });
                         router.push('/login');
                     } else if (error.message.includes('404') || error.message.includes('not found')) {
@@ -136,7 +217,6 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
 
     // Load albums when the component mounts or eventId changes
     useEffect(() => {
-        // Use the refreshAlbums function for initial load and refreshes
         const loadAlbums = async () => {
             try {
                 setIsLoading(true);
@@ -153,11 +233,11 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
         setAlbumsLoaded(false);
         setAlbums([]);
         setDefaultAlbumId(null);
-        
+
         // Always load albums on mount or when eventId changes
         loadAlbums();
-        
-    }, [eventId]); // Only depend on eventId, so it reloads when event changes
+
+    }, [eventId]);
 
     // Function to manually refresh albums
     const refreshAlbums = async () => {
@@ -167,7 +247,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 console.error('No eventId provided for refreshAlbums');
                 return [];
             }
-            
+
             const token = localStorage.getItem('authToken') || '';
             if (!token) {
                 console.error('No auth token available for refreshAlbums');
@@ -175,18 +255,18 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 router.push('/login');
                 return [];
             }
-            
+
             // First try using the fixed fetchEventAlbums function
             let fetchedAlbums = await fetchEventAlbums(eventId, token);
             console.log(`Fetched ${fetchedAlbums.length} albums in refresh using API`);
-            
+
             // Sort albums - default album first, then by creation date
             fetchedAlbums.sort((a, b) => {
                 if (a.isDefault && !b.isDefault) return -1;
                 if (!a.isDefault && b.isDefault) return 1;
                 return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
             });
-            
+
             // Find the default album
             const defaultAlbum = fetchedAlbums.find(album => album.isDefault);
             if (defaultAlbum) {
@@ -199,111 +279,53 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 console.log('No albums found in refresh, clearing defaultAlbumId');
                 setDefaultAlbumId(null);
             }
-            
+
             setAlbums(fetchedAlbums);
             setAlbumsLoaded(true);
-            
+
             return fetchedAlbums;
         } catch (error) {
             console.error('Error refreshing albums:', error);
-            
-            // Try the direct fetch method as a fallback
-            console.log('Error in standard refresh, trying direct fetch as fallback');
-            try {
-                return albums;
-            } catch (fallbackError) {
-                console.error('Fallback also failed:', fallbackError);
-                
-                if (error instanceof Error) {
-                    toast.error(error.message || "Failed to refresh albums. Please try again.");
-                } else {
-                    toast.error("Failed to refresh albums. Please try again.");
-                }
-                return [];
+
+            if (error instanceof Error) {
+                toast.error(error.message || "Failed to refresh albums. Please try again.");
+            } else {
+                toast.error("Failed to refresh albums. Please try again.");
             }
+            return [];
         }
     };
 
-    const [shareToken, setShareToken] = useState<string | null>(null);
-    const [isCreatingShareToken, setIsCreatingShareToken] = useState(false);
-
-    const getShareUrl = () => {
-        // If we have a generated share token, use it for a more secure link
-        if (shareToken) {
-            return `${window.location.origin}/join?token=${shareToken}`;
-        }
-        
-        // Legacy fallback
-        if (event?.accessType === 'restricted') {
-            return `${window.location.origin}/join?event=${eventId}&code=${event?.accessCode || ''}`;
-        }
-        
-        // For public events, no need for access code
-        return `${window.location.origin}/join?event=${eventId}`;
-    };
-
-    const generateShareToken = async (): Promise<string | null> => {
-        if (!event) return null;
-        
+    // Quick Share Function
+    const quickShare = async () => {
         try {
-            setIsCreatingShareToken(true);
-            const token = localStorage.getItem('authToken') || '';
-            
-            console.log('Generating share token for event:', eventId);
-            console.log('Auth token available:', !!token);
-            
-            // Import the createShareToken function
-            const { createShareToken } = await import('@/services/apis/sharing.api');
-            
-            console.log('Calling createShareToken with:', {
-                type: 'event',
-                eventId,
-                permissions: { canView: true, canUpload: true, canDownload: true }
-            });
-            
-            const shareTokenData = await createShareToken(
-                'event',
-                eventId,
-                undefined, // No specific album
-                { canView: true, canUpload: true, canDownload: true },
-                undefined, // No expiration
-                undefined, // No password
-                token
-            );
-            
-            console.log('Share token created successfully:', shareTokenData);
-            setShareToken(shareTokenData.token);
-            toast.success("Secure share link created!");
-            return shareTokenData.token;
-        } catch (error) {
-            console.error('Error generating share token:', error);
-            toast.error("Failed to create share link. Using fallback link.");
-            return null;
-        } finally {
-            setIsCreatingShareToken(false);
-        }
-    };
+            if (!authToken) {
+                toast.error('Authentication required');
+                return;
+            }
 
-    const copyShareLink = async () => {
-        // If we don't have a share token yet, create one first
-        let tokenToUse = shareToken;
-        
-        console.log('copyShareLink called, current shareToken:', shareToken);
-        console.log('Event access type:', event?.accessType);
-        
-        if (!tokenToUse && event && event.accessType !== 'public') {
-            console.log('No existing token, generating new one...');
-            tokenToUse = await generateShareToken();
-            console.log('New token generated:', tokenToUse);
-        } else {
-            console.log('Using existing token or public event, no need to generate');
+            // Create a quick share token
+            const tokenData = {
+                name: 'Quick Share Link',
+                tokenType: 'invite' as const,
+                permissions: {
+                    view: true,
+                    upload: true,
+                    download: false,
+                    share: false,
+                    comment: true
+                }
+            };
+
+            const shareToken = 'asdfasdfasd';
+            const shareUrl = `${window.location.origin}/join/${shareToken}`;
+
+            await navigator.clipboard.writeText(shareUrl);
+            toast.success('Share link copied to clipboard!');
+        } catch (error) {
+            console.error('Error creating quick share:', error);
+            toast.error('Failed to create share link');
         }
-        
-        // Copy the share URL to clipboard
-        const shareUrl = getShareUrl();
-        console.log('Final share URL being copied:', shareUrl);
-        navigator.clipboard.writeText(shareUrl);
-        toast.success("Share link copied to clipboard");
     };
 
     if (isLoading) {
@@ -339,22 +361,38 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
         <div className="w-full pb-16 sm:pb-20">
             {/* Sticky Header */}
             <EventHeaderDetails event={event} />
-            
+
             {/* Cover Image Section */}
-            <EventCoverSection event={event} />
+            {/* <EventCoverSection event={event} /> */}
 
             <div className="mx-auto px-2 py-4 sm:px-2 sm:py-2">
-                {/* Event Info Section - Simplified */}
+                {/* Event Info Section */}
+                {/* <SharedWelcomeBanner
+                    event={event}
+                    status={status}
+                    isReturning={isReturning}
+                    onDismiss={() => {
+                        const newUrl = window.location.pathname + window.location.search.replace('&welcome=true', '').replace('welcome=true&', '').replace('welcome=true', '');
+                        window.history.replaceState({}, '', newUrl);
+                    }}
+                /> */}
                 <div className="flex flex-wrap gap-3 mb-4 sm:mb-6">
                     <div className="flex items-center text-sm text-gray-600">
                         <CalendarIcon className="h-4 w-4 mr-1.5" />
                         {new Date(event.date).toLocaleDateString()}
                     </div>
 
-                    {event.accessType && (
+                    <div className="flex items-center text-sm text-gray-600">
+                        <UsersIcon className="h-4 w-4 mr-1.5" />
+                        {event.stats?.participants?.total || 0} participants
+                    </div>
+
+                    {event.location && (
                         <div className="flex items-center text-sm text-gray-600">
-                            <UsersIcon className="h-4 w-4 mr-1.5" />
-                            {event.accessType === 'public' ? 'Public' : 'Restricted'}
+                            <MapPinIcon className="h-4 w-4 mr-1.5" />
+                            {typeof event.location === 'object' && event.location !== null
+                                ? (event.location.name || event.location.address || '')
+                                : event.location}
                         </div>
                     )}
                 </div>
@@ -363,11 +401,12 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                     <p className="text-gray-700 mb-4 sm:mb-6">{event.description}</p>
                 )}
 
-                {/* Action Buttons - Mobile Responsive */}
+                {/* Action Buttons */}
                 <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
+                    {/* QR Code Dialog */}
                     <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
                         <DialogTrigger asChild>
-                            <Button variant="outline" className="sm:flex items-center">
+                            <Button variant="outline" size="sm">
                                 <QrCodeIcon className="h-4 w-4 sm:mr-2" />
                                 <span className="hidden sm:inline">QR Code</span>
                             </Button>
@@ -379,74 +418,67 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                                     Scan this QR code or share the link to invite others
                                 </DialogDescription>
                             </DialogHeader>
-
                             <div className="flex flex-col items-center py-4">
-                                <div className="bg-white p-4 rounded-lg shadow-sm">
-                                    {/* QR code would be generated based on the share URL */}
-                                    {/* We'd use a QR code library in a real implementation */}
+                                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                                    <div className="w-48 h-48 bg-gray-100 flex items-center justify-center">
+                                        <span className="text-gray-400">QR Code would appear here</span>
+                                    </div>
                                 </div>
-
                                 <div className="mt-4 text-center">
                                     <p className="text-sm font-medium mb-1">{event.name}</p>
-                                    {event.accessType === 'restricted' && !shareToken && (
-                                        <p className="text-xs text-yellow-600">
-                                            This event requires an access code
-                                        </p>
-                                    )}
-                                    {shareToken && (
-                                        <p className="text-xs text-green-600">
-                                            Using secure share token
-                                        </p>
-                                    )}
+                                    <p className="text-xs text-gray-600">
+                                        Share this QR code for quick access
+                                    </p>
                                 </div>
                             </div>
-
-                            <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-between w-full">
-                                {!shareToken && event?.accessType !== 'public' && (
-                                    <Button 
-                                        variant="outline" 
-                                        className="w-full sm:w-auto" 
-                                        onClick={generateShareToken}
-                                        disabled={isCreatingShareToken}
-                                    >
-                                        {isCreatingShareToken ? (
-                                            <span>Creating...</span>
-                                        ) : (
-                                            <>
-                                                <RefreshCcwIcon className="h-4 w-4 mr-2" />
-                                                Create Secure Link
-                                            </>
-                                        )}
-                                    </Button>
-                                )}
-                                
-                                <Button 
-                                    variant={shareToken ? "default" : "outline"}
-                                    className="w-full sm:w-auto" 
-                                    onClick={copyShareLink}
-                                >
+                            <DialogFooter>
+                                <Button onClick={quickShare} className="w-full">
                                     <ShareIcon className="h-4 w-4 mr-2" />
-                                    Copy Link
+                                    Copy Share Link
                                 </Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
 
-                    <Button variant="outline" className="sm:flex items-center" onClick={copyShareLink}>
+                    {/* Quick Share Button */}
+                    <Button variant="outline" size="sm" onClick={quickShare}>
                         <ShareIcon className="h-4 w-4 sm:mr-2" />
-                        <span className="hidden sm:inline">Share</span>
+                        <span className="hidden sm:inline">Quick Share</span>
                     </Button>
-                
+
+                    {/* Advanced Share Sheet */}
+                    <Sheet open={shareSheetOpen} onOpenChange={setShareSheetOpen}>
+                        <SheetTrigger asChild>
+                            <Button variant="outline" size="sm">
+                                <SettingsIcon className="h-4 w-4 sm:mr-2" />
+                                <span className="hidden sm:inline">Manage Sharing</span>
+                            </Button>
+                        </SheetTrigger>
+                        <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+                            <SheetHeader>
+                                <SheetTitle>Share & Invite Management</SheetTitle>
+                                <SheetDescription>
+                                    Manage event access, create share links, and invite guests
+                                </SheetDescription>
+                            </SheetHeader>
+                            <div className="mt-6">
+                                <ShareManagement
+                                    eventId={eventId}
+                                    event={event}
+                                    authToken={authToken}
+                                    onClose={() => setShareSheetOpen(false)}
+                                />
+                            </div>
+                        </SheetContent>
+                    </Sheet>
                 </div>
 
                 {/* Tabs Section */}
-                <Tabs 
-                    value={activeTab} 
+                <Tabs
+                    value={activeTab}
                     onValueChange={(value) => {
-                        // When switching tabs, no need to force a reload anymore
-                        // since we're storing albums at the page level
                         setActiveTab(value);
-                    }} 
+                    }}
                     className="w-full"
                 >
                     <TabsList className="w-full mb-6">
@@ -461,17 +493,15 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                     </TabsList>
 
                     <TabsContent value="photos">
-                        {/* For Photos tab, we always render the gallery and explicitly set albumId to null */}
-                        {/* This ensures we show ALL photos from ALL albums in this event */}
                         <PhotoGallery
                             eventId={eventId}
-                            albumId={null} // Explicitly null to show all event photos
+                            albumId={null}
                             canUpload={true}
                         />
                     </TabsContent>
 
                     <TabsContent value="albums">
-                        <AlbumManagement 
+                        <AlbumManagement
                             eventId={eventId}
                             initialAlbums={albums}
                             onAlbumCreated={updateAlbumsList}
