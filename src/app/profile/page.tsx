@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Calendar, Image, Settings, HardDrive, User, Shield, Bell, Download, Share, LogOut, LogIn } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useStore } from '@/lib/store';
+import { Bell, Calendar, Download, HardDrive, Image, LogIn, LogOut, Settings, Share, Shield, User } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import React from 'react';
 import { toast } from 'sonner';
 
 export default function ProfilePage() {
@@ -27,10 +26,10 @@ export default function ProfilePage() {
   const user = (hydrated && isAuthenticated && userData) ? userData : guestUser;
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
+    <div className="container mx-auto px-4 py-8 max-w-4xl mb-16">
       {/* Profile Header */}
       <Card className="mb-6">
-        <CardContent className="pt-6">
+        <CardContent className="pt-6  ">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
             <Avatar className="h-24 w-24">
               <AvatarImage src={user.avatar} alt={user.name} />
@@ -38,8 +37,8 @@ export default function ProfilePage() {
             </Avatar>
             <div className="text-center sm:text-left flex-1">
               <div className="flex flex-col sm:flex-row sm:justify-between items-center">
-                <div>
-                  <h1 className="text-2xl font-semibold">{user.name}</h1>
+                <div className="">
+                  <h1 className="text-2xl font-semibold text-rose-500 ">{user.name}</h1>
                   <p className="text-muted-foreground">{user.email}</p>
                 </div>
                 
