@@ -1,18 +1,16 @@
 // app/albums/[albumId]/page.tsx
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Camera, X, Upload } from 'lucide-react';
-import { db } from '@/lib/db';
-import { PhotoGrid } from '@/components/photo/PhotoGrid';
-import PhotoGallery from '@/components/album/PhotoGallery';
 import AlbumHeader from '@/components/album/AlbumHeader';
+import PhotoGallery from '@/components/album/PhotoGallery';
 import { CameraCapture } from '@/components/camera/CameraCapture';
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { db, Photo } from '@/lib/db';
+import { Camera, Upload, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import React from 'react';
 
 interface AlbumPageProps {
   params: Promise<{ albumId: string }>;
@@ -22,7 +20,7 @@ export default function AlbumPage({ params }: AlbumPageProps) {
   const { albumId } = React.use(params);
   const router = useRouter();
   const [album, setAlbum] = useState<any>(null);
-  const [photos, setPhotos] = useState<any[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraPermission, setCameraPermission] = useState<boolean | null>(null);
