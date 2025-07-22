@@ -1,37 +1,20 @@
 // app/events/[eventId]/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { use } from 'react';
 import {
     CalendarIcon,
-    MapPinIcon,
-    UsersIcon,
-    QrCodeIcon,
-    ShareIcon,
     CameraIcon,
     FolderIcon,
+    MapPinIcon,
+    QrCodeIcon,
     SettingsIcon,
-    RefreshCcwIcon,
-    UserPlusIcon,
-    LinkIcon,
-    MailIcon,
-    CopyIcon,
-    CheckIcon,
-    XIcon,
-    EyeIcon,
-    UploadIcon,
-    DownloadIcon,
-    MessageCircleIcon,
-    ShieldIcon,
-    ClockIcon,
-    UserCheckIcon,
-    TrashIcon
+    ShareIcon,
+    UsersIcon
 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { use, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     Dialog,
     DialogContent,
@@ -49,26 +32,16 @@ import {
     SheetTitle,
     SheetTrigger,
 } from '@/components/ui/sheet';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Separator } from '@/components/ui/separator';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 
-import PhotoGallery from '@/components/album/PhotoGallery';
 import AlbumManagement from '@/components/album/AlbumManagement';
-import EventHeader from '@/components/event/EventHeader';
+import PhotoGallery from '@/components/album/PhotoGallery';
 import EventHeaderDetails from '@/components/event/EventDetailsHeader';
-import EventCoverSection from '@/components/event/EventCoverSection';
-import { getEventById } from '@/services/apis/events.api';
-import { fetchEventAlbums } from '@/services/apis/albums.api';
 import ShareManagement from '@/components/event/ShareManagement';
+import { fetchEventAlbums } from '@/services/apis/albums.api';
+import { getEventById } from '@/services/apis/events.api';
 import {
     getTokenInfo
 } from '@/services/apis/sharing.api';

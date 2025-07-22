@@ -1,39 +1,30 @@
 // app/events/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { format } from 'date-fns';
 import {
-  CalendarIcon,
-  MapPinIcon,
-  PlusIcon,
-  SearchIcon,
-  Filter,
-  MoreHorizontalIcon,
   ArrowUpDown,
+  CalendarIcon,
   CameraIcon,
-  UsersIcon,
-  HeartIcon,
-  Images
+  Filter,
+  Images,
+  MapPinIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+  SearchIcon
 } from 'lucide-react';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -41,32 +32,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { db } from '@/lib/db';
-import { toast } from "sonner"
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fetchEvents } from '@/services/apis/events.api';
+import { toast } from "sonner";
+import { Event } from '@/types/backend-types/event.type';
 
-interface Event {
-  _id: string;
-  title: string;
-  description?: string;
-  date: Date;
-  endDate?: Date;
-  location?: string;
-  cover_image?: {
-    url: string;
-    thumbnail_url?: string;
-  };
-  createdAt: Date;
-  createdById: number;
-  accessType: 'public' | 'restricted';
-  accessCode?: string;
-  template?: string;
-  isActive: boolean;
-  photoCount?: number;
-  albumCount?: number;
-}
 
 export default function EventsPage() {
   const router = useRouter();
@@ -82,15 +53,15 @@ export default function EventsPage() {
 
   useEffect(() => {
     const loadEvents = async () => {
-      try{
+      try {
         const token = localStorage.getItem('authToken') || '';
         let getAllEvents = await fetchEvents(token);
-        console.log(getAllEvents, 'asdfasdfasdf');
+        console.log("getAllEvents", getAllEvents);
         setEvents(getAllEvents || []);
-      }catch(error){
+      } catch (error) {
         console.error('Error loading events:', error);
         toast.error("Failed to load your events. Please try again.");
-      }finally{
+      } finally {
         setIsLoading(false);
       }
     };
@@ -107,16 +78,17 @@ export default function EventsPage() {
         return (
           event.title.toLowerCase().includes(query) ||
           (event.description && event.description.toLowerCase().includes(query)) ||
-          (event.location && event.location.toLowerCase().includes(query))
+          (event.location && event.location.name.toLowerCase().includes(query))
         );
       }
 
       // Filter by type
-      if (filterType === 'active') {
-        return event.isActive;
-      } else if (filterType === 'past') {
-        return !event.isActive;
-      }
+      // commenting cuz there is no active field in events.
+      // if (filterType === 'active') {
+      //   return event.isActive;
+      // } else if (filterType === 'past') {
+      //   return !event.isActive;
+      // }
 
       return true;
     })
@@ -124,9 +96,9 @@ export default function EventsPage() {
       // Sort by selected order
       switch (sortOrder) {
         case 'date-desc':
-          return new Date(b.date).getTime() - new Date(a.date).getTime();
+          return new Date(b.start_date).getTime() - new Date(a.start_date).getTime();
         case 'date-asc':
-          return new Date(a.date).getTime() - new Date(b.date).getTime();
+          return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
         case 'name-asc':
           return a.title.localeCompare(b.title);
         case 'name-desc':
@@ -334,7 +306,7 @@ export default function EventsPage() {
                   {/* Photo Count */}
                   <div className="flex items-center gap-1 bg-black/30 backdrop-blur-sm rounded-full py-1 px-2 text-white text-xs">
                     <Images className="h-3 w-3" />
-                    <span>{event.photoCount}</span>
+                    <span>{event.stats.photos}</span>
                   </div>
                 </div>
 
@@ -377,16 +349,16 @@ export default function EventsPage() {
                     <CalendarIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                     {/* {format(new Date(event.date), 'MMM d, yyyy')} */}
                   </div>
-  {event.location && (
-    <div className="flex items-center text-sm">
-      <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-      <span className="truncate">
-        {typeof event.location === 'object' && event.location !== null
-          ? (event.location as any).name || (event.location as any).address || ''
-          : event.location}
-      </span>
-    </div>
-  )}
+                  {event.location && (
+                    <div className="flex items-center text-sm">
+                      <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                      <span className="truncate">
+                        {typeof event.location === 'object' && event.location !== null
+                          ? (event.location as any).name || (event.location as any).address || ''
+                          : event.location}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -419,11 +391,11 @@ export default function EventsPage() {
                     </div>
                   )}
 
-                  {!event.isActive && (
+                  {/* {event.end_date && (
                     <div className="absolute bottom-0 left-0 right-0 bg-gray-900/70 text-white text-xs py-0.5 text-center">
                       Past
                     </div>
-                  )}
+                  )} */}
                 </div>
 
                 <div className="flex-1 p-4 flex flex-col">
@@ -456,23 +428,23 @@ export default function EventsPage() {
                   <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-1">
                     <div className="flex items-center">
                       <CalendarIcon className="h-3 w-3 mr-1" />
-                      {format(new Date(event.date), 'MMM d, yyyy')}
+                      {format(new Date(event.start_date), 'MMM d, yyyy')}
                     </div>
 
-                {event.location && (
-                  <div className="flex items-center">
-                    <MapPinIcon className="h-3 w-3 mr-1" />
-                    <span className="truncate max-w-[120px]">
-                      {typeof event.location === 'object' && event.location !== null
-                        ? (event.location as any).name || (event.location as any).address || ''
-                        : event.location}
-                    </span>
-                  </div>
-                )}
+                    {event.location && (
+                      <div className="flex items-center">
+                        <MapPinIcon className="h-3 w-3 mr-1" />
+                        <span className="truncate max-w-[120px]">
+                          {typeof event.location === 'object' && event.location !== null
+                            ? (event.location as any).name || (event.location as any).address || ''
+                            : event.location}
+                        </span>
+                      </div>
+                    )}
 
                     <div className="flex items-center">
                       <CameraIcon className="h-3 w-3 mr-1" />
-                      {event.photoCount} photos
+                      {event.stats.photos} photos
                     </div>
                   </div>
 
@@ -483,12 +455,12 @@ export default function EventsPage() {
                   <div className="mt-auto pt-2 flex justify-between items-center text-xs">
                     <div>
                       <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                        {event.albumCount} {event.albumCount === 1 ? 'album' : 'albums'}
+                        {event.stats.photos} {event.stats.photos === 1 ? 'photo' : 'photos'}
                       </span>
                     </div>
 
                     <div className="text-gray-500">
-                      {event.accessType === 'public' ? 'Public' : 'Restricted'} event
+                      {event.share_settings.is_active ? 'Public' : 'Restricted'} event
                     </div>
                   </div>
                 </div>

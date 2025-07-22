@@ -2,8 +2,9 @@
 
 import axios from 'axios';
 import { API_BASE_URL } from '@/lib/api-config';
-import { Event, ApiEvent } from '@/types/events';
+import { ApiEvent } from '@/types/events';
 import { useStore } from '@/lib/store';
+import { Event } from '@/types/backend-types/event.type';
 
 export interface ApiEventResponse {
   status: boolean;
@@ -23,7 +24,6 @@ const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
     : startDate > new Date();
 
   return {
-
     ...apiEvent,
   };
 };
@@ -40,7 +40,8 @@ export const fetchEvents = async (authToken: string): Promise<Event[]> => {
     if (response.data && response.data.data) {
       console.log(response.data.data, 'apiEventsapiEvents')
       const apiEvents: ApiEvent[] = response.data.data.events; // Adjusted to match the API response structure
-      return apiEvents.map(mapApiEventToEvent);
+      // return apiEvents.map(mapApiEventToEvent);
+      return response.data.data.events ?? [] ;
     }
 
     return [];

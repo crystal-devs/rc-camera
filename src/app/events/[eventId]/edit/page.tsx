@@ -1,48 +1,7 @@
 'use client';
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  ArrowLeft,
-  Save,
-  Trash2,
-  Users,
-  Share2,
-  Camera,
-  Settings,
-  Link,
-  Plus,
-  X,
-  Upload,
-  Globe,
-  Lock,
-  Eye,
-  Shield,
-  Copy,
-  Check,
-  UserPlus,
-  Calendar,
-  MapPin,
-  Zap,
-  Download,
-  MessageSquare,
-  ExternalLink,
-  Info,
-  Video
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { getEventById, updateEvent, deleteEvent } from '@/services/apis/events.api';
+import TeamTab from '@/components/event/TeamTab';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,8 +13,38 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import TeamTab from '@/components/event/TeamTab';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { deleteEvent, getEventById, updateEvent } from '@/services/apis/events.api';
+import {
+  ArrowLeft,
+  Camera,
+  Check,
+  Copy,
+  Globe,
+  Info,
+  Lock,
+  Save,
+  Settings,
+  Share2,
+  Trash2,
+  Upload,
+  Users,
+  Video,
+  X
+} from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 type EventFormData = {
   title: string;
@@ -340,7 +329,7 @@ const EventSettingsPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white mb-16 to-blue-50">
       <div className="container max-w-4xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -361,7 +350,7 @@ const EventSettingsPage = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* <div className="flex items-center gap-2">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50">
@@ -396,7 +385,9 @@ const EventSettingsPage = () => {
               )}
               {isSubmitting ? 'Saving...' : 'Save Changes'}
             </Button>
-          </div>
+          </div> */}
+
+
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
