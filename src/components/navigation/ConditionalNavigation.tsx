@@ -15,7 +15,7 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
   
   // Define routes where navigation should be hidden
   const isGuestRoute = pathname?.startsWith('/guest/');
-  const isAuthJoinRoute = pathname?.startsWith('/auth/join/');
+  const isAuthJoinRoute = pathname?.startsWith('/join/');
   const isLoginRoute = pathname === '/login';
   const isRegisterRoute = pathname === '/register';
   const isEventNotFoundRoute = pathname === '/event-not-found';

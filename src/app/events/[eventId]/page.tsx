@@ -72,7 +72,6 @@ import ShareManagement from '@/components/event/ShareManagement';
 import {
     getTokenInfo
 } from '@/services/apis/sharing.api';
-import { SharedWelcomeBanner } from '@/components/event/SharedWelcomeBanner';
 
 
 
@@ -317,8 +316,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 }
             };
 
-            const shareToken = 'asdfasdfasd';
-            const shareUrl = `${window.location.origin}/join/${shareToken}`;
+            const shareUrl = `${window.location.origin}/join/${event.share_token}`;
 
             await navigator.clipboard.writeText(shareUrl);
             toast.success('Share link copied to clipboard!');
@@ -446,31 +444,6 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                         <span className="hidden sm:inline">Quick Share</span>
                     </Button>
 
-                    {/* Advanced Share Sheet */}
-                    <Sheet open={shareSheetOpen} onOpenChange={setShareSheetOpen}>
-                        <SheetTrigger asChild>
-                            <Button variant="outline" size="sm">
-                                <SettingsIcon className="h-4 w-4 sm:mr-2" />
-                                <span className="hidden sm:inline">Manage Sharing</span>
-                            </Button>
-                        </SheetTrigger>
-                        <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
-                            <SheetHeader>
-                                <SheetTitle>Share & Invite Management</SheetTitle>
-                                <SheetDescription>
-                                    Manage event access, create share links, and invite guests
-                                </SheetDescription>
-                            </SheetHeader>
-                            <div className="mt-6">
-                                <ShareManagement
-                                    eventId={eventId}
-                                    event={event}
-                                    authToken={authToken}
-                                    onClose={() => setShareSheetOpen(false)}
-                                />
-                            </div>
-                        </SheetContent>
-                    </Sheet>
                 </div>
 
                 {/* Tabs Section */}
