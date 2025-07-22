@@ -11,7 +11,6 @@ import {
   CardTitle
 } from '@/components/ui/card';
 import { db } from '@/lib/db';
-import { authenticateUser } from '@/services/auth.service';
 import { FolderPlus, PlusCircle, ScanLineIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -25,7 +24,6 @@ export default function HomePage() {
   const userId = 1; // In a real app, get this from authentication
 
   useEffect(() => {
-    authenticateUser()
     const loadAlbums = async () => {
       try {
         // Check if this is first time user

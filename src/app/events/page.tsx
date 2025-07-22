@@ -274,12 +274,13 @@ export default function EventsPage() {
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
                   {event?.cover_image?.thumbnail_url ? (
-                    <Image
-                      src={event?.cover_image?.thumbnail_url}
-                      alt={'title'}
-                      fill
-                      className="object-cover"
-                    />
+                    // <Image
+                    //   src={event?.cover_image?.thumbnail_url}
+                    //   alt={'title'}
+                    //   fill
+                    //   className="object-cover"
+                    // />
+                    <></>
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">
                       {event.template === 'wedding' && <span className="text-4xl">💍</span>}

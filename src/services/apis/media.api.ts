@@ -156,7 +156,7 @@ function mergeMediaUpdates(cached: MediaItem[], updates: MediaItem[]): MediaItem
  */
 export const getEventMediaWithGuestToken = async (
     eventId: string,
-    guestToken: string,
+    guestToken?: string,
     includeAllAlbums: boolean = true,
     options: {
         page?: number;
@@ -176,18 +176,23 @@ export const getEventMediaWithGuestToken = async (
 
         console.log(`Fetching guest event media: ${eventId}`);
 
-        const params = new URLSearchParams({
-            token: guestToken,
-            includeAllAlbums: includeAllAlbums.toString()
-        });
+        // const params = new URLSearchParams({
+        //     token: guestToken,
+        //     includeAllAlbums: includeAllAlbums.toString()
+        // });
 
-        if (options.page) params.append('page', options.page.toString());
-        if (options.limit) params.append('limit', options.limit.toString());
-        if (options.quality) params.append('quality', options.quality);
+        // if (options.page) params.append('page', options.page.toString());
+        // if (options.limit) params.append('limit', options.limit.toString());
+        // if (options.quality) params.append('quality', options.quality);
 
-        const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/guest?${params}`, {
+        const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}`, {
             timeout: 15000
         });
+        // const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/guest?${params}`, {
+        //     timeout: 15000
+        // });
+
+        console.log(response, 'response from guest event media API asdfasdf');
 
         if (response.data && (response.data.status === true || response.data.success)) {
             const mediaItems = response.data.data || [];

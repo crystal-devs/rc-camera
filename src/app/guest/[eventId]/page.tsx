@@ -1,14 +1,101 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import { Camera, Upload, Users, Calendar, MapPin, Download, X, ChevronLeft, ChevronRight, Info, Heart, Share2, MoreVertical } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useParams } from 'next/navigation';
+import { getEventMediaWithGuestToken, transformMediaToPhoto } from '@/services/apis/media.api';
 
-// Mock data with varied aspect ratios
-const mockEvent = {
+// TypeScript interfaces
+interface ApiPhoto {
+    _id: string;
+    albumId: string;
+    eventId: string;
+    imageUrl: string;
+    thumbnail: string;
+    progressiveUrls: {
+        placeholder: string;
+        thumbnail: string;
+        display: string;
+        full: string;
+    };
+    createdAt: string;
+    approval: {
+        status: 'auto_approved' | 'approved' | 'pending' | 'rejected';
+        approved_by?: string | null;
+        approved_at?: string;
+        rejection_reason?: string;
+        auto_approval_reason?: string;
+    };
+    processing: {
+        status: string;
+        thumbnails_generated: boolean;
+        ai_analysis: {
+            completed: boolean;
+            content_score: number;
+            tags: string[];
+            faces_detected: number;
+        };
+        compressed_versions: string[];
+    };
+    metadata: {
+        width: number;
+        height: number;
+        duration: number;
+        device_info: {
+            brand: string;
+            model: string;
+            os: string;
+        };
+        location: {
+            lat: number | null;
+            lng: number | null;
+        };
+        timestamp: string | null;
+        device: string;
+    };
+    url: string;
+}
+
+interface TransformedPhoto {
+    id: string;
+    url: string;
+    thumbnail: string;
+    display: string;
+    placeholder: string;
+    width: number;
+    height: number;
+    uploaded_by: string;
+    approval: ApiPhoto['approval'];
+    createdAt: string;
+    albumId: string;
+    eventId: string;
+}
+
+interface MockEvent {
+    _id: string;
+    title: string;
+    description: string;
+    location: { name: string; address: string };
+    start_date: string;
+    cover_image: { url: string };
+    stats: { participants: number; photos: number; videos: number };
+    permissions: {
+        can_upload: boolean;
+        can_download: boolean;
+        require_approval: boolean;
+    };
+}
+
+interface EventDetailsPageProps {
+    params: Promise<{ eventId: string }>;
+}
+
+// Mock event data
+const mockEvent: MockEvent = {
     _id: "event123",
     title: "Rahul & Priya's Wedding",
     description: "Join us in celebrating our special day",
@@ -23,42 +110,57 @@ const mockEvent = {
     }
 };
 
-const mockPhotos = [
-    { id: 1, url: "https://picsum.photos/300/400?random=1", uploaded_by: "Guest User", type: "image", width: 300, height: 400 },
-    { id: 2, url: "https://picsum.photos/400/300?random=2", uploaded_by: "Amit", type: "image", width: 400, height: 300 },
-    { id: 3, url: "https://picsum.photos/300/300?random=3", uploaded_by: "Priya", type: "image", width: 300, height: 300 },
-    { id: 4, url: "https://picsum.photos/350/500?random=4", uploaded_by: "Raj", type: "image", width: 350, height: 500 },
-    { id: 5, url: "https://picsum.photos/400/250?random=5", uploaded_by: "Meera", type: "image", width: 400, height: 250 },
-    { id: 6, url: "https://picsum.photos/300/450?random=6", uploaded_by: "Vikram", type: "image", width: 300, height: 450 },
-    { id: 7, url: "https://picsum.photos/450/300?random=7", uploaded_by: "Anjali", type: "image", width: 450, height: 300 },
-    { id: 8, url: "https://picsum.photos/300/350?random=8", uploaded_by: "Karan", type: "image", width: 300, height: 350 },
-    { id: 9, url: "https://picsum.photos/400/400?random=9", uploaded_by: "Sita", type: "image", width: 400, height: 400 },
-    { id: 10, url: "https://picsum.photos/350/280?random=10", uploaded_by: "Rohit", type: "image", width: 350, height: 280 },
-    { id: 11, url: "https://picsum.photos/300/500?random=11", uploaded_by: "Neha", type: "image", width: 300, height: 500 },
-    { id: 12, url: "https://picsum.photos/500/350?random=12", uploaded_by: "Arjun", type: "image", width: 500, height: 350 },
-    { id: 13, url: "https://picsum.photos/320/400?random=13", uploaded_by: "Divya", type: "image", width: 320, height: 400 },
-    { id: 14, url: "https://picsum.photos/400/320?random=14", uploaded_by: "Suresh", type: "image", width: 400, height: 320 },
-    { id: 15, url: "https://picsum.photos/280/380?random=15", uploaded_by: "Kavya", type: "image", width: 280, height: 380 }
-];
+// Transform API data to component format
+const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => {
+    console.log(apiPhoto, 'API Photo Data');
+    return {
+        id: apiPhoto._id,
+        url: apiPhoto.url,
+        thumbnail: apiPhoto.url,
+        display: apiPhoto.url,
+        placeholder: apiPhoto.url,
+        width: apiPhoto.metadata?.width || 400, // Default width if not available
+        height: apiPhoto.metadata?.height || 600, // Default height if not available
+        uploaded_by: "Guest", // You might want to get this from user data
+        approval: apiPhoto.approval,
+        createdAt: apiPhoto.createdAt,
+        albumId: apiPhoto.albumId,
+        eventId: apiPhoto.eventId
+    };
+};
+
+// Fullscreen Photo Viewer Component Props
+interface FullscreenPhotoViewerProps {
+    selectedPhoto: TransformedPhoto;
+    selectedPhotoIndex: number;
+    photos: TransformedPhoto[];
+    userPermissions: MockEvent['permissions'];
+    onClose: () => void;
+    onPrev: () => void;
+    onNext: () => void;
+    setPhotoInfoOpen: (open: boolean) => void;
+    deletePhoto: (photo: TransformedPhoto) => void;
+    downloadPhoto: (photo: TransformedPhoto) => void;
+}
 
 // Fullscreen Photo Viewer Component
-const FullscreenPhotoViewer = ({ 
-    selectedPhoto, 
-    selectedPhotoIndex, 
-    photos, 
+const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
+    selectedPhoto,
+    selectedPhotoIndex,
+    photos,
     userPermissions,
-    onClose, 
-    onPrev, 
-    onNext, 
+    onClose,
+    onPrev,
+    onNext,
     setPhotoInfoOpen,
     deletePhoto,
-    downloadPhoto 
+    downloadPhoto
 }) => {
     const [showControls, setShowControls] = useState(true);
 
     useEffect(() => {
-        const handleKeyDown = (e) => {
-            switch(e.key) {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            switch (e.key) {
                 case 'Escape':
                     onClose();
                     break;
@@ -76,7 +178,7 @@ const FullscreenPhotoViewer = ({
     }, [onClose, onPrev, onNext]);
 
     return (
-        <div 
+        <div
             className="fixed inset-0 bg-black z-50 flex items-center justify-center"
             onClick={() => setShowControls(!showControls)}
         >
@@ -142,7 +244,7 @@ const FullscreenPhotoViewer = ({
                     <ChevronLeft className="w-6 h-6" />
                 </Button>
             )}
-            
+
             {selectedPhotoIndex < photos.length - 1 && (
                 <Button
                     variant="ghost"
@@ -156,7 +258,7 @@ const FullscreenPhotoViewer = ({
 
             {/* Image */}
             <img
-                src={selectedPhoto.url}
+                src={selectedPhoto.display || selectedPhoto.url}
                 alt="Fullscreen view"
                 className="max-w-full max-h-full object-contain"
                 onClick={(e) => e.stopPropagation()}
@@ -168,15 +270,27 @@ const FullscreenPhotoViewer = ({
                     <Badge variant="secondary" className="mb-2">
                         Uploaded by {selectedPhoto.uploaded_by}
                     </Badge>
+                    {selectedPhoto.createdAt && (
+                        <p className="text-xs opacity-75 mt-1">
+                            {new Date(selectedPhoto.createdAt).toLocaleDateString()}
+                        </p>
+                    )}
                 </div>
             </div>
         </div>
     );
 };
 
+// Pinterest-style Photo Grid Component Props
+interface PhotoGridProps {
+    photos: TransformedPhoto[];
+    onPhotoClick: (photo: TransformedPhoto) => void;
+}
+
 // Pinterest-style Photo Grid Component
-const PhotoGrid = ({ photos, onPhotoClick }) => {
+const PhotoGrid: React.FC<PhotoGridProps> = ({ photos, onPhotoClick }) => {
     const [columns, setColumns] = useState(3);
+    const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         const updateColumns = () => {
@@ -192,17 +306,22 @@ const PhotoGrid = ({ photos, onPhotoClick }) => {
         return () => window.removeEventListener('resize', updateColumns);
     }, []);
 
-    // Distribute photos across columns
-    const distributedPhotos = Array.from({ length: columns }, () => []);
-    const columnHeights = Array(columns).fill(0);
+    const handleImageError = (photoId: string) => {
+        setImageErrors(prev => new Set(prev).add(photoId));
+    };
 
+    // Distribute photos across columns
+    const distributedPhotos = Array.from({ length: columns }, () => [] as TransformedPhoto[]);
+    const columnHeights = Array(columns).fill(0);
+    console.log(photos, 'asdfasdfphtosss');
     photos.forEach((photo) => {
         // Find the column with minimum height
         const minHeightIndex = columnHeights.indexOf(Math.min(...columnHeights));
         distributedPhotos[minHeightIndex].push(photo);
-        
+
         // Update column height (approximate)
-        const aspectRatio = photo.height / photo.width;
+        // Use a default aspect ratio if dimensions aren't available
+        const aspectRatio = (photo.height && photo.width) ? photo.height / photo.width : 1.2;
         const estimatedHeight = 250 * aspectRatio; // Base width of 250px
         columnHeights[minHeightIndex] += estimatedHeight + 16; // Add gap
     });
@@ -211,60 +330,165 @@ const PhotoGrid = ({ photos, onPhotoClick }) => {
         <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>
             {distributedPhotos.map((columnPhotos, columnIndex) => (
                 <div key={columnIndex} className="flex flex-col gap-2">
-                    {columnPhotos.map((photo) => (
-                        <div 
-                            key={photo.id} 
-                            className="relative group cursor-pointer overflow-hidden rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
-                            onClick={() => onPhotoClick(photo)}
-                        >
-                            <img
-                                src={photo.url}
-                                alt="Event photo"
-                                className="w-full h-auto object-cover transition-transform duration-200 group-hover:scale-105"
-                                style={{ aspectRatio: `${photo.width}/${photo.height}` }}
-                                loading="lazy"
-                            />
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200" />
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-white hover:bg-white/20 h-8 w-8 p-0"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        // Handle favorite
-                                    }}
-                                >
-                                    <Heart className="w-4 h-4" />
-                                </Button>
+                    {columnPhotos.map((photo) => {
+                        const hasError = imageErrors.has(photo.id);
+
+                        return (
+                            <div
+                                key={photo.id}
+                                className="relative group cursor-pointer overflow-hidden rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
+                                onClick={() => onPhotoClick(photo)}
+                            >
+                                
+                                {/* Progressive loading with placeholder */}
+                                <div className="relative">
+                                    {/* Placeholder blur - only show if main image hasn't loaded yet */}
+                                    {photo.placeholder && !hasError && (
+                                        <img
+                                            src={photo.thumbnail}
+                                            alt=""
+                                            className="absolute inset-0 w-full h-full object-cover blur-sm scale-110 transition-opacity duration-300"
+                                        />
+                                    )}
+
+                                    {/* Main thumbnail */}
+                                    {!hasError ? (
+                                        <img
+                                            src={photo.thumbnail}
+                                            alt="Event photo"
+                                            className="relative w-full h-auto object-cover transition-transform duration-200 group-hover:scale-105"
+                                            style={{
+                                                aspectRatio: (photo.width && photo.height)
+                                                    ? `${photo.width}/${photo.height}`
+                                                    : '3/4' // Default aspect ratio
+                                            }}
+                                            loading="lazy"
+                                            onLoad={(e) => {
+                                                // Hide placeholder once main image loads
+                                                const target = e.target as HTMLImageElement;
+                                                const placeholder = target.previousElementSibling as HTMLElement;
+                                                if (placeholder) {
+                                                    placeholder.style.opacity = '0';
+                                                }
+                                            }}
+                                            onError={() => handleImageError(photo.id)}
+                                        />
+                                    ) : (
+                                        // Fallback when image fails to load
+                                        <div
+                                            className="relative w-full bg-gray-200 flex items-center justify-center"
+                                            style={{
+                                                aspectRatio: (photo.width && photo.height)
+                                                    ? `${photo.width}/${photo.height}`
+                                                    : '3/4'
+                                            }}
+                                        >
+                                            <Camera className="w-8 h-8 text-gray-400" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-white hover:bg-white/20 h-8 w-8 p-0"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            // Handle favorite
+                                        }}
+                                    >
+                                        <Heart className="w-4 h-4" />
+                                    </Button>
+                                </div>
+
+                                <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                    <Badge variant="secondary" className="text-xs">
+                                        {photo.uploaded_by}
+                                    </Badge>
+                                    {/* Show approval status if pending */}
+                                    {photo.approval?.status === 'pending' && (
+                                        <Badge variant="outline" className="text-xs ml-1 bg-yellow-100 text-yellow-800">
+                                            Pending
+                                        </Badge>
+                                    )}
+                                </div>
                             </div>
-                            <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                <Badge variant="secondary" className="text-xs">
-                                    {photo.uploaded_by}
-                                </Badge>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             ))}
         </div>
     );
 };
 
-export default function GuestEventPage() {
-    const [guestName, setGuestName] = useState('');
-    const [hasEnteredName, setHasEnteredName] = useState(false);
-    const [showNameDialog, setShowNameDialog] = useState(true);
-    const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
-    const [selectedPhoto, setSelectedPhoto] = useState(null);
-    const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
-    const [photoInfoOpen, setPhotoInfoOpen] = useState(false);
-
-    const photos = mockPhotos;
+export default function EventDetailsPage({ params }: EventDetailsPageProps) {
+    const { eventId } = use(params);
+    const [guestName, setGuestName] = useState<string>('');
+    const [hasEnteredName, setHasEnteredName] = useState<boolean>(false);
+    const [showNameDialog, setShowNameDialog] = useState<boolean>(true);
+    const [photoViewerOpen, setPhotoViewerOpen] = useState<boolean>(false);
+    const [selectedPhoto, setSelectedPhoto] = useState<TransformedPhoto | null>(null);
+    const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number>(0);
+    const [photoInfoOpen, setPhotoInfoOpen] = useState<boolean>(false);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+    // Simulate localStorage with state (since localStorage isn't available in artifacts)
+    const [savedName, setSavedName] = useState<string>('');
+    const [photos, setPhotos] = useState<TransformedPhoto[]>([]);
     const userPermissions = mockEvent.permissions;
 
-    // Simulate localStorage with state (since localStorage isn't available in artifacts)
-    const [savedName, setSavedName] = useState('');
+    console.log(eventId, 'Event ID from URL');
+
+    const fetchMedia = async (): Promise<boolean> => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            // Use the actual API function
+            let mediaItems: ApiPhoto[] = await getEventMediaWithGuestToken(eventId);
+
+            console.log('Raw media items from API:', mediaItems);
+
+            if (mediaItems && Array.isArray(mediaItems)) {
+                // Transform API photos to component format
+                const transformedPhotos = mediaItems.map(transformApiPhoto);
+
+                console.log('Transformed photos:', transformedPhotos);
+
+                // Separate approved and pending photos
+                const approvedPhotos = transformedPhotos.filter(photo =>
+                    !photo.approval ||
+                    photo.approval.status === 'approved' ||
+                    photo.approval.status === 'auto_approved'
+                );
+
+                console.log('Approved photos:', approvedPhotos);
+
+                setPhotos(approvedPhotos);
+                return true;
+            } else {
+                console.warn('No media items received or invalid format');
+                setPhotos([]);
+                return false;
+            }
+        } catch (error) {
+            console.error('Error fetching media:', error);
+            setError('Failed to load photos. Please try again.');
+            setPhotos([]);
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (eventId) {
+            fetchMedia();
+        }
+    }, [eventId]);
+
+    console.log('Current photos state:', photos);
 
     useEffect(() => {
         // Simulate checking localStorage
@@ -275,7 +499,7 @@ export default function GuestEventPage() {
         }
     }, [savedName]);
 
-    const handleNameSubmit = () => {
+    const handleNameSubmit = (): void => {
         if (guestName.trim()) {
             setSavedName(guestName); // Simulate localStorage
             setHasEnteredName(true);
@@ -283,15 +507,15 @@ export default function GuestEventPage() {
         }
     };
 
-    const handlePhotoClick = (photo) => {
+    const handlePhotoClick = (photo: TransformedPhoto): void => {
         const photoIndex = photos.findIndex(p => p.id === photo.id);
         setSelectedPhoto(photo);
         setSelectedPhotoIndex(photoIndex);
         setPhotoViewerOpen(true);
     };
 
-    const navigateToPhoto = (direction) => {
-        let newIndex;
+    const navigateToPhoto = (direction: 'next' | 'prev'): void => {
+        let newIndex: number;
         if (direction === 'next' && selectedPhotoIndex < photos.length - 1) {
             newIndex = selectedPhotoIndex + 1;
         } else if (direction === 'prev' && selectedPhotoIndex > 0) {
@@ -299,16 +523,16 @@ export default function GuestEventPage() {
         } else {
             return;
         }
-        
+
         setSelectedPhotoIndex(newIndex);
         setSelectedPhoto(photos[newIndex]);
     };
 
-    const deletePhoto = (photo) => {
+    const deletePhoto = (photo: TransformedPhoto): void => {
         console.log('Delete photo:', photo);
     };
 
-    const downloadPhoto = (photo) => {
+    const downloadPhoto = (photo: TransformedPhoto): void => {
         const link = document.createElement('a');
         link.href = photo.url;
         link.download = `photo-${photo.id}.jpg`;
@@ -320,7 +544,7 @@ export default function GuestEventPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Name Entry Dialog */}
-            <Dialog open={showNameDialog} onOpenChange={() => {}}>
+            <Dialog open={showNameDialog} onOpenChange={() => { }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="text-center">Welcome! 🎉</DialogTitle>
@@ -385,20 +609,46 @@ export default function GuestEventPage() {
                         <div className="flex items-center justify-between mb-6">
                             <div>
                                 <h2 className="text-2xl font-bold">Event Memories</h2>
-                                <p className="text-gray-600">{photos.length} photos shared</p>
+                                <p className="text-gray-600">
+                                    {loading ? 'Loading...' : `${photos.length} photos shared`}
+                                </p>
                             </div>
                             {mockEvent.permissions.can_download && (
-                                <Button variant="outline">
+                                <Button variant="outline" disabled={loading || photos.length === 0}>
                                     <Download className="w-4 h-4 mr-2" />
                                     Download All
                                 </Button>
                             )}
                         </div>
 
+                        {/* Error State */}
+                        {error && (
+                            <div className="text-center py-16">
+                                <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md mx-auto">
+                                    <h3 className="text-lg font-medium text-red-800 mb-2">Error Loading Photos</h3>
+                                    <p className="text-red-600 mb-4">{error}</p>
+                                    <Button onClick={fetchMedia} variant="outline" className="text-red-600 border-red-300">
+                                        Try Again
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Loading State */}
+                        {loading && (
+                            <div className="text-center py-16">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
+                                <p className="text-gray-600">Loading photos...</p>
+                            </div>
+                        )}
+
                         {/* Pinterest-style Photo Grid */}
-                        {photos.length > 0 ? (
+                        {!loading && !error && photos.length > 0 && (
                             <PhotoGrid photos={photos} onPhotoClick={handlePhotoClick} />
-                        ) : (
+                        )}
+
+                        {/* Empty State */}
+                        {!loading && !error && photos.length === 0 && (
                             <div className="text-center py-16">
                                 <Camera className="w-20 h-20 mx-auto text-gray-300 mb-4" />
                                 <h3 className="text-xl font-medium text-gray-600 mb-2">No photos yet</h3>
