@@ -47,7 +47,7 @@ interface Event {
   isActive: boolean;
 }
 
-interface Album {
+export interface Album {
   id: string;
   eventId: string;
   name: string;
@@ -60,7 +60,7 @@ interface Album {
   isDefault?: boolean;
 }
 
-interface Photo {
+export interface Photo {
   id: string;
   albumId: string;
   eventId: string;
