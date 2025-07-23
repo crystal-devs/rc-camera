@@ -45,16 +45,20 @@ export const getEventMedia = async (
         limit?: number;
         quality?: 'thumbnail' | 'display' | 'full';
         since?: string;
+        // NEW: Status-based filtering
+        status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
+        scrollType?: 'pagination' | 'infinite';
+        cursor?: string;
     } = {}
 ): Promise<MediaItem[]> => {
     try {
-        const cacheKey = `event_${eventId}`;
+        const cacheKey = `event_${eventId}_${options.status || 'all'}`;
 
         // Log to verify function call
-        console.log(`Fetching event media for eventId: ${eventId}, includeAllAlbums: ${includeAllAlbums}, options:`, options);
+        console.log(`Fetching event media for eventId: ${eventId}, status: ${options.status}, options:`, options);
 
         // Check cache for incremental updates
-        if (!options.since && !options.includeProcessing && !options.includePending) {
+        if (!options.since && !options.includeProcessing && !options.includePending && !options.cursor) {
             const cached = imageCache.get(cacheKey);
             if (cached) {
                 console.log(`Using cached event media (${cached.length} items)`);
@@ -64,12 +68,19 @@ export const getEventMedia = async (
 
         const endpoint = `${API_BASE_URL}/media/event/${eventId}`;
         const params = new URLSearchParams();
+        
+        // Legacy parameters (for backward compatibility)
         if (options.includeProcessing) params.append('include_processing', 'true');
         if (options.includePending) params.append('include_pending', 'true');
         if (options.page) params.append('page', options.page.toString());
         if (options.limit) params.append('limit', options.limit.toString());
         if (options.quality) params.append('quality', options.quality);
         if (options.since) params.append('since', options.since);
+        
+        // NEW: Status-based filtering
+        if (options.status) params.append('status', options.status);
+        if (options.scrollType) params.append('scroll_type', options.scrollType);
+        if (options.cursor) params.append('cursor', options.cursor);
 
         console.log(`Calling API: ${endpoint}?${params}`);
 
@@ -93,7 +104,7 @@ export const getEventMedia = async (
             const mediaItems: MediaItem[] = response.data.data || [];
 
             // Handle incremental updates
-            if (options.since) {
+            if (options.since || options.cursor) {
                 const cached = imageCache.get(cacheKey) || [];
                 const combined = mergeMediaUpdates(cached, mediaItems);
                 imageCache.set(cacheKey, combined, response.headers['last-modified']);
@@ -131,6 +142,79 @@ export const getEventMedia = async (
     }
 };
 
+export const updateMediaStatus = async (
+    mediaId: string,
+    status: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved',
+    authToken: string,
+    options: {
+        reason?: string;
+        hideReason?: string;
+    } = {}
+): Promise<any> => {
+    try {
+        const endpoint = `${API_BASE_URL}/media/${mediaId}/status`;
+        
+        const response = await axios.patch(endpoint, {
+            status,
+            reason: options.reason,
+            hide_reason: options.hideReason
+        }, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000,
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data;
+        }
+
+        throw new Error(response.data?.message || 'Failed to update media status');
+    } catch (error) {
+        console.error('Error updating media status:', error);
+        throw error;
+    }
+};
+
+// NEW: Bulk update media status
+export const bulkUpdateMediaStatus = async (
+    eventId: string,
+    mediaIds: string[],
+    status: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved',
+    authToken: string,
+    options: {
+        reason?: string;
+        hideReason?: string;
+    } = {}
+): Promise<any> => {
+    try {
+        const endpoint = `${API_BASE_URL}/media/event/${eventId}/bulk-status`;
+        
+        const response = await axios.patch(endpoint, {
+            media_ids: mediaIds,
+            status,
+            reason: options.reason,
+            hide_reason: options.hideReason
+        }, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000,
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data;
+        }
+
+        throw new Error(response.data?.message || 'Failed to bulk update media status');
+    } catch (error) {
+        console.error('Error bulk updating media status:', error);
+        throw error;
+    }
+};
+
 /**
  * Merge incremental media updates with cached data
  */
@@ -150,6 +234,38 @@ function mergeMediaUpdates(cached: MediaItem[], updates: MediaItem[]): MediaItem
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 }
+export const getEventMediaCounts = async (
+    eventId: string,
+    authToken: string
+): Promise<{
+    approved: number;
+    pending: number;
+    rejected: number;
+    hidden: number;
+    total: number;
+} | null> => {
+    try {
+        const endpoint = `${API_BASE_URL}/media/event/${eventId}/counts`;
+        
+        console.log(`Fetching media counts for eventId: ${eventId}`);
+
+        const response = await axios.get(endpoint, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+            },
+            timeout: 10000,
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data;
+        }
+
+        throw new Error(response.data?.message || 'Failed to fetch media counts');
+    } catch (error) {
+        console.error('Error fetching media counts:', error);
+        return null;
+    }
+};
 
 /**
  * Guest access functions with progressive loading
@@ -185,7 +301,7 @@ export const getEventMediaWithGuestToken = async (
         // if (options.limit) params.append('limit', options.limit.toString());
         // if (options.quality) params.append('quality', options.quality);
 
-        const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}`, {
+        const response = await axios.get(`${API_BASE_URL}/media/guest/${eventId}`, {
             timeout: 15000
         });
         // const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/guest?${params}`, {

@@ -19,13 +19,14 @@ import {
   transformMediaToPhoto,
   deleteMedia,
   getEventMediaWithGuestToken,
-  getAlbumMediaWithGuestToken
+  getAlbumMediaWithGuestToken,
+  getEventMediaCounts,
+  updateMediaStatus
 } from '@/services/apis/media.api';
 import { useAuthToken } from '@/hooks/use-auth';
 import { getOrCreateDefaultAlbum } from '@/services/apis/albums.api';
 import PhotoGrid from './PhotoGrid';
 import PhotoUploadDialog from './PhotoUploadDialog';
-import PendingApprovalSection from './PendingApprovalSection';
 import FullscreenPhotoViewer from './FullscreenPhotoViewer';
 import useSwipe from './useSwipe';
 import { Photo, PhotoGalleryProps } from './PhotoGallery.types';
@@ -38,13 +39,13 @@ export default function PhotoGallery({
   userPermissions = {
     upload: true,
     download: true,
-    moderate: false,
+    moderate: true,
     delete: false
   },
   approvalMode = 'auto'
 }: PhotoGalleryProps) {
+  // Core state
   const [photos, setPhotos] = useState<Photo[]>([]);
-  const [pendingPhotos, setPendingPhotos] = useState<Photo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
@@ -55,7 +56,17 @@ export default function PhotoGallery({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [defaultAlbumId, setDefaultAlbumId] = useState<string | null>(albumId || null);
-  const [showPendingApproval, setShowPendingApproval] = useState(false);
+
+  // NEW: Status management state
+  const [activeTab, setActiveTab] = useState<'approved' | 'pending' | 'rejected' | 'hidden'>('approved');
+  const [mediaCounts, setMediaCounts] = useState({
+    approved: 0,
+    pending: 0,
+    rejected: 0,
+    hidden: 0,
+    total: 0
+  });
+  const [tabLoading, setTabLoading] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -115,12 +126,33 @@ export default function PhotoGallery({
   }, [photoViewerOpen, navigateToPhoto]);
 
   // Smart cache key generation
-  const getCacheKey = useCallback((eventId: string, albumId: string | null) => {
-    return albumId === null ? `event_${eventId}` : `album_${albumId}`;
+  const getCacheKey = useCallback((eventId: string, albumId: string | null, status?: string) => {
+    const baseKey = albumId === null ? `event_${eventId}` : `album_${albumId}`;
+    return status ? `${baseKey}_${status}` : baseKey;
   }, []);
 
-  // Fetch photos using only eventId (no albumId)
-  const fetchPhotosFromAPI = useCallback(async (forceRefresh = false) => {
+  // Fetch media counts
+  const fetchMediaCounts = useCallback(async () => {
+    const authToken = token || localStorage.getItem('authToken');
+    if (!authToken || guestToken) return; // Skip for guest access
+
+    try {
+      const counts = 0
+      // const counts = await getEventMediaCounts(eventId, authToken);
+      if (counts) {
+        setMediaCounts(counts);
+      }
+    } catch (error) {
+      console.error('Error fetching media counts:', error);
+    }
+  }, [token, eventId, guestToken]);
+
+  // Fetch photos with status filtering
+  const fetchPhotosFromAPI = useCallback(async (
+    status?: 'approved' | 'pending' | 'rejected' | 'hidden',
+    cursor?: string,
+    forceRefresh = false
+  ) => {
     const authToken = token || localStorage.getItem('authToken');
     const isGuestAccess = Boolean(guestToken);
 
@@ -130,48 +162,51 @@ export default function PhotoGallery({
     }
 
     try {
-      const cacheKey = getCacheKey(eventId, null);
+      const targetStatus = status || activeTab;
+      const cacheKey = getCacheKey(eventId, null, targetStatus);
       const lastFetch = lastFetchTime.current.get(cacheKey) || 0;
       const now = Date.now();
       const cacheAge = now - lastFetch;
       const CACHE_DURATION = 30000; // 30 seconds
 
       // Use cache if not forcing refresh and cache is fresh
-      if (!forceRefresh && cacheAge < CACHE_DURATION && imageCache.current.has(cacheKey)) {
+      if (!forceRefresh && !cursor && cacheAge < CACHE_DURATION && imageCache.current.has(cacheKey)) {
         const cachedPhotos = imageCache.current.get(cacheKey)!;
         console.log(`Using cached photos (${cachedPhotos.length} items, ${cacheAge}ms old)`);
         setPhotos(cachedPhotos);
         return true;
       }
 
-      console.log('Fetching photos from API (event only)...');
+      console.log('Fetching photos from API with status:', targetStatus);
 
       let mediaItems;
       if (isGuestAccess && guestToken) {
+        // For guest access, only show approved media
         mediaItems = await getEventMediaWithGuestToken(eventId, guestToken, true);
       } else if (authToken) {
-        mediaItems = await getEventMedia(eventId, authToken, true);
+        mediaItems = await getEventMedia(eventId, authToken, true, {
+          status: targetStatus,
+          scrollType: 'infinite',
+          cursor: cursor,
+          limit: 20
+        });
       }
 
       if (mediaItems && Array.isArray(mediaItems)) {
         const transformedPhotos = mediaItems.map(transformMediaToPhoto);
 
-        // Separate approved and pending photos
-        const approvedPhotos = transformedPhotos.filter(photo =>
-          !photo.approval || photo.approval.status === 'approved' || photo.approval.status === 'auto_approved'
-        );
-        const pendingPhotos = transformedPhotos.filter(photo =>
-          photo.approval && photo.approval.status === 'pending'
-        );
+        console.log(`Fetched ${transformedPhotos.length} photos for status: ${targetStatus}`);
 
-        console.log(`Fetched ${approvedPhotos.length} approved photos, ${pendingPhotos.length} pending`);
+        // Update cache only if not cursor-based (initial load)
+        if (!cursor) {
+          imageCache.current.set(cacheKey, transformedPhotos);
+          lastFetchTime.current.set(cacheKey, now);
+          setPhotos(transformedPhotos);
+        } else {
+          // For infinite scroll, append to existing photos
+          setPhotos(prev => [...prev, ...transformedPhotos]);
+        }
 
-        // Update cache
-        imageCache.current.set(cacheKey, approvedPhotos);
-        lastFetchTime.current.set(cacheKey, now);
-
-        setPhotos(approvedPhotos);
-        setPendingPhotos(pendingPhotos);
         return true;
       }
 
@@ -180,7 +215,109 @@ export default function PhotoGallery({
       console.error('Error fetching photos from API:', error);
       return false;
     }
-  }, [token, eventId, guestToken, getCacheKey]);
+  }, [token, eventId, guestToken, getCacheKey, activeTab]);
+
+  // Tab change handler
+  const handleTabChange = useCallback(async (newTab: 'approved' | 'pending' | 'rejected' | 'hidden') => {
+    if (newTab === activeTab) return;
+
+    setActiveTab(newTab);
+    setTabLoading(true);
+    setPhotos([]); // Clear current photos
+
+    try {
+      await fetchPhotosFromAPI(newTab, undefined, true);
+    } finally {
+      setTabLoading(false);
+    }
+  }, [activeTab, fetchPhotosFromAPI]);
+
+  // Photo status management functions
+  const approvePhoto = async (photoId: string) => {
+    if (!userPermissions.moderate) {
+      toast.error("You don't have permission to moderate photos.");
+      return;
+    }
+
+    try {
+      await updateMediaStatus(photoId, 'approved', token!);
+
+      // Update local state
+      const approvedPhoto = photos.find(p => p.id === photoId);
+      if (approvedPhoto) {
+        // Remove from current tab
+        setPhotos(prev => prev.filter(p => p.id !== photoId));
+
+        // Update counts
+        setMediaCounts(prev => ({
+          ...prev,
+          [activeTab]: Math.max(0, prev[activeTab] - 1),
+          approved: prev.approved + 1
+        }));
+
+        // Clear approved cache to refresh
+        const approvedCacheKey = getCacheKey(eventId, null, 'approved');
+        imageCache.current.delete(approvedCacheKey);
+      }
+
+      toast.success("Photo approved successfully.");
+    } catch (error) {
+      console.error('Error approving photo:', error);
+      toast.error("Failed to approve photo.");
+    }
+  };
+
+  const rejectPhoto = async (photoId: string, reason?: string) => {
+    if (!userPermissions.moderate) {
+      toast.error("You don't have permission to moderate photos.");
+      return;
+    }
+
+    try {
+      await updateMediaStatus(photoId, 'rejected', token!, { reason });
+
+      // Update local state
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+
+      // Update counts
+      setMediaCounts(prev => ({
+        ...prev,
+        [activeTab]: Math.max(0, prev[activeTab] - 1),
+        rejected: prev.rejected + 1
+      }));
+
+      toast.success("Photo rejected successfully.");
+    } catch (error) {
+      console.error('Error rejecting photo:', error);
+      toast.error("Failed to reject photo.");
+    }
+  };
+
+  const hidePhoto = async (photoId: string, reason?: string) => {
+    if (!userPermissions.moderate) {
+      toast.error("You don't have permission to moderate photos.");
+      return;
+    }
+
+    try {
+      await updateMediaStatus(photoId, 'hidden', token!, { hideReason: reason });
+
+      // Update local state
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+
+      // Update counts
+      setMediaCounts(prev => ({
+        ...prev,
+        [activeTab]: Math.max(0, prev[activeTab] - 1),
+        hidden: prev.hidden + 1
+      }));
+
+      toast.success("Photo hidden successfully.");
+    } catch (error) {
+      console.error('Error hiding photo:', error);
+      toast.error("Failed to hide photo.");
+    }
+  };
 
   // Get default album effect
   useEffect(() => {
@@ -239,51 +376,49 @@ export default function PhotoGallery({
       setIsLoading(true);
 
       try {
-        const currentAlbumId = albumId;
-        const currentDefaultAlbumId = defaultAlbumId;
-        const currentEventId = eventId;
-
-        const isEventPhotosMode = currentAlbumId === null && currentEventId;
-
-        if (!isEventPhotosMode && !currentAlbumId && !currentDefaultAlbumId && !currentEventId) {
-          setIsLoading(false);
-          return;
+        // Fetch counts first (for moderators)
+        if (userPermissions.moderate && !guestToken) {
+          await fetchMediaCounts();
         }
 
+        // Fetch photos for current tab
         const apiSuccess = await fetchPhotosFromAPI();
 
-        if (!isMounted ||
-          currentAlbumId !== albumId ||
-          currentDefaultAlbumId !== defaultAlbumId ||
-          currentEventId !== eventId) {
-          return;
-        }
+        if (!isMounted) return;
 
         if (!apiSuccess) {
           // Fallback to local database
           try {
-            if (isEventPhotosMode || (currentEventId && !currentAlbumId && !currentDefaultAlbumId)) {
-              const eventPhotos = await db.photos
-                .where('eventId')
-                .equals(currentEventId)
-                .reverse()
-                .sortBy('createdAt');
+            const eventPhotos = await db.photos
+              .where('eventId')
+              .equals(eventId)
+              .reverse()
+              .sortBy('createdAt');
 
-              if (isMounted && currentEventId === eventId) {
-                setPhotos(eventPhotos);
-              }
-            } else {
-              const targetAlbumId = currentAlbumId || currentDefaultAlbumId;
-              if (targetAlbumId) {
-                const albumPhotos = await db.photos
-                  .where('albumId')
-                  .equals(targetAlbumId)
-                  .reverse()
-                  .sortBy('createdAt');
-
-                if (isMounted && currentAlbumId === albumId && currentDefaultAlbumId === defaultAlbumId) {
-                  setPhotos(albumPhotos);
-                }
+            if (isMounted) {
+              // Filter by approval status for moderators
+              if (userPermissions.moderate) {
+                const filteredPhotos = eventPhotos.filter(photo => {
+                  switch (activeTab) {
+                    case 'approved':
+                      return photo.approval?.status === 'approved' || photo.approval?.status === 'auto_approved';
+                    case 'pending':
+                      return photo.approval?.status === 'pending';
+                    case 'rejected':
+                      return photo.approval?.status === 'rejected';
+                    case 'hidden':
+                      return photo.approval?.status === 'hidden';
+                    default:
+                      return true;
+                  }
+                });
+                setPhotos(filteredPhotos);
+              } else {
+                // For non-moderators, show only approved photos
+                const approvedPhotos = eventPhotos.filter(photo =>
+                  photo.approval?.status === 'approved' || photo.approval?.status === 'auto_approved'
+                );
+                setPhotos(approvedPhotos);
               }
             }
           } catch (dbError) {
@@ -305,20 +440,21 @@ export default function PhotoGallery({
       }
     };
 
-    const isEventPhotosMode = albumId === null && eventId;
-
-    // if ((isEventPhotosMode || albumId || (defaultAlbumId && defaultAlbumId !== null) || eventId) && !isLoading) {
     loadPhotos();
-    // }
 
-    // Setup realtime polling with smart caching
+    // Setup realtime polling
     let intervalId: NodeJS.Timeout | null = null;
     if (isRealtime) {
       intervalId = setInterval(() => {
         if (isMounted && !isLoading) {
-          fetchPhotosFromAPI(false).catch(err => {
+          fetchPhotosFromAPI(activeTab, undefined, false).catch(err => {
             if (isMounted) console.error('Error in interval photo fetch:', err);
           });
+          if (userPermissions.moderate) {
+            fetchMediaCounts().catch(err => {
+              if (isMounted) console.error('Error fetching counts:', err);
+            });
+          }
         }
       }, 30000);
       realtimeInterval.current = intervalId;
@@ -333,7 +469,7 @@ export default function PhotoGallery({
         clearInterval(realtimeInterval.current);
       }
     };
-  }, [albumId, defaultAlbumId, eventId, fetchPhotosFromAPI, isRealtime, guestToken]);
+  }, [eventId, activeTab, fetchPhotosFromAPI, fetchMediaCounts, isRealtime, userPermissions.moderate, guestToken]);
 
   // File upload handler
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -369,7 +505,7 @@ export default function PhotoGallery({
           return false;
         }
 
-        const maxSize = 50 * 1024 * 1024; // 50MB based on our new schema
+        const maxSize = 50 * 1024 * 1024; // 50MB
         if (file.size > maxSize) {
           const sizeMB = (file.size / 1024 / 1024).toFixed(2);
           toast.error(`"${file.name}" is too large (${sizeMB}MB). Maximum size is 50MB.`);
@@ -392,7 +528,7 @@ export default function PhotoGallery({
       let completedUploads = 0;
 
       const results = await Promise.allSettled(
-        validFiles.map(async (file, index) => {
+        validFiles.map(async (file) => {
           try {
             const uploadedData = await uploadAlbumMedia(file, targetAlbumId, token, eventId);
 
@@ -455,40 +591,44 @@ export default function PhotoGallery({
       const newPhotos = successfulUploads.map(r => (r as PromiseFulfilledResult<any>).value);
 
       if (newPhotos.length > 0) {
-        // Separate photos by approval status
-        const approvedPhotos = newPhotos.filter(photo =>
-          photo.approval?.status === 'approved' || photo.approval?.status === 'auto_approved'
-        );
-        const pendingPhotos = newPhotos.filter(photo =>
-          photo.approval?.status === 'pending'
-        );
-
-        if (approvedPhotos.length > 0) {
-          setPhotos(prev => [...approvedPhotos, ...prev]);
-          // Invalidate cache
-          const cacheKey = getCacheKey(eventId, albumId ?? null);
-          imageCache.current.delete(cacheKey);
-        }
-
-        if (pendingPhotos.length > 0) {
-          setPendingPhotos(prev => [...pendingPhotos, ...prev]);
-          if (userPermissions.moderate) {
-            toast.info(`${pendingPhotos.length} photo${pendingPhotos.length > 1 ? 's' : ''} pending approval`);
+        // Add new photos to current view if they match active tab
+        const photosForCurrentTab = newPhotos.filter(photo => {
+          const status = photo.approval?.status;
+          switch (activeTab) {
+            case 'approved':
+              return status === 'approved' || status === 'auto_approved';
+            case 'pending':
+              return status === 'pending';
+            case 'rejected':
+              return status === 'rejected';
+            case 'hidden':
+              return status === 'hidden';
+            default:
+              return false;
           }
+        });
+
+        if (photosForCurrentTab.length > 0) {
+          setPhotos(prev => [...photosForCurrentTab, ...prev]);
         }
+
+        // Update counts
+        if (userPermissions.moderate) {
+          fetchMediaCounts();
+        }
+
+        // Invalidate relevant caches
+        const cacheKeysToInvalidate = ['approved', 'pending', 'rejected', 'hidden'];
+        cacheKeysToInvalidate.forEach(status => {
+          const cacheKey = getCacheKey(eventId, albumId ?? null, status);
+          imageCache.current.delete(cacheKey);
+        });
       }
 
       toast.dismiss(progressToast);
 
       if (successfulUploads.length > 0) {
-        const approvedCount = newPhotos.filter(p => p.approval?.status !== 'pending').length;
-        const pendingCount = newPhotos.length - approvedCount;
-
-        if (pendingCount > 0) {
-          toast.success(`${approvedCount} photo${approvedCount !== 1 ? 's' : ''} uploaded. ${pendingCount} pending approval.`);
-        } else {
-          toast.success(`${successfulUploads.length} photo${successfulUploads.length > 1 ? 's' : ''} uploaded successfully.`);
-        }
+        toast.success(`${successfulUploads.length} photo${successfulUploads.length > 1 ? 's' : ''} uploaded successfully.`);
       }
 
       if (failedUploads.length > 0) {
@@ -508,55 +648,6 @@ export default function PhotoGallery({
     }
   };
 
-  // Photo approval functions (for moderators)
-  const approvePhoto = async (photoId: string) => {
-    if (!userPermissions.moderate) {
-      toast.error("You don't have permission to moderate photos.");
-      return;
-    }
-
-    try {
-      // TODO: Add API call to approve photo
-      // await approveMediaItem(photoId, token);
-
-      // Update local state
-      setPendingPhotos(prev => prev.filter(p => p.id !== photoId));
-      const approvedPhoto = pendingPhotos.find(p => p.id === photoId);
-      if (approvedPhoto) {
-        approvedPhoto.approval = {
-          ...approvedPhoto.approval,
-          status: 'approved',
-          approved_by: userId.toString(),
-          approved_at: new Date()
-        };
-        setPhotos(prev => [approvedPhoto, ...prev]);
-      }
-
-      toast.success("Photo approved successfully.");
-    } catch (error) {
-      console.error('Error approving photo:', error);
-      toast.error("Failed to approve photo.");
-    }
-  };
-
-  const rejectPhoto = async (photoId: string, reason?: string) => {
-    if (!userPermissions.moderate) {
-      toast.error("You don't have permission to moderate photos.");
-      return;
-    }
-
-    try {
-      // TODO: Add API call to reject photo
-      // await rejectMediaItem(photoId, reason, token);
-
-      // Update local state
-      setPendingPhotos(prev => prev.filter(p => p.id !== photoId));
-      toast.success("Photo rejected successfully.");
-    } catch (error) {
-      console.error('Error rejecting photo:', error);
-      toast.error("Failed to reject photo.");
-    }
-  };
   // Delete photo
   const deletePhoto = async (photoId: string) => {
     if (!userPermissions.delete) {
@@ -577,11 +668,19 @@ export default function PhotoGallery({
 
       await db.photos.where('id').equals(photoId).delete();
 
-      setPhotos(photos.filter(p => p.id !== photoId));
-      setPendingPhotos(prev => prev.filter(p => p.id !== photoId));
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+
+      // Update counts
+      if (userPermissions.moderate) {
+        setMediaCounts(prev => ({
+          ...prev,
+          [activeTab]: Math.max(0, prev[activeTab] - 1),
+          total: Math.max(0, prev.total - 1)
+        }));
+      }
 
       // Invalidate cache
-      const cacheKey = getCacheKey(eventId, albumId ?? null);
+      const cacheKey = getCacheKey(eventId, albumId ?? null, activeTab);
       imageCache.current.delete(cacheKey);
 
       if (selectedPhoto?.id === photoId) {
@@ -596,12 +695,14 @@ export default function PhotoGallery({
       toast.error("Failed to delete photo.");
     }
   };
+
   // Camera capture
   const handleCameraCapture = () => {
     if (cameraInputRef.current) {
       cameraInputRef.current.click();
     }
   };
+
   // Download photo
   const downloadPhoto = (photo: Photo) => {
     if (!userPermissions.download) {
@@ -616,6 +717,7 @@ export default function PhotoGallery({
     link.click();
     document.body.removeChild(link);
   };
+
   // Open photo viewer
   const openPhotoViewer = (photo: Photo, index: number) => {
     setSelectedPhoto(photo);
@@ -624,10 +726,9 @@ export default function PhotoGallery({
     setIsFullscreen(true);
   };
 
-  console.log(photos, 'photosphotos')
   return (
     <div>
-      {/* Header with live indicator and pending photos toggle */}
+      {/* Header with status tabs and controls */}
       <div className="flex items-center justify-between mb-6 px-4">
         <div className="flex items-center gap-3">
           {isRealtime && (
@@ -636,18 +737,71 @@ export default function PhotoGallery({
               Live
             </div>
           )}
-          {userPermissions.moderate && pendingPhotos.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs"
-              onClick={() => setShowPendingApproval(!showPendingApproval)}
+
+          {/* Status tabs for moderators */}
+          {/* {userPermissions.moderate && !guestToken && ( */}
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-accent p-1 rounded-lg">
+            <button
+              onClick={() => handleTabChange('approved')}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'approved'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
             >
-              <ClockIcon className="h-3 w-3 mr-1" />
-              {pendingPhotos.length} Pending
-            </Button>
-          )}
+              Published
+              {mediaCounts.approved > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 rounded-full">
+                  {mediaCounts.approved}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('pending')}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'pending'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+            >
+              <ClockIcon className="h-3 w-3 mr-1 inline" />
+              Pending
+              {mediaCounts.pending > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-400 rounded-full">
+                  {mediaCounts.pending}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('rejected')}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'rejected'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+            >
+              Rejected
+              {mediaCounts.rejected > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full">
+                  {mediaCounts.rejected}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('hidden')}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'hidden'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+            >
+              Hidden
+              {mediaCounts.hidden > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full">
+                  {mediaCounts.hidden}
+                </span>
+              )}
+            </button>
+          </div>
+          {/* )} */}
         </div>
+
         {canUserUpload && (defaultAlbumId || albumId !== undefined || albumId === null) && (
           <PhotoUploadDialog
             open={uploadDialogOpen}
@@ -661,16 +815,9 @@ export default function PhotoGallery({
           />
         )}
       </div>
-      {/* Pending approval section for moderators */}
-      {userPermissions.moderate && showPendingApproval && pendingPhotos.length > 0 && (
-        <PendingApprovalSection
-          pendingPhotos={pendingPhotos}
-          approvePhoto={approvePhoto}
-          rejectPhoto={rejectPhoto}
-        />
-      )}
+
       {/* Main photo grid */}
-      {isLoading || isUploading ? (
+      {(isLoading || tabLoading) ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-8 gap-2 sm:gap-3 md:gap-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
             <Skeleton key={i} className="aspect-square rounded-lg" />
@@ -691,14 +838,20 @@ export default function PhotoGallery({
           <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-full mb-4">
             <CameraIcon className="h-8 w-8 text-gray-400" />
           </div>
-          <h3 className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">No Photos Yet</h3>
+          <h3 className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
+            {activeTab === 'approved' ? 'No Published Photos' :
+              activeTab === 'pending' ? 'No Pending Photos' :
+                activeTab === 'rejected' ? 'No Rejected Photos' :
+                  'No Hidden Photos'}
+          </h3>
           <p className="text-gray-500 dark:text-gray-400 text-center max-w-md mb-6">
-            {canUserUpload ?
-              "Be the first to add photos to this album. Upload images or take new ones with your camera." :
-              "No photos have been added to this album yet."
-            }
+            {activeTab === 'approved' ?
+              (canUserUpload ? "Be the first to add photos to this album." : "No photos have been approved yet.") :
+              activeTab === 'pending' ? "No photos are waiting for approval." :
+                activeTab === 'rejected' ? "No photos have been rejected." :
+                  "No photos have been hidden."}
           </p>
-          {canUserUpload && (
+          {canUserUpload && activeTab === 'approved' && (
             <Button
               onClick={() => {
                 if (fileInputRef.current) {
@@ -720,7 +873,13 @@ export default function PhotoGallery({
             userPermissions={userPermissions}
             downloadPhoto={downloadPhoto}
             deletePhoto={deletePhoto}
+            // These are the new props for status management
+            approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
+            rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
+            hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
+            currentTab={activeTab}
           />
+
           {photoViewerOpen && selectedPhoto && (
             <FullscreenPhotoViewer
               selectedPhoto={selectedPhoto}
@@ -736,8 +895,13 @@ export default function PhotoGallery({
               setPhotoInfoOpen={setPhotoInfoOpen}
               deletePhoto={deletePhoto}
               downloadPhoto={downloadPhoto}
+              // Add moderation actions to photo viewer
+              approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
+              rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
+              hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
             />
           )}
+
           {selectedPhoto && (
             <PhotoInfoDialog
               photo={selectedPhoto}
