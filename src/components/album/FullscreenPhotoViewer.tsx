@@ -1,10 +1,11 @@
-import React, { useEffect, useRef } from 'react';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, ShareIcon, InfoIcon, TrashIcon } from 'lucide-react';
+// Optimized FullscreenPhotoViewer
+import React, { useEffect, useRef, useCallback } from 'react';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, InfoIcon, TrashIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import ProgressiveImage from './ProgressiveImage';
 import { Photo } from './PhotoGallery.types';
 import { useFullscreen } from '@/lib/FullscreenContext';
+import ProgressiveImage from './ProgressiveImage';
 
 interface FullscreenPhotoViewerProps {
   selectedPhoto: Photo;
@@ -43,14 +44,32 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     // Prevent body scroll when fullscreen is active
     document.body.style.overflow = 'hidden';
     
+    // Keyboard navigation
+    const handleKeyPress = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case 'Escape':
+          onClose();
+          break;
+        case 'ArrowLeft':
+          onPrev();
+          break;
+        case 'ArrowRight':
+          onNext();
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    
     return () => {
       setIsFullscreenActive(false);
       document.body.style.overflow = 'unset';
+      document.removeEventListener('keydown', handleKeyPress);
     };
-  }, [setIsFullscreenActive]);
+  }, [setIsFullscreenActive, onClose, onPrev, onNext]);
 
-  const handleTap = (e: React.MouseEvent) => {
-    // Only close on background tap, not on image tap
+  const handleBackgroundClick = useCallback((e: React.MouseEvent) => {
+    // Only close on background click, not on image click
     if (e.target === e.currentTarget) {
       const now = Date.now();
       const DOUBLE_TAP_DELAY = 300;
@@ -61,25 +80,44 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         lastTapRef.current = now;
       }
     }
-  };
+  }, [onClose]);
+
+  const handleDownload = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    downloadPhoto(selectedPhoto);
+  }, [downloadPhoto, selectedPhoto]);
+
+  const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to delete this photo?')) {
+      deletePhoto(selectedPhoto.id);
+    }
+  }, [deletePhoto, selectedPhoto.id]);
+
+  const handleInfo = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPhotoInfoOpen(true);
+  }, [setPhotoInfoOpen]);
 
   if (!selectedPhoto) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col touch-none">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 text-white bg-black/50 backdrop-blur-sm z-10">
+      <div className="flex items-center justify-between p-4 text-white bg-gradient-to-b from-black/80 to-transparent backdrop-blur-sm z-10">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="icon"
-            className="text-white hover:bg-white/20 rounded-full"
+            className="text-white hover:bg-white/20 rounded-full transition-colors"
             onClick={onClose}
           >
             <ArrowLeftIcon className="h-5 w-5" />
           </Button>
           {selectedPhotoIndex !== null && (
-            <span className="text-sm opacity-80">{selectedPhotoIndex + 1} of {photos.length}</span>
+            <span className="text-sm opacity-80 font-medium">
+              {selectedPhotoIndex + 1} of {photos.length}
+            </span>
           )}
           {selectedPhoto.approval && (
             <Badge
@@ -102,11 +140,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
             <Button
               variant="ghost"
               size="icon"
-              className="text-white hover:bg-white/20"
-              onClick={(e) => {
-                e.stopPropagation();
-                downloadPhoto(selectedPhoto);
-              }}
+              className="text-white hover:bg-white/20 transition-colors"
+              onClick={handleDownload}
             >
               <DownloadIcon className="h-5 w-5" />
             </Button>
@@ -114,11 +149,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           <Button
             variant="ghost"
             size="icon"
-            className="text-white hover:bg-white/20"
-            onClick={(e) => {
-              e.stopPropagation();
-              setPhotoInfoOpen(true);
-            }}
+            className="text-white hover:bg-white/20 transition-colors"
+            onClick={handleInfo}
           >
             <InfoIcon className="h-5 w-5" />
           </Button>
@@ -126,13 +158,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
             <Button
               variant="ghost"
               size="icon"
-              className="text-red-400 hover:bg-red-400/20"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm('Are you sure you want to delete this photo?')) {
-                  deletePhoto(selectedPhoto.id);
-                }
-              }}
+              className="text-red-400 hover:bg-red-400/20 transition-colors"
+              onClick={handleDelete}
             >
               <TrashIcon className="h-5 w-5" />
             </Button>
@@ -140,14 +167,10 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         </div>
       </div>
 
-      {/* Main image container - This is the key fix */}
+      {/* Main image container */}
       <div 
-        className="flex-1 relative overflow-hidden flex items-center justify-center"
-        onClick={handleTap}
-        style={{ 
-          minHeight: 0, // Important: allows flex item to shrink below content size
-          height: 'calc(100vh - 80px)' // Account for header height
-        }}
+        className="flex-1 relative overflow-hidden"
+        onClick={handleBackgroundClick}
       >
         {/* Navigation buttons */}
         {photos.length > 1 && (
@@ -155,7 +178,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
             <Button
               variant="ghost"
               size="icon"
-              className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white hidden md:flex"
+              className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all duration-200 hidden md:flex"
               onClick={(e) => {
                 e.stopPropagation();
                 onPrev();
@@ -167,7 +190,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white hidden md:flex"
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all duration-200 hidden md:flex"
               onClick={(e) => {
                 e.stopPropagation();
                 onNext();
@@ -178,32 +201,30 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           </>
         )}
 
-        {/* Image container with proper sizing */}
-        <div 
-          className="w-full h-full flex items-center justify-center"
-          style={{ maxHeight: '100%', maxWidth: '100%' }}
-        >
-          <ProgressiveImage
-            src={selectedPhoto.imageUrl}
-            alt="Photo"
-            className="max-w-full max-h-full"
-            priority={true}
-            sizes="100vw"
-            fit="contain"
-            fullHeight={true}
-          />
-        </div>
+        {/* Optimized image container */}
+        <ProgressiveImage
+          src={selectedPhoto.imageUrl}
+          alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
+          className="w-full h-full"
+          priority={true}
+          fit="contain"
+          fullHeight={true}
+          index={selectedPhotoIndex || 0}
+        />
       </div>
 
       {/* Mobile navigation indicators */}
       {photos.length > 1 && (
-        <div className="md:hidden flex justify-center py-2 space-x-2">
-          {photos.slice(Math.max(0, (selectedPhotoIndex || 0) - 2), Math.min(photos.length, (selectedPhotoIndex || 0) + 3)).map((_, index) => {
+        <div className="md:hidden flex justify-center py-3 space-x-2 bg-gradient-to-t from-black/80 to-transparent">
+          {photos.slice(
+            Math.max(0, (selectedPhotoIndex || 0) - 2), 
+            Math.min(photos.length, (selectedPhotoIndex || 0) + 3)
+          ).map((_, index) => {
             const actualIndex = Math.max(0, (selectedPhotoIndex || 0) - 2) + index;
             return (
               <div
                 key={actualIndex}
-                className={`w-2 h-2 rounded-full ${
+                className={`w-2 h-2 rounded-full transition-colors duration-200 ${
                   actualIndex === selectedPhotoIndex ? 'bg-white' : 'bg-white/40'
                 }`}
               />
@@ -215,4 +236,4 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   );
 };
 
-export default FullscreenPhotoViewer;
+export { FullscreenPhotoViewer };

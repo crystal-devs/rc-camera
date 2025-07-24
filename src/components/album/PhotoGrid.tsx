@@ -41,43 +41,6 @@ const PhotoGrid: React.FC<PhotoGridProps> = ({
   hidePhoto,
   currentTab,
 }) => {
-  const getStatusBadge = (photo: Photo) => {
-    const status = photo.approval?.status;
-    
-    switch (status) {
-      case 'pending':
-        return (
-          <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
-            <ClockIcon className="h-3 w-3 mr-1" />
-            Pending
-          </Badge>
-        );
-      case 'rejected':
-        return (
-          <Badge variant="destructive" className="text-xs">
-            <XIcon className="h-3 w-3 mr-1" />
-            Rejected
-          </Badge>
-        );
-      case 'hidden':
-        return (
-          <Badge variant="outline" className="text-xs bg-gray-100 text-gray-600">
-            <EyeOffIcon className="h-3 w-3 mr-1" />
-            Hidden
-          </Badge>
-        );
-      case 'approved':
-      case 'auto_approved':
-        return (
-          <Badge variant="default" className="text-xs bg-green-100 text-green-800">
-            <CheckIcon className="h-3 w-3 mr-1" />
-            Approved
-          </Badge>
-        );
-      default:
-        return null;
-    }
-  };
 
   const getStatusActions = (photo: Photo) => {
     const status = photo.approval?.status;
@@ -232,11 +195,6 @@ const PhotoGrid: React.FC<PhotoGridProps> = ({
             sizes="(max-width: 768px) 33vw, 12.5vw"
           />
           
-          {/* Status badge overlay */}
-          <div className="absolute top-1 left-1">
-            {getStatusBadge(photo)}
-          </div>
-
           {/* Hover overlay with actions (desktop) */}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-200 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100">
             {/* Status actions in center */}

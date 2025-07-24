@@ -27,9 +27,9 @@ import { useAuthToken } from '@/hooks/use-auth';
 import { getOrCreateDefaultAlbum } from '@/services/apis/albums.api';
 import PhotoGrid from './PhotoGrid';
 import PhotoUploadDialog from './PhotoUploadDialog';
-import FullscreenPhotoViewer from './FullscreenPhotoViewer';
 import useSwipe from './useSwipe';
 import { Photo, PhotoGalleryProps } from './PhotoGallery.types';
+import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 
 export default function PhotoGallery({
   eventId,
@@ -385,49 +385,6 @@ export default function PhotoGallery({
         const apiSuccess = await fetchPhotosFromAPI();
 
         if (!isMounted) return;
-
-        if (!apiSuccess) {
-          // Fallback to local database
-          try {
-            const eventPhotos = await db.photos
-              .where('eventId')
-              .equals(eventId)
-              .reverse()
-              .sortBy('createdAt');
-
-            if (isMounted) {
-              // Filter by approval status for moderators
-              if (userPermissions.moderate) {
-                const filteredPhotos = eventPhotos.filter(photo => {
-                  switch (activeTab) {
-                    case 'approved':
-                      return photo.approval?.status === 'approved' || photo.approval?.status === 'auto_approved';
-                    case 'pending':
-                      return photo.approval?.status === 'pending';
-                    case 'rejected':
-                      return photo.approval?.status === 'rejected';
-                    case 'hidden':
-                      return photo.approval?.status === 'hidden';
-                    default:
-                      return true;
-                  }
-                });
-                setPhotos(filteredPhotos);
-              } else {
-                // For non-moderators, show only approved photos
-                const approvedPhotos = eventPhotos.filter(photo =>
-                  photo.approval?.status === 'approved' || photo.approval?.status === 'auto_approved'
-                );
-                setPhotos(approvedPhotos);
-              }
-            }
-          } catch (dbError) {
-            if (isMounted) {
-              console.error('Error loading photos from local DB:', dbError);
-              toast.error("Failed to load photos from local storage");
-            }
-          }
-        }
       } catch (error) {
         if (isMounted) {
           console.error('Error in photo loading process:', error);
@@ -896,9 +853,9 @@ export default function PhotoGallery({
               deletePhoto={deletePhoto}
               downloadPhoto={downloadPhoto}
               // Add moderation actions to photo viewer
-              approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
-              rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
-              hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
+              // approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
+              // rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
+              // hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
             />
           )}
 
