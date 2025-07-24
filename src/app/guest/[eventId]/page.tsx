@@ -1,13 +1,13 @@
 'use client';
-import React, { useState, useEffect, use } from 'react';
-import { Camera, Upload, Users, Calendar, MapPin, Download, X, ChevronLeft, ChevronRight, Info, Heart, Share2, MoreVertical } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import React, { useState, useEffect, use, useMemo, useCallback } from 'react';
+import { Camera, Users, Calendar, MapPin, Download, X, ChevronLeft, ChevronRight, Info, Heart, Share2, MoreVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useParams } from 'next/navigation';
-import { getEventMediaWithGuestToken, transformMediaToPhoto } from '@/services/apis/media.api';
+import { getEventMediaWithGuestToken } from '@/services/apis/media.api';
+import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
 
 // TypeScript interfaces
 interface ApiPhoto {
@@ -16,12 +16,6 @@ interface ApiPhoto {
     eventId: string;
     imageUrl: string;
     thumbnail: string;
-    progressiveUrls: {
-        placeholder: string;
-        thumbnail: string;
-        display: string;
-        full: string;
-    };
     createdAt: string;
     approval: {
         status: 'auto_approved' | 'approved' | 'pending' | 'rejected';
@@ -30,42 +24,22 @@ interface ApiPhoto {
         rejection_reason?: string;
         auto_approval_reason?: string;
     };
-    processing: {
-        status: string;
-        thumbnails_generated: boolean;
-        ai_analysis: {
-            completed: boolean;
-            content_score: number;
-            tags: string[];
-            faces_detected: number;
-        };
-        compressed_versions: string[];
-    };
     metadata: {
         width: number;
         height: number;
-        duration: number;
         device_info: {
             brand: string;
             model: string;
             os: string;
         };
-        location: {
-            lat: number | null;
-            lng: number | null;
-        };
         timestamp: string | null;
-        device: string;
     };
     url: string;
 }
 
-interface TransformedPhoto {
+export interface TransformedPhoto {
     id: string;
-    url: string;
-    thumbnail: string;
-    display: string;
-    placeholder: string;
+    src: string;
     width: number;
     height: number;
     uploaded_by: string;
@@ -90,10 +64,6 @@ interface MockEvent {
     };
 }
 
-interface EventDetailsPageProps {
-    params: Promise<{ eventId: string }>;
-}
-
 // Mock event data
 const mockEvent: MockEvent = {
     _id: "event123",
@@ -112,16 +82,12 @@ const mockEvent: MockEvent = {
 
 // Transform API data to component format
 const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => {
-    console.log(apiPhoto, 'API Photo Data');
     return {
         id: apiPhoto._id,
-        url: apiPhoto.url,
-        thumbnail: apiPhoto.url,
-        display: apiPhoto.url,
-        placeholder: apiPhoto.url,
-        width: apiPhoto.metadata?.width || 400, // Default width if not available
-        height: apiPhoto.metadata?.height || 600, // Default height if not available
-        uploaded_by: "Guest", // You might want to get this from user data
+        src: apiPhoto.url,
+        width: apiPhoto.metadata?.width || 400,
+        height: apiPhoto.metadata?.height || 600,
+        uploaded_by: "Guest",
         approval: apiPhoto.approval,
         createdAt: apiPhoto.createdAt,
         albumId: apiPhoto.albumId,
@@ -129,84 +95,67 @@ const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => {
     };
 };
 
-// Fullscreen Photo Viewer Component Props
-interface FullscreenPhotoViewerProps {
+// Optimized Fullscreen Photo Viewer
+const FullscreenPhotoViewer: React.FC<{
     selectedPhoto: TransformedPhoto;
     selectedPhotoIndex: number;
     photos: TransformedPhoto[];
-    userPermissions: MockEvent['permissions'];
     onClose: () => void;
     onPrev: () => void;
     onNext: () => void;
-    setPhotoInfoOpen: (open: boolean) => void;
-    deletePhoto: (photo: TransformedPhoto) => void;
     downloadPhoto: (photo: TransformedPhoto) => void;
-}
-
-// Fullscreen Photo Viewer Component
-const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
-    selectedPhoto,
-    selectedPhotoIndex,
-    photos,
-    userPermissions,
-    onClose,
-    onPrev,
-    onNext,
-    setPhotoInfoOpen,
-    deletePhoto,
-    downloadPhoto
-}) => {
+}> = ({ selectedPhoto, selectedPhotoIndex, photos, onClose, onPrev, onNext, downloadPhoto }) => {
     const [showControls, setShowControls] = useState(true);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             switch (e.key) {
-                case 'Escape':
-                    onClose();
-                    break;
-                case 'ArrowLeft':
-                    onPrev();
-                    break;
-                case 'ArrowRight':
-                    onNext();
-                    break;
+                case 'Escape': onClose(); break;
+                case 'ArrowLeft': onPrev(); break;
+                case 'ArrowRight': onNext(); break;
             }
         };
 
         document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
+        document.body.style.overflow = 'hidden';
+        
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+            document.body.style.overflow = 'unset';
+        };
     }, [onClose, onPrev, onNext]);
+
+    // For fullscreen, use minimal transformations to preserve original quality
+    const fullscreenTransformation = [
+        { format: 'auto' },
+        { progressive: true },
+        { dpr: 'auto' },
+        { quality: 95 }
+        // No width/height restrictions - let it be original size
+    ];
 
     return (
         <div
-            className="fixed inset-0 bg-black z-50 flex items-center justify-center"
+            className="fixed inset-0 bg-black z-50 flex flex-col"
             onClick={() => setShowControls(!showControls)}
         >
             {/* Top Controls */}
-            <div className={`absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/50 to-transparent p-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+            <div className={`absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 to-transparent p-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="flex items-center justify-between text-white">
                     <div className="flex items-center gap-4">
                         <Button
                             variant="ghost"
                             size="sm"
                             onClick={(e) => { e.stopPropagation(); onClose(); }}
-                            className="text-white hover:bg-white/20"
+                            className="text-white hover:bg-white/20 rounded-full"
                         >
                             <X className="w-5 h-5" />
                         </Button>
-                        <span className="text-sm">
+                        <span className="text-sm font-medium">
                             {selectedPhotoIndex + 1} of {photos.length}
                         </span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => { e.stopPropagation(); setPhotoInfoOpen(true); }}
-                            className="text-white hover:bg-white/20"
-                        >
-                            <Info className="w-5 h-5" />
-                        </Button>
                         <Button
                             variant="ghost"
                             size="sm"
@@ -222,13 +171,6 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                         >
                             <Share2 className="w-5 h-5" />
                         </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-white hover:bg-white/20"
-                        >
-                            <MoreVertical className="w-5 h-5" />
-                        </Button>
                     </div>
                 </div>
             </div>
@@ -239,7 +181,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                     variant="ghost"
                     size="sm"
                     onClick={(e) => { e.stopPropagation(); onPrev(); }}
-                    className={`absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white/20 z-10 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}
+                    className={`absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white/20 z-10 h-12 w-12 rounded-full transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}
                 >
                     <ChevronLeft className="w-6 h-6" />
                 </Button>
@@ -250,179 +192,69 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                     variant="ghost"
                     size="sm"
                     onClick={(e) => { e.stopPropagation(); onNext(); }}
-                    className={`absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white/20 z-10 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}
+                    className={`absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white/20 z-10 h-12 w-12 rounded-full transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}
                 >
                     <ChevronRight className="w-6 h-6" />
                 </Button>
             )}
 
-            {/* Image */}
-            <img
-                src={selectedPhoto.display || selectedPhoto.url}
-                alt="Fullscreen view"
-                className="max-w-full max-h-full object-contain"
-                onClick={(e) => e.stopPropagation()}
-            />
+            {/* Image Container - Using CSS approach for true fullscreen */}
+            <div className="flex-1 relative overflow-hidden flex items-center justify-center p-4">
+                <img
+                    src={`${selectedPhoto.src}?tr=f-auto:pr-true:dpr-auto:q-95`}
+                    alt="Fullscreen view"
+                    className="max-w-full max-h-full object-contain"
+                    style={{
+                        width: 'auto',
+                        height: 'auto',
+                        maxWidth: '100%',
+                        maxHeight: '100%'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                />
+            </div>
+
+            {/* Alternative: If you want to stick with ImageKitImage, use this approach */}
+            {/* 
+            <div className="flex-1 relative overflow-hidden flex items-center justify-center p-4">
+                <div style={{ position: 'relative', maxWidth: '100%', maxHeight: '100%' }}>
+                    <ImageKitImage
+                        src={selectedPhoto.src}
+                        alt="Fullscreen view"
+                        width={selectedPhoto.width || 1920}
+                        height={selectedPhoto.height || 1080}
+                        transformation={fullscreenTransformation}
+                        className="max-w-full max-h-full object-contain"
+                        style={{
+                            width: 'auto',
+                            height: 'auto',
+                            maxWidth: '100%',
+                            maxHeight: '100%'
+                        }}
+                        priority={true}
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                </div>
+            </div>
+            */}
 
             {/* Bottom Info */}
-            <div className={`absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/50 to-transparent p-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+            <div className={`absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="text-white text-center">
                     <Badge variant="secondary" className="mb-2">
                         Uploaded by {selectedPhoto.uploaded_by}
                     </Badge>
-                    {selectedPhoto.createdAt && (
-                        <p className="text-xs opacity-75 mt-1">
-                            {new Date(selectedPhoto.createdAt).toLocaleDateString()}
-                        </p>
-                    )}
+                    <p className="text-xs opacity-75 mt-1">
+                        {new Date(selectedPhoto.createdAt).toLocaleDateString()}
+                    </p>
                 </div>
             </div>
         </div>
     );
 };
 
-// Pinterest-style Photo Grid Component Props
-interface PhotoGridProps {
-    photos: TransformedPhoto[];
-    onPhotoClick: (photo: TransformedPhoto) => void;
-}
-
-// Pinterest-style Photo Grid Component
-const PhotoGrid: React.FC<PhotoGridProps> = ({ photos, onPhotoClick }) => {
-    const [columns, setColumns] = useState(3);
-    const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
-
-    useEffect(() => {
-        const updateColumns = () => {
-            const width = window.innerWidth;
-            if (width < 640) setColumns(2);
-            else if (width < 1024) setColumns(3);
-            else if (width < 1280) setColumns(4);
-            else setColumns(5);
-        };
-
-        updateColumns();
-        window.addEventListener('resize', updateColumns);
-        return () => window.removeEventListener('resize', updateColumns);
-    }, []);
-
-    const handleImageError = (photoId: string) => {
-        setImageErrors(prev => new Set(prev).add(photoId));
-    };
-
-    // Distribute photos across columns
-    const distributedPhotos = Array.from({ length: columns }, () => [] as TransformedPhoto[]);
-    const columnHeights = Array(columns).fill(0);
-    console.log(photos, 'asdfasdfphtosss');
-    photos.forEach((photo) => {
-        // Find the column with minimum height
-        const minHeightIndex = columnHeights.indexOf(Math.min(...columnHeights));
-        distributedPhotos[minHeightIndex].push(photo);
-
-        // Update column height (approximate)
-        // Use a default aspect ratio if dimensions aren't available
-        const aspectRatio = (photo.height && photo.width) ? photo.height / photo.width : 1.2;
-        const estimatedHeight = 250 * aspectRatio; // Base width of 250px
-        columnHeights[minHeightIndex] += estimatedHeight + 16; // Add gap
-    });
-
-    return (
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>
-            {distributedPhotos.map((columnPhotos, columnIndex) => (
-                <div key={columnIndex} className="flex flex-col gap-2">
-                    {columnPhotos.map((photo) => {
-                        const hasError = imageErrors.has(photo.id);
-
-                        return (
-                            <div
-                                key={photo.id}
-                                className="relative group cursor-pointer overflow-hidden rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
-                                onClick={() => onPhotoClick(photo)}
-                            >
-                                
-                                {/* Progressive loading with placeholder */}
-                                <div className="relative">
-                                    {/* Placeholder blur - only show if main image hasn't loaded yet */}
-                                    {photo.placeholder && !hasError && (
-                                        <img
-                                            src={photo.thumbnail}
-                                            alt=""
-                                            className="absolute inset-0 w-full h-full object-cover blur-sm scale-110 transition-opacity duration-300"
-                                        />
-                                    )}
-
-                                    {/* Main thumbnail */}
-                                    {!hasError ? (
-                                        <img
-                                            src={photo.thumbnail}
-                                            alt="Event photo"
-                                            className="relative w-full h-auto object-cover transition-transform duration-200 group-hover:scale-105"
-                                            style={{
-                                                aspectRatio: (photo.width && photo.height)
-                                                    ? `${photo.width}/${photo.height}`
-                                                    : '3/4' // Default aspect ratio
-                                            }}
-                                            loading="lazy"
-                                            onLoad={(e) => {
-                                                // Hide placeholder once main image loads
-                                                const target = e.target as HTMLImageElement;
-                                                const placeholder = target.previousElementSibling as HTMLElement;
-                                                if (placeholder) {
-                                                    placeholder.style.opacity = '0';
-                                                }
-                                            }}
-                                            onError={() => handleImageError(photo.id)}
-                                        />
-                                    ) : (
-                                        // Fallback when image fails to load
-                                        <div
-                                            className="relative w-full bg-gray-200 flex items-center justify-center"
-                                            style={{
-                                                aspectRatio: (photo.width && photo.height)
-                                                    ? `${photo.width}/${photo.height}`
-                                                    : '3/4'
-                                            }}
-                                        >
-                                            <Camera className="w-8 h-8 text-gray-400" />
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-white hover:bg-white/20 h-8 w-8 p-0"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            // Handle favorite
-                                        }}
-                                    >
-                                        <Heart className="w-4 h-4" />
-                                    </Button>
-                                </div>
-
-                                <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                    <Badge variant="secondary" className="text-xs">
-                                        {photo.uploaded_by}
-                                    </Badge>
-                                    {/* Show approval status if pending */}
-                                    {photo.approval?.status === 'pending' && (
-                                        <Badge variant="outline" className="text-xs ml-1 bg-yellow-100 text-yellow-800">
-                                            Pending
-                                        </Badge>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            ))}
-        </div>
-    );
-};
-
-export default function EventDetailsPage({ params }: EventDetailsPageProps) {
+// Main Component
+export default function EventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
     const { eventId } = use(params);
     const [guestName, setGuestName] = useState<string>('');
     const [hasEnteredName, setHasEnteredName] = useState<boolean>(false);
@@ -430,45 +262,30 @@ export default function EventDetailsPage({ params }: EventDetailsPageProps) {
     const [photoViewerOpen, setPhotoViewerOpen] = useState<boolean>(false);
     const [selectedPhoto, setSelectedPhoto] = useState<TransformedPhoto | null>(null);
     const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number>(0);
-    const [photoInfoOpen, setPhotoInfoOpen] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
-    // Simulate localStorage with state (since localStorage isn't available in artifacts)
     const [savedName, setSavedName] = useState<string>('');
     const [photos, setPhotos] = useState<TransformedPhoto[]>([]);
-    const userPermissions = mockEvent.permissions;
-
-    console.log(eventId, 'Event ID from URL');
 
     const fetchMedia = async (): Promise<boolean> => {
         try {
             setLoading(true);
             setError(null);
 
-            // Use the actual API function
             let mediaItems: ApiPhoto[] = await getEventMediaWithGuestToken(eventId);
 
-            console.log('Raw media items from API:', mediaItems);
-
             if (mediaItems && Array.isArray(mediaItems)) {
-                // Transform API photos to component format
                 const transformedPhotos = mediaItems.map(transformApiPhoto);
-
-                console.log('Transformed photos:', transformedPhotos);
-
-                // Separate approved and pending photos
+                
                 const approvedPhotos = transformedPhotos.filter(photo =>
                     !photo.approval ||
                     photo.approval.status === 'approved' ||
                     photo.approval.status === 'auto_approved'
                 );
 
-                console.log('Approved photos:', approvedPhotos);
-
                 setPhotos(approvedPhotos);
                 return true;
             } else {
-                console.warn('No media items received or invalid format');
                 setPhotos([]);
                 return false;
             }
@@ -488,10 +305,7 @@ export default function EventDetailsPage({ params }: EventDetailsPageProps) {
         }
     }, [eventId]);
 
-    console.log('Current photos state:', photos);
-
     useEffect(() => {
-        // Simulate checking localStorage
         if (savedName) {
             setGuestName(savedName);
             setHasEnteredName(true);
@@ -501,20 +315,19 @@ export default function EventDetailsPage({ params }: EventDetailsPageProps) {
 
     const handleNameSubmit = (): void => {
         if (guestName.trim()) {
-            setSavedName(guestName); // Simulate localStorage
+            setSavedName(guestName);
             setHasEnteredName(true);
             setShowNameDialog(false);
         }
     };
 
-    const handlePhotoClick = (photo: TransformedPhoto): void => {
-        const photoIndex = photos.findIndex(p => p.id === photo.id);
+    const handlePhotoClick = useCallback((photo: TransformedPhoto, index: number): void => {
         setSelectedPhoto(photo);
-        setSelectedPhotoIndex(photoIndex);
+        setSelectedPhotoIndex(index);
         setPhotoViewerOpen(true);
-    };
+    }, []);
 
-    const navigateToPhoto = (direction: 'next' | 'prev'): void => {
+    const navigateToPhoto = useCallback((direction: 'next' | 'prev'): void => {
         let newIndex: number;
         if (direction === 'next' && selectedPhotoIndex < photos.length - 1) {
             newIndex = selectedPhotoIndex + 1;
@@ -526,25 +339,21 @@ export default function EventDetailsPage({ params }: EventDetailsPageProps) {
 
         setSelectedPhotoIndex(newIndex);
         setSelectedPhoto(photos[newIndex]);
-    };
+    }, [selectedPhotoIndex, photos]);
 
-    const deletePhoto = (photo: TransformedPhoto): void => {
-        console.log('Delete photo:', photo);
-    };
-
-    const downloadPhoto = (photo: TransformedPhoto): void => {
+    const downloadPhoto = useCallback((photo: TransformedPhoto): void => {
         const link = document.createElement('a');
-        link.href = photo.url;
+        link.href = photo.src;
         link.download = `photo-${photo.id}.jpg`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    };
+    }, []);
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
             {/* Name Entry Dialog */}
-            <Dialog open={showNameDialog} onOpenChange={() => { }}>
+            {/* <Dialog open={showNameDialog} onOpenChange={() => {}}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="text-center">Welcome! 🎉</DialogTitle>
@@ -572,55 +381,49 @@ export default function EventDetailsPage({ params }: EventDetailsPageProps) {
                         </Button>
                     </div>
                 </DialogContent>
-            </Dialog>
+            </Dialog> */}
 
             {/* Main Content */}
-            {hasEnteredName && (
+            {/* {hasEnteredName && ( */}
                 <>
                     {/* Event Header */}
-                    <div className="relative">
-                        <div
-                            className="h-48 bg-gradient-to-r from-pink-500 to-purple-600 bg-cover bg-center"
-                            style={{ backgroundImage: `url(${mockEvent.cover_image.url})` }}
-                        >
-                            <div className="absolute inset-0 bg-black bg-opacity-40" />
-                        </div>
-                        <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
-                            <h1 className="text-2xl font-bold mb-2">{mockEvent.title}</h1>
-                            <div className="flex flex-wrap gap-4 text-sm opacity-90">
-                                <div className="flex items-center gap-1">
-                                    <Calendar className="w-4 h-4" />
-                                    <span>Feb 15, 2024</span>
+                    <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
+                        <div className="max-w-7xl mx-auto px-4 py-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h1 className="text-2xl font-bold text-gray-900">{mockEvent.title}</h1>
+                                    <p className="text-gray-600 flex items-center gap-4 mt-1 text-sm">
+                                        <span className="flex items-center gap-1">
+                                            <Calendar className="w-4 h-4" />
+                                            Feb 15, 2024
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                            <MapPin className="w-4 h-4" />
+                                            {mockEvent.location.name}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                            <Users className="w-4 h-4" />
+                                            {loading ? 'Loading...' : `${photos.length} photos`}
+                                        </span>
+                                    </p>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <MapPin className="w-4 h-4" />
-                                    <span>{mockEvent.location.name}</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <Users className="w-4 h-4" />
-                                    <span>{mockEvent.stats.participants} people</span>
+                                <div className="flex gap-3">
+                                    {mockEvent.permissions.can_download && (
+                                        <Button 
+                                            variant="outline" 
+                                            disabled={loading || photos.length === 0}
+                                            className="flex items-center gap-2"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Download All
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="container mx-auto px-4 py-8">
-                        {/* Header with Download Button */}
-                        <div className="flex items-center justify-between mb-6">
-                            <div>
-                                <h2 className="text-2xl font-bold">Event Memories</h2>
-                                <p className="text-gray-600">
-                                    {loading ? 'Loading...' : `${photos.length} photos shared`}
-                                </p>
-                            </div>
-                            {mockEvent.permissions.can_download && (
-                                <Button variant="outline" disabled={loading || photos.length === 0}>
-                                    <Download className="w-4 h-4 mr-2" />
-                                    Download All
-                                </Button>
-                            )}
-                        </div>
-
+                    <div className="max-w-7xl mx-auto px-4 py-8">
                         {/* Error State */}
                         {error && (
                             <div className="text-center py-16">
@@ -642,9 +445,9 @@ export default function EventDetailsPage({ params }: EventDetailsPageProps) {
                             </div>
                         )}
 
-                        {/* Pinterest-style Photo Grid */}
+                        {/* Pinterest Photo Grid */}
                         {!loading && !error && photos.length > 0 && (
-                            <PhotoGrid photos={photos} onPhotoClick={handlePhotoClick} />
+                            <PinterestPhotoGrid photos={photos} onPhotoClick={handlePhotoClick} />
                         )}
 
                         {/* Empty State */}
@@ -663,22 +466,22 @@ export default function EventDetailsPage({ params }: EventDetailsPageProps) {
                             selectedPhoto={selectedPhoto}
                             selectedPhotoIndex={selectedPhotoIndex}
                             photos={photos}
-                            userPermissions={userPermissions}
                             onClose={() => setPhotoViewerOpen(false)}
                             onPrev={() => navigateToPhoto('prev')}
                             onNext={() => navigateToPhoto('next')}
-                            setPhotoInfoOpen={setPhotoInfoOpen}
-                            deletePhoto={deletePhoto}
                             downloadPhoto={downloadPhoto}
                         />
                     )}
 
-                    {/* Footer */}
-                    <div className="p-6 text-center text-xs text-gray-400">
-                        <p>Powered by YourApp • Share memories, create connections</p>
+                    {/* Live Updates Indicator */}
+                    <div className="fixed bottom-6 right-6 z-30">
+                        <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                            Live Updates
+                        </div>
                     </div>
                 </>
-            )}
+            {/* )} */}
         </div>
     );
 }
