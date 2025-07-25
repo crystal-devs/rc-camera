@@ -130,6 +130,8 @@ const EventSettingsPage = () => {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [eventCreatorId, setEventCreatorId] = useState<string>('');
 
   useEffect(() => {
     const storedToken = localStorage.getItem('authToken');
@@ -140,6 +142,32 @@ const EventSettingsPage = () => {
       router.push('/events');
     }
   }, [router]);
+
+  useEffect(() => {
+    const getUserId = () => {
+      // If you store user ID in localStorage
+      const userId = localStorage.getItem('userId');
+      if (userId) {
+        setCurrentUserId(userId);
+        return;
+      }
+
+      // If you need to decode it from the auth token
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        try {
+          // Decode JWT token to get user ID
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          setCurrentUserId(payload.userId || payload.user_id || payload.id);
+        } catch (error) {
+          console.error('Error decoding token:', error);
+        }
+      }
+    };
+
+    getUserId();
+  }, []);
+
 
   // Load event data
   useEffect(() => {
@@ -153,6 +181,7 @@ const EventSettingsPage = () => {
           router.push('/events');
           return;
         }
+        setEventCreatorId(eventData.created_by);
 
         const convertedData: EventFormData = {
           title: eventData.title || '',
@@ -271,7 +300,7 @@ const EventSettingsPage = () => {
 
   const getCoHostInviteUrl = () => {
     if (!formData.co_host_invite_token.token) return '';
-    return `${window.location.origin}/invite/cohost/${formData.co_host_invite_token.token}`;
+    return `${window.location.origin}/join-cohost/${formData.co_host_invite_token.token}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -328,8 +357,11 @@ const EventSettingsPage = () => {
     );
   }
 
+  const isEventCreator = currentUserId && eventCreatorId && currentUserId === eventCreatorId;
+
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white mb-16 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br">
       <div className="container max-w-4xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -424,7 +456,7 @@ const EventSettingsPage = () => {
 
           {/* Event Details Tab */}
           <TabsContent value="basics" className="space-y-4">
-            <Card className="border-0 shadow-sm bg-white">
+            <Card className="border-0 shadow-sm">
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg font-medium text-gray-900">Basic Information</CardTitle>
               </CardHeader>
@@ -578,9 +610,9 @@ const EventSettingsPage = () => {
 
           {/* Sharing Tab */}
           <TabsContent value="sharing" className="space-y-4">
-            <Card className="border-0 shadow-sm bg-white">
+            <Card className="border-0 shadow-sm ">
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-medium text-gray-900">Who can access your event?</CardTitle>
+                <CardTitle className="text-lg font-medium">Who can access your event?</CardTitle>
                 <p className="text-sm text-gray-500">Choose how people can join and view photos</p>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -592,7 +624,7 @@ const EventSettingsPage = () => {
                         <Globe className="h-4 w-4 text-green-600" />
                         Anyone with the link
                       </Label>
-                      <p className="text-sm text-gray-600">Great for parties and public events. Share one link and anyone can join.</p>
+                      <p className="text-sm">Great for parties and public events. Share one link and anyone can join.</p>
                     </div>
                   </div>
 
@@ -603,7 +635,7 @@ const EventSettingsPage = () => {
                         <Users className="h-4 w-4 text-blue-600" />
                         Only people I invite
                       </Label>
-                      <p className="text-sm text-gray-600">Perfect for weddings and private gatherings. You control who gets access.</p>
+                      <p className="text-sm ">Perfect for weddings and private gatherings. You control who gets access.</p>
                     </div>
                   </div>
 
@@ -611,10 +643,10 @@ const EventSettingsPage = () => {
                     <RadioGroupItem value="private" id="private" className="mt-1" />
                     <div className="space-y-1 flex-1">
                       <Label htmlFor="private" className="text-base font-medium cursor-pointer flex items-center gap-2">
-                        <Lock className="h-4 w-4 text-gray-600" />
+                        <Lock className="h-4 w-4 " />
                         Just me and my team
                       </Label>
-                      <p className="text-sm text-gray-600">Completely private. Only you and co-hosts can see everything.</p>
+                      <p className="text-sm ">Completely private. Only you and co-hosts can see everything.</p>
                     </div>
                   </div>
                 </RadioGroup>
@@ -623,9 +655,9 @@ const EventSettingsPage = () => {
 
             {/* Share Links */}
             {(formData.visibility === 'anyone_with_link' || formData.visibility === 'invited_only') && (
-              <Card className="border-0 shadow-sm bg-white">
+              <Card className="border-0 shadow-sm">
                 <CardHeader className="pb-4">
-                  <CardTitle className="text-lg font-medium text-gray-900">Share your event</CardTitle>
+                  <CardTitle className="text-lg font-medium ">Share your event</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="space-y-3">
@@ -691,7 +723,7 @@ const EventSettingsPage = () => {
 
             {/* Password Protection */}
             {formData.visibility !== 'private' && (
-              <Card className="border-0 shadow-sm bg-white">
+              <Card className="border-0 shadow-sm">
                 <CardHeader className="pb-4">
                   <CardTitle className="text-lg font-medium text-gray-900">Additional Security</CardTitle>
                 </CardHeader>
@@ -733,14 +765,14 @@ const EventSettingsPage = () => {
 
           {/* Permissions Tab */}
           <TabsContent value="permissions" className="space-y-4">
-            <Card className="border-0 shadow-sm bg-white">
+            <Card className="border-0 shadow-sm">
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-medium text-gray-900">Photo Management</CardTitle>
+                <CardTitle className="text-lg font-medium">Photo Management</CardTitle>
                 <p className="text-sm text-gray-500">Control how photos are handled in your event</p>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div>
-                  <Label className="text-base font-medium text-gray-900 mb-4 block">
+                  <Label className="text-base font-medium mb-4 block">
                     Would you like to review photos before they appear?
                   </Label>
                   <RadioGroup
@@ -877,7 +909,7 @@ const EventSettingsPage = () => {
 
           {/* Team Tab */}
           <TabsContent value="team" className="space-y-4">
-            {eventId && authToken && <TeamTab eventId={eventId as string} authToken={authToken} isEventCreator={true} />}
+            {eventId && authToken && <TeamTab eventId={eventId as string} authToken={authToken} isEventCreator={isEventCreator} />}
           </TabsContent>
         </Tabs>
       </div>

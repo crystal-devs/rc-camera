@@ -12,7 +12,7 @@ interface ConditionalNavigationProps {
 
 export function ConditionalNavigation({ children }: ConditionalNavigationProps) {
   const pathname = usePathname();
-  
+
   // Define routes where navigation should be hidden
   const isGuestRoute = pathname?.startsWith('/guest/');
   const isAuthJoinRoute = pathname?.startsWith('/join/');
@@ -21,15 +21,17 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
   const isEventNotFoundRoute = pathname === '/event-not-found';
   const isInviteRequiredRoute = pathname === '/invite-required';
   const isPrivateAccessDeniedRoute = pathname === '/private-access-denied';
-  
+  const isCohostInvite = pathname?.startsWith('/join-cohost/');
+
   // Hide navigation for these routes
-  const shouldHideNavigation = 
-    isGuestRoute || 
-    isAuthJoinRoute || 
-    isLoginRoute || 
+  const shouldHideNavigation =
+    isGuestRoute ||
+    isAuthJoinRoute ||
+    isLoginRoute ||
     isRegisterRoute ||
     isEventNotFoundRoute ||
     isInviteRequiredRoute ||
+    isCohostInvite ||
     isPrivateAccessDeniedRoute;
 
   if (shouldHideNavigation) {
@@ -48,7 +50,7 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
       <AppSidebar>
         {children}
       </AppSidebar>
-      
+
       <BottomNavigationWithFullscreenAwareness />
     </>
   );

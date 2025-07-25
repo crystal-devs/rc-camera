@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,43 +22,19 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Users,
-  Plus,
-  Link,
-  Copy,
-  MoreHorizontal,
+  Trash2,
+  Crown,
   UserCheck,
   UserX,
-  Trash2,
-  Settings,
-  Clock,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Eye,
-  Upload,
-  Download,
-  MessageSquare,
-  Shield
+  Shield,
+  Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  generateCoHostInvite,
-  getCoHostInvite,
-  deactivateCoHostInvite,
   getEventCoHosts,
   manageCoHost,
-  getCoHostInviteLink,
-  validateCoHostInvite,
-  type CoHostInvite,
-  type CoHostData,
-  type CoHost
+  type CoHostData
 } from '@/services/apis/cohost.api';
 
 interface TeamTabProps {
@@ -71,14 +44,9 @@ interface TeamTabProps {
 }
 
 const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator }) => {
-  const [coHostInvite, setCoHostInvite] = useState<CoHostInvite | null>(null);
   const [coHostData, setCoHostData] = useState<CoHostData | null>(null);
-  const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
   const [isLoadingCoHosts, setIsLoadingCoHosts] = useState(true);
-  const [inviteSettings, setInviteSettings] = useState({
-    expiresInHours: 24,
-    maxUses: 10
-  });
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
 
   // Load co-host data
   useEffect(() => {
@@ -88,430 +56,330 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator })
   const loadCoHostData = async () => {
     try {
       setIsLoadingCoHosts(true);
-
-      // Load co-hosts and invite details in parallel
-      const [coHostsResponse, inviteResponse] = await Promise.allSettled([
-        getEventCoHosts(eventId, authToken),
-        getCoHostInvite(eventId, authToken)
-      ]);
-
-      // Handle co-hosts data
-      if (coHostsResponse.status === 'fulfilled' && coHostsResponse.value.status) {
-        setCoHostData(coHostsResponse.value.data);
+      
+      const response = await getEventCoHosts(eventId, authToken);
+      
+      if (response.status) {
+        setCoHostData(response.data);
+      } else {
+        toast.error('Failed to load team members');
       }
-
-      // Handle invite data
-      if (inviteResponse.status === 'fulfilled' && inviteResponse.value.status) {
-        setCoHostInvite(inviteResponse.value.data);
-      }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading co-host data:', error);
-      toast.error('Failed to load co-host data');
+      
+      if (error.response?.status === 404) {
+        toast.error('Team endpoint not found');
+      } else if (error.response?.status === 403) {
+        toast.error('You don\'t have permission to view team members');
+      } else {
+        toast.error('Failed to load team members');
+      }
     } finally {
       setIsLoadingCoHosts(false);
     }
   };
 
-  const handleGenerateInvite = async () => {
+  const handleRemoveCoHost = async (userId: string, userName: string) => {
     try {
-      setIsGeneratingInvite(true);
+      setRemovingUserId(userId);
+      
+      const response = await manageCoHost(eventId, userId, 'remove', authToken);
 
-      const response = await generateCoHostInvite(
-        eventId,
-        inviteSettings.expiresInHours,
-        inviteSettings.maxUses,
-        authToken
-      );
-
-      if (response.status && response.data) {
-        setCoHostInvite(response.data);
-        toast.success('Co-host invite generated successfully!');
+      if (response.status) {
+        toast.success(`${userName} removed successfully! They can rejoin using the invite link.`);
+        await loadCoHostData(); // Reload data
+      } else {
+        toast.error(response.message || 'Failed to remove co-host');
       }
-    } catch (error) {
-      console.error('Error generating co-host invite:', error);
-      toast.error('Failed to generate co-host invite');
+    } catch (error: any) {
+      console.error('Error removing co-host:', error);
+      toast.error('Failed to remove co-host');
     } finally {
-      setIsGeneratingInvite(false);
+      setRemovingUserId(null);
     }
   };
 
-  const handleDeactivateInvite = async () => {
+  const handleBlockCoHost = async (userId: string, userName: string) => {
     try {
-      const response = await deactivateCoHostInvite(eventId, authToken);
+      setRemovingUserId(userId);
+      
+      const response = await manageCoHost(eventId, userId, 'block', authToken);
 
       if (response.status) {
-        setCoHostInvite(null);
-        toast.success('Co-host invite deactivated successfully!');
+        toast.success(`${userName} blocked successfully! They cannot rejoin via invite link.`);
+        await loadCoHostData(); // Reload data
+      } else {
+        toast.error(response.message || 'Failed to block co-host');
       }
-    } catch (error) {
-      console.error('Error deactivating co-host invite:', error);
-      toast.error('Failed to deactivate co-host invite');
+    } catch (error: any) {
+      console.error('Error blocking co-host:', error);
+      toast.error('Failed to block co-host');
+    } finally {
+      setRemovingUserId(null);
     }
   };
 
-  const handleCopyInviteLink = () => {
-    if (coHostInvite) {
-      navigator.clipboard.writeText(coHostInvite.invite_link);
-      toast.success('Invite link copied to clipboard!');
-    }
-  };
-
-  const handleManageCoHost = async (userId: string, action: 'approve' | 'reject' | 'remove') => {
+  const handleUnblockCoHost = async (userId: string, userName: string) => {
     try {
-      const response = await manageCoHost(eventId, userId, action, authToken);
+      setRemovingUserId(userId);
+      
+      const response = await manageCoHost(eventId, userId, 'unblock', authToken);
 
       if (response.status) {
-        toast.success(`Co-host ${action}d successfully!`);
-        // Reload co-host data
-        await loadCoHostData();
+        toast.success(`${userName} unblocked and restored as co-host!`);
+        await loadCoHostData(); // Reload data
+      } else {
+        toast.error(response.message || 'Failed to unblock co-host');
       }
-    } catch (error) {
-      console.error(`Error ${action}ing co-host:`, error);
-      toast.error(`Failed to ${action} co-host`);
+    } catch (error: any) {
+      console.error('Error unblocking co-host:', error);
+      toast.error('Failed to unblock co-host');
+    } finally {
+      setRemovingUserId(null);
     }
   };
 
-  const getStatusBadge = (status: CoHost['status']) => {
-    switch (status) {
-      case 'approved':
-        return <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Approved</Badge>;
-      case 'pending':
-        return <Badge className="bg-yellow-100 text-yellow-800"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
-      case 'rejected':
-        return <Badge className="bg-red-100 text-red-800"><XCircle className="w-3 h-3 mr-1" />Rejected</Badge>;
-      case 'removed':
-        return <Badge className="bg-gray-100 text-gray-800"><Trash2 className="w-3 h-3 mr-1" />Removed</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
+  const getRoleBadge = (isCreator: boolean, status?: string) => {
+    if (isCreator) {
+      return <Badge className="bg-blue-100 text-blue-800"><Crown className="w-3 h-3 mr-1" />Creator</Badge>;
     }
+    if (status === 'blocked') {
+      return <Badge className="bg-red-100 text-red-800"><UserX className="w-3 h-3 mr-1" />Blocked</Badge>;
+    }
+    return <Badge className="bg-green-100 text-green-800"><UserCheck className="w-3 h-3 mr-1" />Co-host</Badge>;
   };
 
-  const getPermissionIcons = (permissions: CoHost['permissions']) => {
-    const icons = [];
-    if (permissions.manage_content) icons.push(<Upload key="content" className="w-4 h-4" title="Manage Content" />);
-    if (permissions.manage_guests) icons.push(<Users key="guests" className="w-4 h-4" title="Manage Guests" />);
-    if (permissions.manage_settings) icons.push(<Settings key="settings" className="w-4 h-4" title="Manage Settings" />);
-    if (permissions.approve_content) icons.push(<Shield key="approve" className="w-4 h-4" title="Approve Content" />);
-
-    return (
-      <div className="flex gap-1 text-muted-foreground">
-        {icons.length > 0 ? icons : <span className="text-xs">No permissions</span>}
-      </div>
-    );
+  // Get all team members (creator + approved co-hosts + blocked co-hosts for creator to manage)
+  const getAllTeamMembers = () => {
+    if (!coHostData) return [];
+    
+    const members = [];
+    
+    // Add creator first
+    if (coHostData.event_creator) {
+      members.push({
+        id: coHostData.event_creator._id,
+        name: coHostData.event_creator.name,
+        email: coHostData.event_creator.email,
+        isCreator: true,
+        status: 'creator'
+      });
+    }
+    
+    // Add approved co-hosts
+    if (coHostData.co_hosts_by_status?.approved) {
+      coHostData.co_hosts_by_status.approved.forEach(coHost => {
+        members.push({
+          id: coHost.user_id._id,
+          name: coHost.user_id.name,
+          email: coHost.user_id.email,
+          isCreator: false,
+          status: 'approved'
+        });
+      });
+    }
+    
+    // Add blocked co-hosts (only visible to creator for management)
+    if (isEventCreator && coHostData.co_hosts_by_status?.blocked) {
+      coHostData.co_hosts_by_status?.blocked.forEach(coHost => {
+        members.push({
+          id: coHost.user_id._id,
+          name: coHost.user_id.name,
+          email: coHost.user_id.email,
+          isCreator: false,
+          status: 'blocked'
+        });
+      });
+    }
+    
+    return members;
   };
 
-  const inviteValidation = validateCoHostInvite(coHostInvite);
+  const teamMembers = getAllTeamMembers();
 
   return (
     <div className="space-y-6">
-      {/* Co-host Invite Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Link className="w-5 h-5" />
-            Co-host Invitation
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!coHostInvite || !inviteValidation.isValid ? (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Generate a secure invite link that others can use to request co-host access to your event.
-              </p>
-
-              {!inviteValidation.isValid && coHostInvite && (
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-yellow-600" />
-                    <span className="text-sm text-yellow-800">
-                      Current invite is {inviteValidation.reason}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-
-              <Button
-                onClick={handleGenerateInvite}
-                disabled={isGeneratingInvite || !isEventCreator}
-                className="w-full"
-              >
-                {isGeneratingInvite ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
-                ) : (
-                  <Plus className="w-4 h-4 mr-2" />
-                )}
-                Generate Invite Link
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-green-800">Active Invite Link</span>
-                  {/* <Badge className="bg-green-100 text-green-800">
-                    {coHostInvite.used_count}/{coHostInvite.max_uses} uses
-                  </Badge> */}
-                </div>
-
-                <div className="flex items-center gap-2 mb-2">
-                  <Input
-                    value={coHostInvite.invite_link}
-                    readOnly
-                    className="text-xs bg-white"
-                  />
-                  <Button size="sm" onClick={handleCopyInviteLink}>
-                    <Copy className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyInviteLink}
-                  className="flex-1"
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy Link
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Co-hosts Management Section */}
+      {/* Team Members Table */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5" />
-              Event Co-hosts
+              Team Members
             </div>
-            {coHostData && (
-              <Badge variant="secondary">
-                {coHostData.summary.approved} active
-              </Badge>
-            )}
+            <Badge variant="secondary">
+              {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
+            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {isLoadingCoHosts ? (
             <div className="space-y-3">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="h-12 bg-gray-100 rounded animate-pulse"></div>
-              ))}
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                <span className="ml-2 text-gray-600">Loading team members...</span>
+              </div>
             </div>
-          ) : !coHostData || Object.values(coHostData.co_hosts_by_status).every(arr => arr.length === 0) ? (
+          ) : teamMembers.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No co-hosts found</p>
-              <p className="text-xs">Generate an invite link to add co-hosts</p>
+              <p className="text-sm">No team members found</p>
+              <p className="text-xs">
+                {coHostData ? 'No co-hosts have been added yet' : 'Failed to load team data'}
+              </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {/* Event Creator */}
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                      {/* {coHostData.event_creator.name.charAt(0).toUpperCase()} */}
-                    </div>
-                    <div>
-                      <div className="font-medium text-sm">{coHostData.event_creator.name}</div>
-                      <div className="text-xs text-muted-foreground">{coHostData.event_creator.email}</div>
-                    </div>
-                  </div>
-                  <Badge className="bg-blue-100 text-blue-800">Event Creator</Badge>
-                </div>
-              </div>
-
-              {/* Co-hosts Table */}
-              <div className="border rounded-lg">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Permissions</TableHead>
-                      <TableHead>Invited By</TableHead>
-                      {isEventCreator && <TableHead className="text-right">Actions</TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {/* Approved Co-hosts */}
-                    {coHostData.co_hosts_by_status.approved.map((coHost) => (
-                      <TableRow key={coHost.user_id._id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm font-medium">
-                              {coHost.user_id.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="font-medium text-sm">{coHost.user_id.name}</div>
-                              <div className="text-xs text-muted-foreground">{coHost.user_id.email}</div>
-                            </div>
+            <div className="border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Email / Username</TableHead>
+                    <TableHead>Role</TableHead>
+                    {isEventCreator && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {teamMembers.map((member) => (
+                    <TableRow key={member.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                            {member.name.charAt(0).toUpperCase()}
                           </div>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(coHost.status)}</TableCell>
-                        <TableCell>{getPermissionIcons(coHost.permissions)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {coHost.invited_by.name}
-                        </TableCell>
-                        {isEventCreator && (
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() => handleManageCoHost(coHost.user_id._id, 'remove')}
-                                  className="text-red-600"
+                          <div>
+                            <div className="font-medium text-sm">{member.name}</div>
+                            <div className="text-xs text-muted-foreground">{member.email}</div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      
+                      <TableCell>
+                        {getRoleBadge(member.isCreator, member.status)}
+                      </TableCell>
+                      
+                      {isEventCreator && (
+                        <TableCell className="text-right">
+                          {member.isCreator ? (
+                            <span className="text-xs text-muted-foreground">Event Owner</span>
+                          ) : member.status === 'blocked' ? (
+                            // Blocked co-host - show unblock option
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="text-green-600 hover:text-green-700"
+                                  disabled={removingUserId === member.id}
                                 >
-                                  <UserX className="w-4 h-4 mr-2" />
-                                  Remove
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))}
-
-                    {/* Pending Co-hosts */}
-                    {coHostData.co_hosts_by_status.pending.map((coHost) => (
-                      <TableRow key={coHost.user_id._id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm font-medium">
-                              {/* {coHost.user_id.name.charAt(0).toUpperCase()} */}
-                            </div>
-                            <div>
-                              <div className="font-medium text-sm">{coHost.user_id.name}</div>
-                              <div className="text-xs text-muted-foreground">{coHost.user_id.email}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(coHost.status)}</TableCell>
-                        <TableCell>{getPermissionIcons(coHost.permissions)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {coHost.invited_by.name}
-                        </TableCell>
-                        {isEventCreator && (
-                          <TableCell className="text-right">
+                                  {removingUserId === member.id ? (
+                                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                  ) : (
+                                    <Shield className="w-4 h-4 mr-1" />
+                                  )}
+                                  Unblock
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Unblock Co-host</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to unblock <strong>{member.name}</strong>? 
+                                    They will be restored as a co-host and can use the invite link again.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleUnblockCoHost(member.id, member.name)}
+                                    className="bg-green-600 hover:bg-green-700"
+                                  >
+                                    Unblock Co-host
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          ) : (
+                            // Active co-host - show remove and block options
                             <div className="flex gap-1 justify-end">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleManageCoHost(coHost.user_id._id, 'reject')}
-                              >
-                                <UserX className="w-4 h-4 mr-1" />
-                                Reject
-                              </Button>
-                            </div>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))}
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="text-orange-600 hover:text-orange-700"
+                                    disabled={removingUserId === member.id}
+                                  >
+                                    {removingUserId === member.id ? (
+                                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="w-4 h-4 mr-1" />
+                                    )}
+                                    Remove
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Remove Co-host</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Are you sure you want to remove <strong>{member.name}</strong> as a co-host? 
+                                      They will lose co-host access but can rejoin using the invite link.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleRemoveCoHost(member.id, member.name)}
+                                      className="bg-orange-600 hover:bg-orange-700"
+                                    >
+                                      Remove Co-host
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
 
-                    {/* Rejected Co-hosts (if any, show collapsed) */}
-                    {coHostData.co_hosts_by_status.rejected.length > 0 && (
-                      coHostData.co_hosts_by_status.rejected.map((coHost) => (
-                        <TableRow key={coHost.user_id._id} className="opacity-60">
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm font-medium">
-                                {coHost.user_id.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-medium text-sm">{coHost.user_id.name}</div>
-                                <div className="text-xs text-muted-foreground">{coHost.user_id.email}</div>
-                              </div>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="text-red-600 hover:text-red-700"
+                                    disabled={removingUserId === member.id}
+                                  >
+                                    <UserX className="w-4 h-4 mr-1" />
+                                    Block
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Block Co-host</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Are you sure you want to block <strong>{member.name}</strong>? 
+                                      They will lose co-host access and cannot rejoin using the invite link until unblocked.
+                                      <br /><br />
+                                      <strong>Use this option if you don't want them to rejoin.</strong>
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleBlockCoHost(member.id, member.name)}
+                                      className="bg-red-600 hover:bg-red-700"
+                                    >
+                                      Block Co-host
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             </div>
-                          </TableCell>
-                          <TableCell>{getStatusBadge(coHost.status)}</TableCell>
-                          <TableCell>{getPermissionIcons(coHost.permissions)}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {coHost.invited_by.name}
-                          </TableCell>
-                          {isEventCreator && (
-                            <TableCell className="text-right">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleManageCoHost(coHost.user_id._id, 'approve')}
-                              >
-                                <UserCheck className="w-4 h-4 mr-1" />
-                                Approve
-                              </Button>
-                            </TableCell>
                           )}
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Summary Stats */}
-              <div className="grid grid-cols-4 gap-4 pt-4 border-t">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{coHostData.summary.approved}</div>
-                  <div className="text-xs text-muted-foreground">Approved</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-yellow-600">{coHostData.summary.pending}</div>
-                  <div className="text-xs text-muted-foreground">Pending</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600">{coHostData.summary.rejected}</div>
-                  <div className="text-xs text-muted-foreground">Rejected</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-600">{coHostData.summary.removed}</div>
-                  <div className="text-xs text-muted-foreground">Removed</div>
-                </div>
-              </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Co-host Permissions Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Co-host Permissions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <p>Approved co-hosts can:</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="flex items-center gap-2">
-                <Upload className="w-4 h-4" />
-                <span>Upload and manage content</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4" />
-                <span>Approve uploaded content</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                <span>View guest list (if permitted)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Settings className="w-4 h-4" />
-                <span>Modify event settings (if permitted)</span>
-              </div>
-            </div>
-            <div className="text-xs mt-3 p-3 bg-muted rounded-lg">
-              <strong>Note:</strong> Co-hosts cannot delete the event, remove the event creator, or manage other co-hosts unless given specific permissions.
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

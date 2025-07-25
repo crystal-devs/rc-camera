@@ -38,9 +38,9 @@ export default function PhotoGallery({
   guestToken,
   userPermissions = {
     upload: true,
-    download: true,
+    download: false,
     moderate: true,
-    delete: false
+    delete: true
   },
   approvalMode = 'auto'
 }: PhotoGalleryProps) {
