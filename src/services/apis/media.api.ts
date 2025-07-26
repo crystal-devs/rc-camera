@@ -68,7 +68,7 @@ export const getEventMedia = async (
 
         const endpoint = `${API_BASE_URL}/media/event/${eventId}`;
         const params = new URLSearchParams();
-        
+
         // Legacy parameters (for backward compatibility)
         if (options.includeProcessing) params.append('include_processing', 'true');
         if (options.includePending) params.append('include_pending', 'true');
@@ -76,7 +76,7 @@ export const getEventMedia = async (
         if (options.limit) params.append('limit', options.limit.toString());
         if (options.quality) params.append('quality', options.quality);
         if (options.since) params.append('since', options.since);
-        
+
         // NEW: Status-based filtering
         if (options.status) params.append('status', options.status);
         if (options.scrollType) params.append('scroll_type', options.scrollType);
@@ -153,7 +153,7 @@ export const updateMediaStatus = async (
 ): Promise<any> => {
     try {
         const endpoint = `${API_BASE_URL}/media/${mediaId}/status`;
-        
+
         const response = await axios.patch(endpoint, {
             status,
             reason: options.reason,
@@ -190,7 +190,7 @@ export const bulkUpdateMediaStatus = async (
 ): Promise<any> => {
     try {
         const endpoint = `${API_BASE_URL}/media/event/${eventId}/bulk-status`;
-        
+
         const response = await axios.patch(endpoint, {
             media_ids: mediaIds,
             status,
@@ -246,7 +246,7 @@ export const getEventMediaCounts = async (
 } | null> => {
     try {
         const endpoint = `${API_BASE_URL}/media/event/${eventId}/counts`;
-        
+
         console.log(`Fetching media counts for eventId: ${eventId}`);
 
         const response = await axios.get(endpoint, {
@@ -272,6 +272,7 @@ export const getEventMediaCounts = async (
  */
 export const getEventMediaWithGuestToken = async (
     eventId: string,
+    authToken?: string | null,
     guestToken?: string,
     includeAllAlbums: boolean = true,
     options: {
@@ -282,7 +283,14 @@ export const getEventMediaWithGuestToken = async (
 ): Promise<MediaItem[]> => {
     try {
         const cacheKey = `guest_event_${eventId}_${guestToken}`;
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+        };
 
+        // Add auth token if available (for authenticated users)
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
         // Check cache first
         const cached = imageCache.get(cacheKey);
         if (cached && !options.page) {
@@ -302,7 +310,8 @@ export const getEventMediaWithGuestToken = async (
         // if (options.quality) params.append('quality', options.quality);
 
         const response = await axios.get(`${API_BASE_URL}/media/guest/${eventId}`, {
-            timeout: 15000
+            timeout: 15000,
+            headers
         });
         // const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/guest?${params}`, {
         //     timeout: 15000

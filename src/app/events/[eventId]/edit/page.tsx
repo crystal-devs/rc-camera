@@ -130,7 +130,7 @@ const EventSettingsPage = () => {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState('');
-  const [currentUserId, setCurrentUserId] = useState<string>('');
+   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [eventCreatorId, setEventCreatorId] = useState<string>('');
 
   useEffect(() => {
@@ -382,7 +382,7 @@ const EventSettingsPage = () => {
             </div>
           </div>
 
-          {/* <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50">
@@ -417,7 +417,7 @@ const EventSettingsPage = () => {
               )}
               {isSubmitting ? 'Saving...' : 'Save Changes'}
             </Button>
-          </div> */}
+          </div>
 
 
         </div>
