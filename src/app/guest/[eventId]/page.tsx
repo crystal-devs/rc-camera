@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, use, useMemo, useCallback } from 'react';
-import { Camera, Users, Calendar, MapPin, Download, X, ChevronLeft, ChevronRight, Info, Heart, Share2, MoreVertical } from 'lucide-react';
+import { Camera, Users, Calendar, MapPin, Download, X, ChevronLeft, ChevronRight, Info, Heart, Share2, MoreVertical, Upload, Plus, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useParams } from 'next/navigation';
 import { getEventMediaWithGuestToken } from '@/services/apis/media.api';
 import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
+import { toast } from 'sonner';
+import { uploadGuestPhotos } from '@/services/apis/guest.api';
+import { FullscreenPhotoViewer } from '@/components/photo/FullscreenPhotoViewer';
+import { getTokenInfo } from '@/services/apis/sharing.api';
 
 // TypeScript interfaces
 interface ApiPhoto {
@@ -49,37 +53,6 @@ export interface TransformedPhoto {
   eventId: string;
 }
 
-interface MockEvent {
-  _id: string;
-  title: string;
-  description: string;
-  location: { name: string; address: string };
-  start_date: string;
-  cover_image: { url: string };
-  stats: { participants: number; photos: number; videos: number };
-  permissions: {
-    can_upload: boolean;
-    can_download: boolean;
-    require_approval: boolean;
-  };
-}
-
-// Mock event data
-const mockEvent: MockEvent = {
-  _id: "event123",
-  title: "Rahul & Priya's Wedding",
-  description: "Join us in celebrating our special day",
-  location: { name: "Taj Palace, Mumbai", address: "Colaba, Mumbai" },
-  start_date: "2024-02-15",
-  cover_image: { url: "https://picsum.photos/800/300?random=0" },
-  stats: { participants: 45, photos: 234, videos: 12 },
-  permissions: {
-    can_upload: true,
-    can_download: true,
-    require_approval: true
-  }
-};
-
 // Transform API data to component format
 const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => {
   return {
@@ -95,167 +68,9 @@ const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => {
   };
 };
 
-// Optimized Fullscreen Photo Viewer
-const FullscreenPhotoViewer: React.FC<{
-  selectedPhoto: TransformedPhoto;
-  selectedPhotoIndex: number;
-  photos: TransformedPhoto[];
-  onClose: () => void;
-  onPrev: () => void;
-  onNext: () => void;
-  downloadPhoto: (photo: TransformedPhoto) => void;
-}> = ({ selectedPhoto, selectedPhotoIndex, photos, onClose, onPrev, onNext, downloadPhoto }) => {
-  const [showControls, setShowControls] = useState(true);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case 'Escape': onClose(); break;
-        case 'ArrowLeft': onPrev(); break;
-        case 'ArrowRight': onNext(); break;
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'unset';
-    };
-  }, [onClose, onPrev, onNext]);
-
-  // For fullscreen, use minimal transformations to preserve original quality
-  const fullscreenTransformation = [
-    { format: 'auto' },
-    { progressive: true },
-    { dpr: 'auto' },
-    { quality: 95 }
-    // No width/height restrictions - let it be original size
-  ];
-
-  return (
-    <div
-      className="fixed inset-0 bg-black z-50 flex flex-col"
-      onClick={() => setShowControls(!showControls)}
-    >
-      {/* Top Controls */}
-      <div className={`absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 to-transparent p-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        <div className="flex items-center justify-between text-white">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => { e.stopPropagation(); onClose(); }}
-              className="text-white hover:bg-white/20 rounded-full"
-            >
-              <X className="w-5 h-5" />
-            </Button>
-            <span className="text-sm font-medium">
-              {selectedPhotoIndex + 1} of {photos.length}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => { e.stopPropagation(); downloadPhoto(selectedPhoto); }}
-              className="text-white hover:bg-white/20"
-            >
-              <Download className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-white hover:bg-white/20"
-            >
-              <Share2 className="w-5 h-5" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation Buttons */}
-      {selectedPhotoIndex > 0 && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => { e.stopPropagation(); onPrev(); }}
-          className={`absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white/20 z-10 h-12 w-12 rounded-full transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}
-        >
-          <ChevronLeft className="w-6 h-6" />
-        </Button>
-      )}
-
-      {selectedPhotoIndex < photos.length - 1 && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => { e.stopPropagation(); onNext(); }}
-          className={`absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:bg-white/20 z-10 h-12 w-12 rounded-full transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}
-        >
-          <ChevronRight className="w-6 h-6" />
-        </Button>
-      )}
-
-      {/* Image Container - Using CSS approach for true fullscreen */}
-      <div className="flex-1 relative overflow-hidden flex items-center justify-center p-4">
-        <img
-          src={`${selectedPhoto.src}?tr=f-auto:pr-true:dpr-auto:q-95`}
-          alt="Fullscreen view"
-          className="max-w-full max-h-full object-contain"
-          style={{
-            width: 'auto',
-            height: 'auto',
-            maxWidth: '100%',
-            maxHeight: '100%'
-          }}
-          onClick={(e) => e.stopPropagation()}
-        />
-      </div>
-
-      {/* Alternative: If you want to stick with ImageKitImage, use this approach */}
-      {/* 
-            <div className="flex-1 relative overflow-hidden flex items-center justify-center p-4">
-                <div style={{ position: 'relative', maxWidth: '100%', maxHeight: '100%' }}>
-                    <ImageKitImage
-                        src={selectedPhoto.src}
-                        alt="Fullscreen view"
-                        width={selectedPhoto.width || 1920}
-                        height={selectedPhoto.height || 1080}
-                        transformation={fullscreenTransformation}
-                        className="max-w-full max-h-full object-contain"
-                        style={{
-                            width: 'auto',
-                            height: 'auto',
-                            maxWidth: '100%',
-                            maxHeight: '100%'
-                        }}
-                        priority={true}
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                </div>
-            </div>
-            */}
-
-      {/* Bottom Info */}
-      <div className={`absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        <div className="text-white text-center">
-          <Badge variant="secondary" className="mb-2">
-            Uploaded by {selectedPhoto.uploaded_by}
-          </Badge>
-          <p className="text-xs opacity-75 mt-1">
-            {new Date(selectedPhoto.createdAt).toLocaleDateString()}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // Main Component
 export default function EventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
-  const { eventId } = use(params);
+  const { eventId: shareToken } = use(params);
   const [guestName, setGuestName] = useState<string>('');
   const [hasEnteredName, setHasEnteredName] = useState<boolean>(false);
   const [showNameDialog, setShowNameDialog] = useState<boolean>(true);
@@ -266,6 +81,14 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
   const [error, setError] = useState<string | null>(null);
   const [savedName, setSavedName] = useState<string>('');
   const [photos, setPhotos] = useState<TransformedPhoto[]>([]);
+  const [eventDetails, setEventDetails] = useState<any>(null);
+  const [accessDetails, setAccessDetails] = useState<any>(null);
+  // Guest upload states
+  const [showUploadDialog, setShowUploadDialog] = useState<boolean>(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState<boolean>(false);
+  const [guestInfo, setGuestInfo] = useState({ name: '', email: '' });
+
   const [auth] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('authToken');
@@ -278,12 +101,42 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
     }
     return null;
   });
+
+  const fetchEventDetails = async (shareToken: string) => {
+    try {
+      const response = await getTokenInfo(shareToken, auth);
+      console.log('🔍 Full response:', response);
+
+      if (response && response.status === true && response.data) {
+        setEventDetails(response.data.event);
+        setAccessDetails(response.data.access);
+      } else {
+        console.warn("⚠️ Unexpected response format", response);
+      }
+    } catch (err) {
+      console.error('❌ Error fetching event details:', err);
+    }
+  };
+
+
+  useEffect(() => {
+    if (shareToken) {
+      fetchEventDetails(shareToken);
+    }
+  }, [shareToken]);
+
   const fetchMedia = async (): Promise<boolean> => {
     try {
       setLoading(true);
       setError(null);
 
-      let mediaItems: ApiPhoto[] = await getEventMediaWithGuestToken(eventId, auth);
+      console.log('🔍 Fetching media with share token:', {
+        shareToken: shareToken.substring(0, 10) + '...',
+        hasAuth: !!auth,
+        authPreview: auth ? auth.substring(0, 20) + '...' : 'none'
+      });
+
+      let mediaItems: ApiPhoto[] = await getEventMediaWithGuestToken(shareToken, auth);
 
       if (mediaItems && Array.isArray(mediaItems)) {
         const transformedPhotos = mediaItems.map(transformApiPhoto);
@@ -311,10 +164,10 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
   };
 
   useEffect(() => {
-    if (eventId) {
+    if (shareToken) {
       fetchMedia();
     }
-  }, [eventId]);
+  }, [shareToken]);
 
   useEffect(() => {
     if (savedName) {
@@ -361,57 +214,103 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
     document.body.removeChild(link);
   }, []);
 
+  // Guest upload functions
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length > 0) {
+      setSelectedFiles(files);
+      console.log('📁 Files selected:', files.map(f => f.name));
+    }
+  };
+
+  const handleUpload = async () => {
+    if (selectedFiles.length === 0) {
+      toast.error('Please select at least one photo');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      console.log('🔍 Starting upload:', {
+        fileCount: selectedFiles.length,
+        shareToken: shareToken.substring(0, 8) + '...',
+        hasAuth: !!auth,
+        guestInfo
+      });
+
+      const result = await uploadGuestPhotos(
+        shareToken,
+        selectedFiles,
+        guestInfo,
+        auth || undefined
+      );
+
+      console.log('✅ Upload result:', result);
+
+      if (result.status) {
+        const { summary } = result.data;
+        if (summary.success > 0) {
+          toast.success(
+            summary.failed === 0
+              ? `All ${summary.success} photo(s) uploaded successfully!`
+              : `${summary.success} photo(s) uploaded, ${summary.failed} failed`
+          );
+
+          // Clear form and refresh media
+          setSelectedFiles([]);
+          setGuestInfo({ name: '', email: '' });
+          setShowUploadDialog(false);
+
+          // Refresh the photo gallery
+          fetchMedia();
+        } else {
+          toast.error('All uploads failed. Please try again.');
+        }
+      } else {
+        toast.error(result.message || 'Upload failed');
+      }
+
+    } catch (error: any) {
+      console.error('❌ Upload error:', error);
+      toast.error(error.message || 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(files => files.filter((_, i) => i !== index));
+  };
+
+  console.log('🔍 Event details:', eventDetails, accessDetails)
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Name Entry Dialog */}
-      {/* <Dialog open={showNameDialog} onOpenChange={() => {}}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-center">Welcome! 🎉</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 p-4">
-                        <p className="text-center text-gray-600">
-                            You've been invited to <span className="font-semibold">{mockEvent.title}</span>
-                        </p>
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium">Enter your name to continue</label>
-                            <Input
-                                placeholder="Your name"
-                                value={guestName}
-                                onChange={(e) => setGuestName(e.target.value)}
-                                onKeyPress={(e) => e.key === 'Enter' && handleNameSubmit()}
-                                className="text-center"
-                            />
-                        </div>
-                        <Button
-                            onClick={handleNameSubmit}
-                            className="w-full"
-                            disabled={!guestName.trim()}
-                        >
-                            Join Event
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog> */}
-
       {/* Main Content */}
-      {/* {hasEnteredName && ( */}
       <>
         {/* Event Header */}
         <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">{mockEvent.title}</h1>
+                <h1 className="text-2xl font-bold text-gray-900">{eventDetails?.title}</h1>
                 <p className="text-gray-600 flex items-center gap-4 mt-1 text-sm">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    Feb 15, 2024
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-4 h-4" />
-                    {mockEvent.location.name}
-                  </span>
+                  {
+                    eventDetails?.start_date &&
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-4 h-4" />
+                      {new Date(eventDetails?.start_date).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </span>
+                  }
+                  {eventDetails?.location?.name && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-4 h-4" />
+                      {eventDetails.location.name}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1">
                     <Users className="w-4 h-4" />
                     {loading ? 'Loading...' : `${photos.length} photos`}
@@ -419,7 +318,18 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 </p>
               </div>
               <div className="flex gap-3">
-                {mockEvent.permissions.can_download && (
+                {/* Upload Button */}
+                {eventDetails?.permissions?.can_upload && (
+                  <Button
+                    onClick={() => setShowUploadDialog(true)}
+                    className="bg-blue-500 hover:bg-blue-600 text-white flex items-center gap-2"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Photos
+                  </Button>
+                )}
+
+                {eventDetails?.permissions?.can_download && (
                   <Button
                     variant="outline"
                     disabled={loading || photos.length === 0}
@@ -461,15 +371,143 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
             <PinterestPhotoGrid photos={photos} onPhotoClick={handlePhotoClick} />
           )}
 
-          {/* Empty State */}
+          {/* Empty State with Upload CTA */}
           {!loading && !error && photos.length === 0 && (
             <div className="text-center py-16">
               <Camera className="w-20 h-20 mx-auto text-gray-300 mb-4" />
               <h3 className="text-xl font-medium text-gray-600 mb-2">No photos yet</h3>
-              <p className="text-gray-400">Be the first to share a memory!</p>
+              <p className="text-gray-400 mb-6">Be the first to share a memory!</p>
+              {eventDetails?.permissions?.can_upload && (
+                <Button
+                  onClick={() => setShowUploadDialog(true)}
+                  className="bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload First Photo
+                </Button>
+              )}
             </div>
           )}
         </div>
+
+        {/* Guest Upload Dialog */}
+        <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Upload className="w-5 h-5 text-blue-500" />
+                Share Your Photos
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 p-4">
+              {/* Guest info form for non-authenticated users */}
+              {!auth && (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600 mb-3">Tell us who you are (optional)</p>
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="Your name"
+                      value={guestInfo.name}
+                      onChange={(e) => setGuestInfo({ ...guestInfo, name: e.target.value })}
+                      className="text-sm"
+                    />
+                    <Input
+                      type="email"
+                      placeholder="Your email"
+                      value={guestInfo.email}
+                      onChange={(e) => setGuestInfo({ ...guestInfo, email: e.target.value })}
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* File selection */}
+              <div className="space-y-3">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="file-upload"
+                  />
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    <Camera className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">Click to select photos or videos</p>
+                    <p className="text-xs text-gray-500 mt-1">Max 10 files, 50MB each</p>
+                  </label>
+                </div>
+
+                {/* Selected files preview */}
+                {selectedFiles.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">{selectedFiles.length} file(s) selected:</p>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {selectedFiles.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded text-sm">
+                          <span className="truncate flex-1">{file.name}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFile(index)}
+                            className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Upload guidelines */}
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <div className="text-xs text-blue-700 space-y-1">
+                  <p>• Photos will be {eventDetails?.permissions?.require_approval ? 'reviewed before appearing' : 'visible immediately'}</p>
+                  <p>• Supported formats: JPG, PNG, HEIC, MP4, MOV</p>
+                  <p>• Please only upload appropriate content</p>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowUploadDialog(false);
+                    setSelectedFiles([]);
+                    setGuestInfo({ name: '', email: '' });
+                  }}
+                  className="flex-1"
+                  disabled={uploading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleUpload}
+                  disabled={selectedFiles.length === 0 || uploading}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600"
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload {selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Fullscreen Photo Viewer */}
         {photoViewerOpen && selectedPhoto && (
@@ -484,6 +522,19 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
           />
         )}
 
+        {/* Floating Upload Button */}
+        {eventDetails?.permissions?.can_upload && (
+          <div className="fixed bottom-20 right-6 z-30">
+            <Button
+              onClick={() => setShowUploadDialog(true)}
+              className="bg-blue-500 hover:bg-blue-600 text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
+              title="Upload Photos"
+            >
+              <Plus className="w-6 h-6" />
+            </Button>
+          </div>
+        )}
+
         {/* Live Updates Indicator */}
         <div className="fixed bottom-6 right-6 z-30">
           <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
@@ -492,7 +543,6 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
           </div>
         </div>
       </>
-      {/* )} */}
     </div>
   );
 }

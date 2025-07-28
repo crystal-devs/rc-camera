@@ -74,9 +74,6 @@ export const PinterestPhotoCard: React.FC<{
                     <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
                         <div className="text-white">
                             <p className="font-medium text-sm">{photo.uploaded_by}</p>
-                            <p className="text-xs opacity-80">
-                                {new Date(photo.createdAt).toLocaleTimeString()}
-                            </p>
                         </div>
 
                         <div className="flex gap-2">

@@ -274,7 +274,6 @@ export const getEventMediaWithGuestToken = async (
     eventId: string,
     authToken?: string | null,
     guestToken?: string,
-    includeAllAlbums: boolean = true,
     options: {
         page?: number;
         limit?: number;

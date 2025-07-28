@@ -89,22 +89,34 @@ export default function PhotoGallery({
   const navigateToPhoto = useCallback((direction: 'next' | 'prev') => {
     if (selectedPhotoIndex === null || photos.length <= 1) return;
 
-    let newIndex;
-    if (direction === 'next') {
-      newIndex = (selectedPhotoIndex + 1) % photos.length;
+    let newIndex: number;
+    if (direction === 'next' && selectedPhotoIndex < photos.length - 1) {
+      newIndex = selectedPhotoIndex + 1;
+    } else if (direction === 'prev' && selectedPhotoIndex > 0) {
+      newIndex = selectedPhotoIndex - 1;
     } else {
-      newIndex = (selectedPhotoIndex - 1 + photos.length) % photos.length;
+      // Don't navigate if at boundaries
+      console.log('🚫 Navigation blocked - at boundary:', {
+        direction,
+        currentIndex: selectedPhotoIndex,
+        totalPhotos: photos.length
+      });
+      return;
     }
+
+    console.log('📸 Navigation successful:', {
+      direction,
+      from: selectedPhotoIndex,
+      to: newIndex,
+      totalPhotos: photos.length,
+      fromPhotoId: photos[selectedPhotoIndex]?.id,
+      toPhotoId: photos[newIndex]?.id
+    });
 
     setSelectedPhotoIndex(newIndex);
     setSelectedPhoto(photos[newIndex]);
   }, [selectedPhotoIndex, photos]);
 
-  // Setup swipe handlers
-  const { onTouchStart, onTouchMove, onTouchEnd } = useSwipe(
-    () => navigateToPhoto('next'),
-    () => navigateToPhoto('prev')
-  );
 
   // Keyboard navigation
   useEffect(() => {
@@ -182,7 +194,7 @@ export default function PhotoGallery({
       let mediaItems;
       if (isGuestAccess && guestToken) {
         // For guest access, only show approved media
-        mediaItems = await getEventMediaWithGuestToken(eventId, guestToken, true);
+        mediaItems = await getEventMediaWithGuestToken(eventId, guestToken);
       } else if (authToken) {
         mediaItems = await getEventMedia(eventId, authToken, true, {
           status: targetStatus,
@@ -675,13 +687,27 @@ export default function PhotoGallery({
     document.body.removeChild(link);
   };
 
-  // Open photo viewer
+  // Open photo viewerconst openPhotoViewer = (photo: Photo, index: number) => {
   const openPhotoViewer = (photo: Photo, index: number) => {
+    console.log('🔍 Opening photo viewer:', {
+      photoId: photo.id,
+      index,
+      totalPhotos: photos.length
+    });
+
     setSelectedPhoto(photo);
     setSelectedPhotoIndex(index);
     setPhotoViewerOpen(true);
     setIsFullscreen(true);
   };
+  const handlePrevPhoto = useCallback(() => {
+    navigateToPhoto('prev');
+  }, [navigateToPhoto]);
+
+  const handleNextPhoto = useCallback(() => {
+    navigateToPhoto('next');
+  }, [navigateToPhoto]);
+
 
   return (
     <div>
@@ -701,8 +727,8 @@ export default function PhotoGallery({
             <button
               onClick={() => handleTabChange('approved')}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'approved'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
             >
               Published
@@ -715,8 +741,8 @@ export default function PhotoGallery({
             <button
               onClick={() => handleTabChange('pending')}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'pending'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
             >
               <ClockIcon className="h-3 w-3 mr-1 inline" />
@@ -730,8 +756,8 @@ export default function PhotoGallery({
             <button
               onClick={() => handleTabChange('rejected')}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'rejected'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
             >
               Rejected
@@ -744,8 +770,8 @@ export default function PhotoGallery({
             <button
               onClick={() => handleTabChange('hidden')}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'hidden'
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
             >
               Hidden
@@ -847,17 +873,19 @@ export default function PhotoGallery({
                 setIsFullscreen(false);
                 setPhotoViewerOpen(false);
               }}
-              onPrev={() => navigateToPhoto('prev')}
-              onNext={() => navigateToPhoto('next')}
+              onPrev={handlePrevPhoto}  // ✅ Use dedicated handlers
+              onNext={handleNextPhoto}  // ✅ Use dedicated handlers
               setPhotoInfoOpen={setPhotoInfoOpen}
               deletePhoto={deletePhoto}
               downloadPhoto={downloadPhoto}
-              // Add moderation actions to photo viewer
-              // approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
-              // rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
-              // hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
+            // Add moderation actions to photo viewer
+            // approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
+            // rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
+            // hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
             />
           )}
+
+
 
           {selectedPhoto && (
             <PhotoInfoDialog
