@@ -6,7 +6,7 @@ import { TransformedPhoto } from "@/app/guest/[eventId]/page";
 
 export const FullscreenPhotoViewer: React.FC<{
   selectedPhoto: TransformedPhoto;
-  selectedPhotoIndex: number;
+  selectedPhotoIndex: number | null;
   photos: TransformedPhoto[];
   onClose: () => void;
   onPrev: () => void;

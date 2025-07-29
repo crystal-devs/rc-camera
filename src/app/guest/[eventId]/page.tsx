@@ -322,7 +322,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 {eventDetails?.permissions?.can_upload && (
                   <Button
                     onClick={() => setShowUploadDialog(true)}
-                    className="bg-blue-500 hover:bg-blue-600 text-white flex items-center gap-2"
+                    className="text-white flex items-center gap-2"
                   >
                     <Upload className="w-4 h-4" />
                     Upload Photos
@@ -490,7 +490,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 <Button
                   onClick={handleUpload}
                   disabled={selectedFiles.length === 0 || uploading}
-                  className="flex-1 bg-blue-500 hover:bg-blue-600"
+                  className="flex-1"
                 >
                   {uploading ? (
                     <>
@@ -527,21 +527,13 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
           <div className="fixed bottom-20 right-6 z-30">
             <Button
               onClick={() => setShowUploadDialog(true)}
-              className="bg-blue-500 hover:bg-blue-600 text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
+              className=" text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
               title="Upload Photos"
             >
               <Plus className="w-6 h-6" />
             </Button>
           </div>
         )}
-
-        {/* Live Updates Indicator */}
-        <div className="fixed bottom-6 right-6 z-30">
-          <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
-            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-            Live Updates
-          </div>
-        </div>
       </>
     </div>
   );

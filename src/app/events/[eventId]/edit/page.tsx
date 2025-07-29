@@ -15,9 +15,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,8 +27,11 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { deleteEvent, getEventById, updateEvent } from '@/services/apis/events.api';
+import { uploadCoverImage } from '@/services/apis/media.api';
+import { format, isBefore } from 'date-fns';
 import {
   ArrowLeft,
+  CalendarIcon,
   Camera,
   Check,
   Copy,
@@ -130,7 +135,7 @@ const EventSettingsPage = () => {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState('');
-   const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [currentUserId, setCurrentUserId] = useState<string>('');
   const [eventCreatorId, setEventCreatorId] = useState<string>('');
 
   useEffect(() => {
@@ -269,6 +274,25 @@ const EventSettingsPage = () => {
     });
   };
 
+  const handleDateChange = (field: "start_date" | "end_date", date: Date | undefined) => {
+    if (!date) return;
+
+    const isoDate = date.toISOString();
+
+    if (field === "start_date") {
+      handleInputChange("start_date", isoDate);
+
+      // If end date is not set or now before new start date, update it to match
+      if (!formData.end_date || isBefore(new Date(formData.end_date), date)) {
+        handleInputChange("end_date", isoDate);
+      }
+    }
+
+    if (field === "end_date") {
+      handleInputChange("end_date", isoDate);
+    }
+  };
+  // Enhanced cover image change handler with better validation
   const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) {
       setCoverImageFile(null);
@@ -276,11 +300,34 @@ const EventSettingsPage = () => {
     }
 
     const selectedFile = e.target.files[0];
+
+    // Validate file size (max 10MB to be safe with your API)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (selectedFile.size > maxSize) {
+      toast.error("Image size should be less than 10MB");
+      e.target.value = ''; // Clear the input
+      return;
+    }
+
+    // Validate file type - matching your API's supported formats
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(selectedFile.type)) {
+      toast.error("Please select a valid image file (JPEG, PNG, WebP)");
+      e.target.value = ''; // Clear the input
+      return;
+    }
+
     setCoverImageFile(selectedFile);
+
+    // Create preview URL for immediate feedback
+    if (previewUrl && previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(previewUrl); // Clean up previous blob URL
+    }
 
     const objectUrl = URL.createObjectURL(selectedFile);
     setPreviewUrl(objectUrl);
   };
+
 
   const copyToClipboard = async (text: string, type: string) => {
     try {
@@ -314,23 +361,67 @@ const EventSettingsPage = () => {
     setIsSubmitting(true);
 
     try {
+      let updatedFormData = { ...formData };
+
+      // Upload cover image if a new file was selected
+      if (coverImageFile && authToken) {
+        toast.info("Uploading cover image...");
+        try {
+          const imageUrl = await uploadCoverImage(
+            coverImageFile,
+            'event-covers', // folder name
+            authToken,
+            {
+              compressionQuality: 'high',
+              maxWidth: 1920,
+              maxHeight: 1080
+            }
+          );
+
+          updatedFormData.cover_image = {
+            url: imageUrl,
+            public_id: '', // Your API might not return public_id, adjust as needed
+          };
+
+          toast.success("Cover image uploaded successfully!");
+        } catch (uploadError: any) {
+          console.error('Cover image upload failed:', uploadError);
+          toast.error(uploadError.message || "Failed to upload cover image");
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      // Prepare data for event update
       const submitData = {
-        ...formData,
-        start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
-        end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
+        ...updatedFormData,
+        start_date: updatedFormData.start_date ? new Date(updatedFormData.start_date).toISOString() : null,
+        end_date: updatedFormData.end_date ? new Date(updatedFormData.end_date).toISOString() : null,
       };
 
+      // Update the event
       await updateEvent(eventId as string, submitData, authToken!);
       toast.success("Event updated successfully!");
-      setOriginalData(formData);
+
+      // Update states after successful submission
+      setFormData(updatedFormData);
+      setOriginalData(updatedFormData);
+      setCoverImageFile(null); // Clear the selected file
       setHasChanges(false);
-    } catch (error) {
+
+      // Update preview URL to use the uploaded image
+      if (updatedFormData.cover_image.url) {
+        setPreviewUrl(updatedFormData.cover_image.url);
+      }
+
+    } catch (error: any) {
       console.error('Error updating event:', error);
-      toast.error("Failed to update event");
+      toast.error(error.message || "Failed to update event");
     } finally {
       setIsSubmitting(false);
     }
   };
+
 
   const handleDeleteEvent = async () => {
     if (!authToken) return;
@@ -375,7 +466,7 @@ const EventSettingsPage = () => {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">
+              <h1 className="text-2xl font-semibold ">
                 Event Settings
               </h1>
               <p className="text-gray-500 text-sm">{formData.title || 'Configure your event'}</p>
@@ -423,7 +514,7 @@ const EventSettingsPage = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-6 h-11 bg-gray-100/80 border-0">
+          <TabsList className="grid w-full grid-cols-4 mb-6 h-11 border-0">
             <TabsTrigger
               value="basics"
               className="flex items-center gap-2 text-sm font-medium data-[state=active]:bg-white data-[state=active]:shadow-sm"
@@ -458,12 +549,12 @@ const EventSettingsPage = () => {
           <TabsContent value="basics" className="space-y-4">
             <Card className="border-0 shadow-sm">
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-medium text-gray-900">Basic Information</CardTitle>
+                <CardTitle className="text-lg font-medium ">Basic Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="title" className="text-sm font-medium text-gray-700">Event name *</Label>
+                    <Label htmlFor="title" className="text-sm text-muted-foreground font-medium">Event name *</Label>
                     <Input
                       id="title"
                       value={formData.title}
@@ -474,9 +565,9 @@ const EventSettingsPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="template" className="text-sm font-medium text-gray-700">Event type</Label>
+                    <Label htmlFor="template" className="text-sm font-medium text-muted-foreground">Event type</Label>
                     <Select value={formData.template} onValueChange={(value) => handleInputChange('template', value)}>
-                      <SelectTrigger className="h-10">
+                      <SelectTrigger className="w-full h-[40px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -491,7 +582,7 @@ const EventSettingsPage = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="description" className="text-sm font-medium text-gray-700">Description</Label>
+                  <Label htmlFor="description" className="text-sm font-medium text-muted-foreground">Description</Label>
                   <Textarea
                     id="description"
                     value={formData.description}
@@ -505,7 +596,7 @@ const EventSettingsPage = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="location_name" className="text-sm font-medium text-gray-700">Venue</Label>
+                    <Label htmlFor="location_name" className="text-sm font-medium text-muted-foreground">Venue</Label>
                     <Input
                       id="location_name"
                       value={formData.location.name}
@@ -515,7 +606,7 @@ const EventSettingsPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="location_address" className="text-sm font-medium text-gray-700">Address</Label>
+                    <Label htmlFor="location_address" className="text-sm font-medium text-muted-foreground">Address</Label>
                     <Input
                       id="location_address"
                       value={formData.location.address}
@@ -527,34 +618,77 @@ const EventSettingsPage = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Start Date Picker */}
                   <div className="space-y-2">
-                    <Label htmlFor="start_date" className="text-sm font-medium text-gray-700">Start date & time</Label>
-                    <Input
-                      id="start_date"
-                      type="datetime-local"
-                      value={formData.start_date}
-                      onChange={(e) => handleInputChange('start_date', e.target.value)}
-                      className="h-10"
-                    />
+                    <Label className="text-sm font-medium text-muted-foreground">Start date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {formData.start_date ? (
+                            format(new Date(formData.start_date), "PPP")
+                          ) : (
+                            <span>Select start date</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={formData.start_date ? new Date(formData.start_date) : undefined}
+                          onSelect={(date) => handleDateChange("start_date", date || undefined)}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
+
+                  {/* End Date Picker */}
                   <div className="space-y-2">
-                    <Label htmlFor="end_date" className="text-sm font-medium text-gray-700">End date & time</Label>
-                    <Input
-                      id="end_date"
-                      type="datetime-local"
-                      value={formData.end_date}
-                      onChange={(e) => handleInputChange('end_date', e.target.value)}
-                      className="h-10"
-                    />
+                    <Label className="text-sm font-medium text-muted-foreground">End date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {formData.end_date ? (
+                            format(new Date(formData.end_date), "PPP")
+                          ) : (
+                            <span>Select end date</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={formData.end_date ? new Date(formData.end_date) : undefined}
+                          onSelect={(date) => handleDateChange("end_date", date || undefined)}
+                          // ✅ Disable dates before start date
+                          disabled={(date) =>
+                            formData.start_date
+                              ? isBefore(date, new Date(formData.start_date))
+                              : false
+                          }
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
+
+
               </CardContent>
             </Card>
 
             {/* Cover Photo Card */}
-            <Card className="border-0 shadow-sm bg-white">
+            <Card className="border-0 shadow-sm ">
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-medium text-gray-900">Cover Photo</CardTitle>
+                <CardTitle className="text-lg font-medium ">Cover Photo</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -662,7 +796,7 @@ const EventSettingsPage = () => {
                 <CardContent className="space-y-6">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium text-gray-700">Event link</Label>
+                      <Label className="text-sm font-medium text-muted-foreground">Event link</Label>
                       <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">
                         {formData.visibility === 'anyone_with_link' ? 'Public Link' : 'Invite Only'}
                       </Badge>
@@ -692,7 +826,7 @@ const EventSettingsPage = () => {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium text-gray-700">Co-host invitation</Label>
+                      <Label className="text-sm font-medium text-muted-foreground">Co-host invitation</Label>
                       <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs">Team Access</Badge>
                     </div>
                     <div className="flex gap-2">
@@ -725,12 +859,12 @@ const EventSettingsPage = () => {
             {formData.visibility !== 'private' && (
               <Card className="border-0 shadow-sm">
                 <CardHeader className="pb-4">
-                  <CardTitle className="text-lg font-medium text-gray-900">Additional Security</CardTitle>
+                  <CardTitle className="text-lg font-medium ">Additional Security</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label className="text-sm font-medium text-gray-700">Password protect this event</Label>
+                      <Label className="text-sm font-medium text-muted-foreground">Password protect this event</Label>
                       <p className="text-xs text-gray-500">Add an extra layer of security</p>
                     </div>
                     <Switch
@@ -747,7 +881,7 @@ const EventSettingsPage = () => {
 
                   {formData.share_settings?.password && (
                     <div className="space-y-2">
-                      <Label htmlFor="password" className="text-sm font-medium text-gray-700">Event password</Label>
+                      <Label htmlFor="password" className="text-sm font-medium text-muted-foreground">Event password</Label>
                       <Input
                         id="password"
                         type="text"
@@ -801,7 +935,7 @@ const EventSettingsPage = () => {
                 </div>
 
                 <div>
-                  <Label className="text-base font-medium text-gray-900 mb-4 block">
+                  <Label className="text-base font-medium  mb-4 block">
                     What can guests do?
                   </Label>
                   <div className="grid grid-cols-1 gap-3">
@@ -839,7 +973,7 @@ const EventSettingsPage = () => {
                 </div>
 
                 <div>
-                  <Label className="text-base font-medium text-gray-900 mb-4 block">
+                  <Label className="text-base font-medium  mb-4 block">
                     What can guests upload?
                   </Label>
                   <div className="grid grid-cols-2 gap-3">
@@ -868,13 +1002,13 @@ const EventSettingsPage = () => {
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-sm bg-white">
+            {/* <Card className="border-0 shadow-sm">
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-medium text-gray-900">Guest Information</CardTitle>
+                <CardTitle className="text-lg font-medium ">Guest Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label className="text-base font-medium text-gray-900 mb-4 block">
+                  <Label className="text-base font-medium  mb-4 block">
                     Should guests provide their name when uploading?
                   </Label>
                   <RadioGroup
@@ -904,7 +1038,7 @@ const EventSettingsPage = () => {
                   </RadioGroup>
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
           </TabsContent>
 
           {/* Team Tab */}

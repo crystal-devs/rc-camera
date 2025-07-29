@@ -179,7 +179,7 @@ export default function PhotoGallery({
       const lastFetch = lastFetchTime.current.get(cacheKey) || 0;
       const now = Date.now();
       const cacheAge = now - lastFetch;
-      const CACHE_DURATION = 30000; // 30 seconds
+      const CACHE_DURATION = 60000; // 30 seconds
 
       // Use cache if not forcing refresh and cache is fresh
       if (!forceRefresh && !cursor && cacheAge < CACHE_DURATION && imageCache.current.has(cacheKey)) {
@@ -712,17 +712,9 @@ export default function PhotoGallery({
   return (
     <div>
       {/* Header with status tabs and controls */}
-      <div className="flex items-center justify-between mb-6 px-4">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          {isRealtime && (
-            <div className="flex items-center bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-xs px-2 py-1 rounded-full">
-              <span className="h-2 w-2 bg-green-500 rounded-full mr-1.5"></span>
-              Live
-            </div>
-          )}
-
           {/* Status tabs for moderators */}
-          {/* {userPermissions.moderate && !guestToken && ( */}
           <div className="flex items-center gap-1 bg-gray-100 dark:bg-accent p-1 rounded-lg">
             <button
               onClick={() => handleTabChange('approved')}
@@ -782,7 +774,6 @@ export default function PhotoGallery({
               )}
             </button>
           </div>
-          {/* )} */}
         </div>
 
         {canUserUpload && (defaultAlbumId || albumId !== undefined || albumId === null) && (

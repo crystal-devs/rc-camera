@@ -149,21 +149,6 @@ export default function EventsPage() {
           />
         </div>
 
-        <Select
-          value={filterType}
-          onValueChange={(value: 'all' | 'active' | 'past') => setFilterType(value)}
-        >
-          <SelectTrigger className="w-10 sm:w-24 h-9 px-2 hide-chevron-mobile">
-            <Filter className="h-4 w-4" />
-            <SelectValue className="hidden sm:block" placeholder="Filter" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Events</SelectItem>
-            <SelectItem value="active">Active Events</SelectItem>
-            <SelectItem value="past">Past Events</SelectItem>
-          </SelectContent>
-        </Select>
-
         {/* Sort Dropdown - Fixed compact width with hidden arrow on mobile */}
         <Select
           value={sortOrder}
@@ -273,14 +258,13 @@ export default function EventsPage() {
               >
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
-                  {event?.cover_image?.thumbnail_url ? (
-                    // <Image
-                    //   src={event?.cover_image?.thumbnail_url}
-                    //   alt={'title'}
-                    //   fill
-                    //   className="object-cover"
-                    // />
-                    <></>
+                  {event?.cover_image?.url ? (
+                    <Image
+                      src={event?.cover_image?.url}
+                      alt={'title'}
+                      fill
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">
                       {event.template === 'wedding' && <span className="text-4xl">💍</span>}
@@ -298,10 +282,6 @@ export default function EventsPage() {
 
                 {/* Top Actions Row */}
                 <div className="absolute top-2 flex justify-between w-full px-2 z-10">
-                  {/* Heart/Favorite Button */}
-                  {/* <button className="h-8 w-8 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:bg-white/50 text-white transition-colors">
-                    <HeartIcon className="h-4 w-4" />
-                  </button> */}
 
                   {/* Photo Count */}
                   <div className="flex items-center gap-1 bg-black/30 backdrop-blur-sm rounded-full py-1 px-2 text-white text-xs">
@@ -335,21 +315,14 @@ export default function EventsPage() {
                   </DropdownMenu>
                 </div>
 
-                {/* Past Event Indicator */}
-                {/* {!event.isActive && (
-                  <div className="absolute top-2 left-2 bg-gray-900/70 text-white text-xs py-1 px-2 rounded-full">
-                    Past Event
-                  </div>
-                )} */}
-
                 {/* Bottom Text Content */}
                 <div className="absolute bottom-0 left-0 right-0 p-3 text-white z-10">
                   <h3 className="font-medium text-lg line-clamp-1">{event.title}</h3>
                   <div className="flex items-center text-sm">
                     <CalendarIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                    {/* {format(new Date(event.date), 'MMM d, yyyy')} */}
+                    {format(new Date(event.start_date), 'MMM d, yyyy')}
                   </div>
-                  {event.location && (
+                  {/* {event.location && (
                     <div className="flex items-center text-sm">
                       <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                       <span className="truncate">
@@ -358,7 +331,7 @@ export default function EventsPage() {
                           : event.location}
                       </span>
                     </div>
-                  )}
+                  )} */}
                 </div>
               </div>
             ))}
@@ -373,9 +346,9 @@ export default function EventsPage() {
                 onClick={() => navigateToEvent(event._id)}
               >
                 <div className="relative h-24 w-24 sm:h-32 sm:w-32 flex-shrink-0">
-                  {event?.cover_image?.thumbnail_url ? (
+                  {event?.cover_image?.url ? (
                     <Image
-                      src={event?.cover_image?.thumbnail_url}
+                      src={event?.cover_image?.url}
                       alt={event.title}
                       fill
                       className="object-cover"

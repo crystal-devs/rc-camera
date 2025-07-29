@@ -268,13 +268,18 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         {/* Image */}
         <div className="w-full h-full flex items-center justify-center p-4">
           <img
-            src={optimizedImageUrl}
+            src={selectedPhoto.imageUrl}
             alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
-            className="max-w-full max-h-full object-contain transition-opacity duration-300"
+            className="max-w-full max-h-full object-contain"
+            style={{
+              width: 'auto',
+              height: 'auto',
+              maxWidth: '100%',
+              maxHeight: '100%'
+            }}
             onLoad={() => setImageLoading(false)}
             onError={() => setImageLoading(false)}
             onClick={(e) => e.stopPropagation()}
-            style={{ imageRendering: 'crisp-edges' }}
           />
         </div>
       </div>
