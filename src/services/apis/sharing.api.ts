@@ -266,59 +266,98 @@ export const removeParticipant = async (
 
 // ============= PUBLIC TOKEN ACCESS =============
 
-export const getTokenInfo = async (token: string): Promise<{
-  invitation_link: string;
-  token: any;
-}> => {
+// services/apis/sharing.api.ts
+
+export const getTokenInfo = async (token: string, authToken?: string | null) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/token/${token}`);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add auth token if available (for authenticated users)
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    console.log('🔍 Making request with headers:', {
+      hasAuth: authToken,
+      token: token.substring(0, 8) + '...'
+    });
+
+    const response = await axios.get(
+      `${API_BASE_URL}/token/${token}`, // Updated endpoint
+      { headers }
+    );
 
     if (response.data?.status) {
-      return response.data.data;
+      return response.data;
     } else {
       throw new Error(response.data?.message || 'Invalid token');
     }
   } catch (error) {
-    console.error('Error getting token info:', error);
+    console.error('Error fetching token info:', error);
+
+    if (axios.isAxiosError(error)) {
+      // Pass through the specific error response
+      if (error.response) {
+        const errorData = {
+          status: error.response.status,
+          message: error.response.data?.message || 'Failed to fetch token info',
+          code: error.response.data?.code || error.response.status,
+          data: error.response.data
+        };
+        throw errorData;
+      }
+    }
+
     throw error;
   }
 };
 
-export const joinEventViaToken = async (
+// Legacy support if needed
+export const getTokenInfoWithPassword = async (
   token: string,
-  guestInfo: {
-    name: string;
-    email: string;
-    avatarUrl?: string;
-  },
-  userId?: string
-): Promise<{
-  participant: Participant;
-  eventId: string;
-  requiresApproval: boolean;
-  redirectUrl: string;
-}> => {
+  authToken?: string | null,
+  password?: string
+) => {
   try {
-    const response = await axios.post(
-      `${API_BASE_URL}/share/join/${token}`,
-      {
-        guest_info: {
-          name: guestInfo.name,
-          email: guestInfo.email,
-          avatar_url: guestInfo.avatarUrl || '',
-          is_anonymous: !userId
-        },
-        user_id: userId
-      }
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    if (password) {
+      headers['X-Event-Password'] = password;
+    }
+
+    const response = await axios.get(
+      `${API_BASE_URL}/token/${token}`,
+      { headers }
     );
 
     if (response.data?.status) {
-      return response.data.data;
+      return response.data;
     } else {
-      throw new Error(response.data?.message || 'Failed to join event');
+      throw new Error(response.data?.message || 'Invalid token');
     }
   } catch (error) {
-    console.error('Error joining event via token:', error);
+    console.error('Error fetching token info with password:', error);
+
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorData = {
+          status: error.response.status,
+          message: error.response.data?.message || 'Failed to fetch token info',
+          code: error.response.data?.code || error.response.status,
+          data: error.response.data
+        };
+        throw errorData;
+      }
+    }
+
     throw error;
   }
 };

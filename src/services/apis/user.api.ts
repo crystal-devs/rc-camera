@@ -77,7 +77,7 @@ export const updateUserPreferences = async (preferences: {
  */
 export const fetchSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
   let lastError;
-  
+
   // Try each possible URL in order until one works
   for (const url of SUBSCRIPTION_PLANS_URLS) {
     try {
@@ -91,7 +91,7 @@ export const fetchSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
       // Continue to next URL
     }
   }
-  
+
   // If we get here, all URLs failed
   console.error('Error fetching subscription plans from all endpoints:', lastError);
   throw lastError;
@@ -100,12 +100,26 @@ export const fetchSubscriptionPlans = async (): Promise<SubscriptionPlan[]> => {
 /**
  * Upgrade the user's subscription plan
  */
-export const upgradeSubscription = async (planId: string): Promise<{success: boolean; message: string; redirectUrl?: string}> => {
+export const upgradeSubscription = async (planId: string): Promise<{ success: boolean; message: string; redirectUrl?: string }> => {
   try {
     const { data } = await axios.post(SUBSCRIPTION_UPGRADE_URL, { planId });
     return data;
   } catch (error) {
     console.error('Error upgrading subscription:', error);
+    throw error;
+  }
+};
+
+export const fetchUserStatistics = async (token) => {
+  try {
+    const { data } = await axios.get(`${API_BASE_URL}/user/statistics`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return data;
+  } catch (error) {
+    console.error('Error fetching user statistics:', error);
     throw error;
   }
 };
