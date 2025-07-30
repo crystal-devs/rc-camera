@@ -407,7 +407,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                     canUpload={true}
                 />
                 {/* Tabs Section */}
-                {/* <Tabs
+                <Tabs
                     value={activeTab}
                     onValueChange={(value) => {
                         setActiveTab(value);
@@ -437,7 +437,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                             onRefresh={refreshAlbums}
                         />
                     </TabsContent>
-                </Tabs> */}
+                </Tabs>
             </div>
         </div>
     );

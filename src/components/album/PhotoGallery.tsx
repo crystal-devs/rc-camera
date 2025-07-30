@@ -18,8 +18,6 @@ import {
   getEventMedia,
   transformMediaToPhoto,
   deleteMedia,
-  getEventMediaWithGuestToken,
-  getAlbumMediaWithGuestToken,
   getEventMediaCounts,
   updateMediaStatus
 } from '@/services/apis/media.api';
@@ -35,7 +33,6 @@ export default function PhotoGallery({
   eventId,
   albumId,
   canUpload = true,
-  guestToken,
   userPermissions = {
     upload: true,
     download: false,
@@ -146,7 +143,7 @@ export default function PhotoGallery({
   // Fetch media counts
   const fetchMediaCounts = useCallback(async () => {
     const authToken = token || localStorage.getItem('authToken');
-    if (!authToken || guestToken) return; // Skip for guest access
+    if (!authToken) return; // Skip for guest access
 
     try {
       const counts = 0
@@ -157,7 +154,7 @@ export default function PhotoGallery({
     } catch (error) {
       console.error('Error fetching media counts:', error);
     }
-  }, [token, eventId, guestToken]);
+  }, [token, eventId]);
 
   // Fetch photos with status filtering
   const fetchPhotosFromAPI = useCallback(async (
@@ -166,9 +163,8 @@ export default function PhotoGallery({
     forceRefresh = false
   ) => {
     const authToken = token || localStorage.getItem('authToken');
-    const isGuestAccess = Boolean(guestToken);
 
-    if (!authToken && !isGuestAccess) {
+    if (!authToken) {
       console.error('No auth token or guest token available');
       return false;
     }
@@ -192,11 +188,9 @@ export default function PhotoGallery({
       console.log('Fetching photos from API with status:', targetStatus);
 
       let mediaItems;
-      if (isGuestAccess && guestToken) {
-        // For guest access, only show approved media
-        mediaItems = await getEventMediaWithGuestToken(eventId, guestToken);
-      } else if (authToken) {
-        mediaItems = await getEventMedia(eventId, authToken, true, {
+      if (authToken) {
+        mediaItems = await getEventMedia(eventId, authToken, {
+          albumId: albumId as string,
           status: targetStatus,
           scrollType: 'infinite',
           cursor: cursor,
@@ -227,7 +221,7 @@ export default function PhotoGallery({
       console.error('Error fetching photos from API:', error);
       return false;
     }
-  }, [token, eventId, guestToken, getCacheKey, activeTab]);
+  }, [token, eventId, getCacheKey, activeTab]);
 
   // Tab change handler
   const handleTabChange = useCallback(async (newTab: 'approved' | 'pending' | 'rejected' | 'hidden') => {
@@ -389,7 +383,7 @@ export default function PhotoGallery({
 
       try {
         // Fetch counts first (for moderators)
-        if (userPermissions.moderate && !guestToken) {
+        if (userPermissions.moderate) {
           await fetchMediaCounts();
         }
 
@@ -438,7 +432,7 @@ export default function PhotoGallery({
         clearInterval(realtimeInterval.current);
       }
     };
-  }, [eventId, activeTab, fetchPhotosFromAPI, fetchMediaCounts, isRealtime, userPermissions.moderate, guestToken]);
+  }, [eventId, activeTab, fetchPhotosFromAPI, fetchMediaCounts, isRealtime, userPermissions.moderate]);
 
   // File upload handler
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

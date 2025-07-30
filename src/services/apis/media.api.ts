@@ -37,8 +37,8 @@ export interface MediaItem {
 export const getEventMedia = async (
     eventId: string,
     authToken: string,
-    includeAllAlbums: boolean = true,
     options: {
+        albumId?: string,
         includeProcessing?: boolean;
         includePending?: boolean;
         page?: number;
@@ -52,8 +52,9 @@ export const getEventMedia = async (
     } = {}
 ): Promise<MediaItem[]> => {
     try {
-        const cacheKey = `event_${eventId}_${options.status || 'all'}`;
-
+        const cacheKey = options.albumId
+            ? `album_${options.albumId}_${options.status || 'all'}`
+            : `event_${eventId}_${options.status || 'all'}`;
         // Log to verify function call
         console.log(`Fetching event media for eventId: ${eventId}, status: ${options.status}, options:`, options);
 
@@ -66,7 +67,10 @@ export const getEventMedia = async (
             }
         }
 
-        const endpoint = `${API_BASE_URL}/media/event/${eventId}`;
+        const endpoint = options.albumId
+            ? `${API_BASE_URL}/media/album/${options.albumId}`
+            : `${API_BASE_URL}/media/event/${eventId}`;
+
         const params = new URLSearchParams();
 
         // Legacy parameters (for backward compatibility)

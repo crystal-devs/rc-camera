@@ -1,9 +1,6 @@
 // types/event.ts
 import { EventAccessLevel } from './sharing';
 
-// Event template options
-export type EventTemplate = 'wedding' | 'birthday' | 'concert' | 'corporate' | 'vacation' | 'custom';
-
 export interface EventAccess {
   level: EventAccessLevel;
   allowGuestUploads: boolean;
@@ -103,4 +100,48 @@ export interface ApiEvent {
       content_moderation: string;
     };
   };
+}
+
+export interface EventFormData {
+  title: string;
+  description: string;
+  start_date: string;
+  end_date: string;
+  location: {
+    name: string;
+    address: string;
+  };
+  template: string;
+  cover_image: {
+    url: string;
+    public_id: string;
+  };
+  visibility: string;
+  permissions: {
+    can_view: boolean;
+    can_upload: boolean;
+    can_download: boolean;
+    allowed_media_types: {
+      images: boolean;
+      videos: boolean;
+    };
+    require_approval: boolean;
+  };
+  share_settings: {
+    is_active: boolean;
+    password: string | null;
+    expires_at: string | null;
+  };
+  share_token: string;
+  co_host_invite_token: {
+    token: string;
+    expires_at: string;
+    is_active: boolean;
+  };
+}
+
+export interface EventTemplate {
+  value: string;
+  label: string;
+  desc: string;
 }
