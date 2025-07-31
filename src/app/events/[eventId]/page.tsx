@@ -45,6 +45,8 @@ import { getEventById } from '@/services/apis/events.api';
 import {
     getTokenInfo
 } from '@/services/apis/sharing.api';
+import EventCoverSection from '@/components/event/EventCoverSection';
+import { format } from 'date-fns';
 
 
 
@@ -334,31 +336,18 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
             <EventHeaderDetails event={event} />
 
             {/* Cover Image Section */}
-            {/* <EventCoverSection event={event} /> */}
+            <EventCoverSection event={event} />
 
             <div className="mx-auto px-2 py-4 sm:px-2 sm:py-2">
                 {/* Event Info Section */}
-                {/* <SharedWelcomeBanner
-                    event={event}
-                    status={status}
-                    isReturning={isReturning}
-                    onDismiss={() => {
-                        const newUrl = window.location.pathname + window.location.search.replace('&welcome=true', '').replace('welcome=true&', '').replace('welcome=true', '');
-                        window.history.replaceState({}, '', newUrl);
-                    }}
-                /> */}
                 <div className="flex flex-wrap gap-3 mb-4 sm:mb-6">
-                    <div className="flex items-center text-sm text-gray-600">
+                    <div className="flex items-center text-sm ">
                         <CalendarIcon className="h-4 w-4 mr-1.5" />
-                        {new Date(event.date).toLocaleDateString()}
+                         {format(new Date(event.start_date), 'MMM d, yyyy')}
                     </div>
 
-                    <div className="flex items-center text-sm text-gray-600">
-                        <UsersIcon className="h-4 w-4 mr-1.5" />
-                        {event.stats?.participants?.total || 0} participants
-                    </div>
 
-                    {event.location && (
+                    {event.location.address && (
                         <div className="flex items-center text-sm text-gray-600">
                             <MapPinIcon className="h-4 w-4 mr-1.5" />
                             {typeof event.location === 'object' && event.location !== null
@@ -373,8 +362,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
-                    {/* QR Code Dialog */}
+                {/* <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
                     <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
                         <DialogTrigger asChild>
                             <Button variant="outline" size="sm">
@@ -410,17 +398,16 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
+                </div> */}
 
-                    {/* Quick Share Button */}
-                    <Button variant="outline" size="sm" onClick={quickShare}>
-                        <ShareIcon className="h-4 w-4 sm:mr-2" />
-                        <span className="hidden sm:inline">Quick Share</span>
-                    </Button>
-
-                </div>
-
+                
+                <PhotoGallery
+                    eventId={eventId}
+                    albumId={null}
+                    canUpload={true}
+                />
                 {/* Tabs Section */}
-                <Tabs
+                {/* <Tabs
                     value={activeTab}
                     onValueChange={(value) => {
                         setActiveTab(value);
@@ -439,11 +426,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                     </TabsList>
 
                     <TabsContent value="photos">
-                        <PhotoGallery
-                            eventId={eventId}
-                            albumId={null}
-                            canUpload={true}
-                        />
+
                     </TabsContent>
 
                     <TabsContent value="albums">
@@ -454,7 +437,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                             onRefresh={refreshAlbums}
                         />
                     </TabsContent>
-                </Tabs>
+                </Tabs> */}
             </div>
         </div>
     );

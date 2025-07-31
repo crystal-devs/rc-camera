@@ -3,10 +3,11 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useStore } from '@/lib/store';
+import { getAuthToken, useStore } from '@/lib/store';
+import { fetchUserStatistics } from '@/services/apis/user.api';
 import { Bell, Calendar, Download, HardDrive, Image, LogIn, LogOut, Settings, Share, Shield, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 export default function ProfilePage() {
@@ -14,16 +15,43 @@ export default function ProfilePage() {
   const isAuthenticated = useStore(state => state.isAuthenticated);
   const userData = useStore(state => state.userData);
   const hydrated = useStore(state => state.hydrated);
-  
+  const [userStat, setUserStat] = useState({
+    totalEvents: 0,
+    totalPhotos: 0,
+    totalVideos: 0,
+    totalHostedEvents: 0,
+    totalAttendingEvents: 0
+  });
+
   const guestUser = {
     name: 'Guest',
     email: 'Not logged in',
     avatar: undefined
   };
-  
+
   // Use real user data if authenticated, otherwise use guest
   // Only consider authentication status after hydration
   const user = (hydrated && isAuthenticated && userData) ? userData : guestUser;
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const token = getAuthToken();
+      if (!token) {
+        console.error('No auth token available');
+        return;
+      }
+
+      try {
+        const response = await fetchUserStatistics(token);
+        console.log(response, 'User statistics fetched');
+        setUserStat(response.data)
+      } catch (error) {
+        console.error('Failed to fetch user statistics:', error);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl mb-16">
@@ -41,7 +69,7 @@ export default function ProfilePage() {
                   <h1 className="text-2xl font-semibold text-rose-500 ">{user.name}</h1>
                   <p className="text-muted-foreground">{user.email}</p>
                 </div>
-                
+
                 {!isAuthenticated && hydrated && (
                   <Button
                     onClick={() => {
@@ -55,12 +83,12 @@ export default function ProfilePage() {
                   </Button>
                 )}
               </div>
-              
+
               {hydrated && isAuthenticated ? (
                 <div className="flex justify-center sm:justify-start gap-6 mt-4">
-                  <StatItem label="Events" value="15" />
-                  <StatItem label="Photos" value="342" />
-                  <StatItem label="Tagged" value="128" />
+                  <StatItem label="Events" value={userStat?.totalEvents} />
+                  <StatItem label="Photos" value={userStat.totalPhotos} />
+                  <StatItem label="Video" value={userStat.totalVideos} />
                 </div>
               ) : (
                 <div className="mt-4 p-3 bg-muted rounded-md text-sm">
@@ -81,62 +109,41 @@ export default function ProfilePage() {
               <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" className="justify-start" onClick={() => router.push('/events?filter=hosting')}>
                   <span className="mr-auto">Hosting</span>
-                  <span className="bg-muted text-muted-foreground text-xs rounded-full px-2 py-0.5">3</span>
+                  <span className="bg-muted text-muted-foreground text-xs rounded-full px-2 py-0.5">{userStat.totalHostedEvents}</span>
                 </Button>
                 <Button variant="outline" className="justify-start" onClick={() => router.push('/events?filter=attending')}>
                   <span className="mr-auto">Attending</span>
-                  <span className="bg-muted text-muted-foreground text-xs rounded-full px-2 py-0.5">12</span>
+                  <span className="bg-muted text-muted-foreground text-xs rounded-full px-2 py-0.5">{userStat.totalAttendingEvents}</span>
                 </Button>
-              </div>
-            </SectionCard>
-
-            {/* Photo Management */}
-            <SectionCard title="My Photos" icon={<Image className="h-5 w-5" />}>
-              <div className="space-y-2">
-                <ActionItem 
-                  label="Photos I've uploaded" 
-                  count={342}
-                  onClick={() => router.push('/gallery?filter=uploaded')}
-                />
-                <ActionItem 
-                  label="Photos I'm tagged in" 
-                  count={128}
-                  onClick={() => router.push('/gallery?filter=tagged')}
-                />
-                <ActionItem 
-                  label="Favorite photos" 
-                  count={45}
-                  onClick={() => router.push('/gallery?filter=favorites')}
-                />
               </div>
             </SectionCard>
 
             {/* Settings */}
             <SectionCard title="Settings" icon={<Settings className="h-5 w-5" />}>
               <div className="space-y-2">
-                <ActionItem 
-                  label="App Settings" 
+                <ActionItem
+                  label="App Settings"
                   icon={<Settings className="h-4 w-4" />}
                   onClick={() => router.push('/settings')}
                   highlight={true}
                 />
-                <ActionItem 
-                  label="Account Settings" 
+                <ActionItem
+                  label="Account Settings"
                   icon={<User className="h-4 w-4" />}
                   onClick={() => router.push('/settings/account')}
                 />
-                <ActionItem 
-                  label="Privacy & Security" 
+                <ActionItem
+                  label="Privacy & Security"
                   icon={<Shield className="h-4 w-4" />}
                   onClick={() => router.push('/settings/privacy')}
                 />
-                <ActionItem 
-                  label="Notifications" 
+                <ActionItem
+                  label="Notifications"
                   icon={<Bell className="h-4 w-4" />}
                   onClick={() => router.push('/settings/notifications')}
                 />
-                <ActionItem 
-                  label="Download my data" 
+                <ActionItem
+                  label="Download my data"
                   icon={<Download className="h-4 w-4" />}
                   onClick={() => router.push('/settings/download')}
                 />
@@ -158,7 +165,7 @@ export default function ProfilePage() {
                 <Button variant="outline" className="w-full">Upgrade Storage</Button>
               </div>
             </SectionCard>
-            
+
             {/* Actions */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center sm:justify-end mt-4">
               <Button variant="outline" onClick={() => router.push('/profile/share')}>
@@ -186,7 +193,7 @@ export default function ProfilePage() {
                   Login to create events, upload photos, and access your personal profile.
                 </p>
                 <div className="flex flex-col space-y-3">
-                  <Button 
+                  <Button
                     onClick={() => {
                       localStorage.setItem('redirectAfterLogin', window.location.pathname);
                       router.push('/login');
@@ -196,7 +203,7 @@ export default function ProfilePage() {
                     <LogIn className="h-4 w-4" />
                     Login
                   </Button>
-                  <Button 
+                  <Button
                     variant="outline"
                     onClick={() => router.push('/events')}
                     className="gap-2 mx-auto"
@@ -207,12 +214,12 @@ export default function ProfilePage() {
                 </div>
               </div>
             </Card>
-            
+
             {/* Public settings access */}
             <SectionCard title="Settings" icon={<Settings className="h-5 w-5" />}>
               <div className="space-y-2">
-                <ActionItem 
-                  label="App Settings" 
+                <ActionItem
+                  label="App Settings"
                   icon={<Settings className="h-4 w-4" />}
                   onClick={() => router.push('/settings')}
                   highlight={true}
@@ -236,7 +243,7 @@ function StatItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SectionCard({ title, icon, children }: { 
+function SectionCard({ title, icon, children }: {
   title: string;
   icon: React.ReactNode;
   children: React.ReactNode;
@@ -254,13 +261,13 @@ function SectionCard({ title, icon, children }: {
   );
 }
 
-function ActionItem({ 
-  label, 
-  count, 
-  icon, 
+function ActionItem({
+  label,
+  count,
+  icon,
   onClick,
   highlight = false
-}: { 
+}: {
   label: string;
   count?: number;
   icon?: React.ReactNode;
@@ -268,9 +275,9 @@ function ActionItem({
   highlight?: boolean;
 }) {
   return (
-    <Button 
-      variant="ghost" 
-      className={`justify-start w-full ${highlight ? 'bg-muted/50' : ''}`} 
+    <Button
+      variant="ghost"
+      className={`justify-start w-full ${highlight ? 'bg-muted/50' : ''}`}
       onClick={onClick}
     >
       {icon && <span className="mr-2">{icon}</span>}

@@ -63,6 +63,7 @@ export interface CoHostData {
     pending: CoHost[];
     rejected: CoHost[];
     removed: CoHost[];
+    blocked: CoHost[];
   };
   summary: {
     approved: number;
@@ -111,34 +112,6 @@ export const generateCoHostInvite = async (
       }
     }
 
-    throw error;
-  }
-};
-
-/**
- * Get co-host invite details
- */
-export const getCoHostInvite = async (
-  eventId: string,
-  authToken: string
-): Promise<{ status: boolean; message: string; data: CoHostInvite | null }> => {
-  try {
-    console.log(`Getting co-host invite details for event: ${eventId}`);
-
-    const response = await axios.get(
-      `${API_BASE_URL}/event/${eventId}/cohost-invite`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-        timeout: 10000
-      }
-    );
-
-    console.log('Co-host invite details:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error(`Error getting co-host invite for event ${eventId}:`, error);
     throw error;
   }
 };
@@ -244,7 +217,7 @@ export const getEventCoHosts = async (
 export const manageCoHost = async (
   eventId: string,
   userId: string,
-  action: 'approve' | 'reject' | 'remove',
+  action: 'approve' | 'block' | 'remove' | 'unblock',
   authToken: string
 ): Promise<{ status: boolean; message: string; data: any }> => {
   try {
@@ -334,7 +307,6 @@ export const validateCoHostInvite = (invite: CoHostInvite | null): {
   isValid: boolean;
   reason?: string;
 } => {
-  console.log(invite, 'asdfasdfasdf')
   if (!invite) {
     return { isValid: false, reason: 'No invite found' };
   }

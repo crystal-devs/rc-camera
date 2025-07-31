@@ -181,7 +181,7 @@ const PhotoGrid: React.FC<PhotoGridProps> = ({
   console.log(photos, 'photos in PhotoGrid');
 
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-8 gap-1 sm:gap-2 md:gap-3 px-4">
+    <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-8 gap-1 sm:gap-2 md:gap-3 px-0">
       {photos.map((photo, index) => (
         <div
           key={photo.id}
