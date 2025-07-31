@@ -6,7 +6,6 @@ import {
   ArrowUpDown,
   CalendarIcon,
   CameraIcon,
-  Filter,
   Images,
   MapPinIcon,
   MoreHorizontalIcon,
@@ -18,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,8 +35,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fetchEvents } from '@/services/apis/events.api';
-import { toast } from "sonner";
 import { Event } from '@/types/backend-types/event.type';
+import { toast } from "sonner";
+import SimpleEventCreateForm from './create/page';
 
 
 export default function EventsPage() {
@@ -48,14 +49,10 @@ export default function EventsPage() {
   const [filterType, setFilterType] = useState<'all' | 'active' | 'past'>('all');
   const [activeTab, setActiveTab] = useState<'grid' | 'list'>('grid');
 
-  // User ID would come from auth in a real app
-  const userId = 1;
-
   useEffect(() => {
     const loadEvents = async () => {
       try {
-        const token = localStorage.getItem('authToken') || '';
-        let getAllEvents = await fetchEvents(token);
+        let getAllEvents = await fetchEvents();
         console.log("getAllEvents", getAllEvents);
         setEvents(getAllEvents || []);
       } catch (error) {
@@ -67,7 +64,7 @@ export default function EventsPage() {
     };
 
     loadEvents();
-  }, [userId, toast]);
+  }, [toast]);
 
   // Filter and sort events
   const filteredAndSortedEvents = events
@@ -113,7 +110,7 @@ export default function EventsPage() {
   };
 
   const createNewEvent = () => {
-    router.push('/events/create');
+    // router.push('/events/create');
   };
 
   console.log(filteredAndSortedEvents, 'filteredAndSortedEventsfilteredAndSortedEvents')
@@ -127,13 +124,33 @@ export default function EventsPage() {
           </p>
         </div>
 
-        <Button
-          onClick={createNewEvent}
-          className="mt-4 md:mt-0"
-        >
-          <PlusIcon className="h-4 w-4 mr-2" />
-          Create New Event
-        </Button>
+
+        {/* here  */}
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button
+              // onClick={createNewEvent}
+              className="mt-4 md:mt-0"
+            >
+              <PlusIcon className="h-4 w-4 mr-2" />
+              Create New Event
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>
+                <div className="text-center">
+                  <h1 className="text-2xl font-semibold ">Create Event</h1>
+                  <p className="text-gray-600 text-sm">share photos with your gang</p>
+                </div>
+              </DialogTitle>
+            </DialogHeader>
+            <SimpleEventCreateForm />
+          </DialogContent>
+        </Dialog>
+
+
+
       </div>
 
       {/* Single line filter controls that work on all screen sizes */}
@@ -258,9 +275,12 @@ export default function EventsPage() {
               >
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
-                  {event?.cover_image?.url ? (
+                  {event?.cover_image?.thumbnail_url ? (
                     <Image
-                      src={event?.cover_image?.url}
+                      src={event?.cover_image?.thumbnail_url}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/images/event-thumbnail-placeholder.jpg'
+                      }}
                       alt={'title'}
                       fill
                       className="object-cover"
@@ -326,9 +346,7 @@ export default function EventsPage() {
                     <div className="flex items-center text-sm">
                       <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                       <span className="truncate">
-                        {typeof event.location === 'object' && event.location !== null
-                          ? (event.location as any).name || (event.location as any).address || ''
-                          : event.location}
+                        {event.location.name || event.location.address || ''}
                       </span>
                     </div>
                   )} */}
@@ -408,9 +426,7 @@ export default function EventsPage() {
                       <div className="flex items-center">
                         <MapPinIcon className="h-3 w-3 mr-1" />
                         <span className="truncate max-w-[120px]">
-                          {typeof event.location === 'object' && event.location !== null
-                            ? (event.location as any).name || (event.location as any).address || ''
-                            : event.location}
+                          {event.location.name || event.location.address || ''}
                         </span>
                       </div>
                     )}

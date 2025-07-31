@@ -105,9 +105,9 @@ export default function ScanPage() {
       
       <Card className="mb-6 flex-1">
         <CardHeader>
-          <CardTitle>Join an Album</CardTitle>
+          <CardTitle>Join an Event</CardTitle>
           <CardDescription>
-            Scan a QR code to join and contribute to an album
+            Scan a QR code to join and contribute to an event
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center">
@@ -142,9 +142,9 @@ export default function ScanPage() {
       <div className="mt-auto mb-4 text-center">
         <Button 
           variant="link" 
-          onClick={() => router.push('/albums/create')}
+          onClick={() => router.push('/events/create')}
         >
-          Create a new album instead
+          Create a new event instead
         </Button>
       </div>
     </div>
