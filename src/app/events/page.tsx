@@ -342,14 +342,14 @@ export default function EventsPage() {
                     <CalendarIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                     {format(new Date(event.start_date), 'MMM d, yyyy')}
                   </div>
-                  {event.location && (
+                  {/* {event.location && (
                     <div className="flex items-center text-sm">
                       <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                       <span className="truncate">
                         {event.location.name || event.location.address || ''}
                       </span>
                     </div>
-                  )}
+                  )} */}
                 </div>
               </div>
             ))}
