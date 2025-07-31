@@ -65,7 +65,7 @@ export default function EventDetailsHeader({ event }: EventHeaderProps) {
 
     console.log('Event Details Header:', event);
     return (
-        <div className="sticky top-0 z-30 w-full bg-white/80 backdrop-blur-md shadow-sm">
+        <div className="sticky top-0 z-30 w-full bg-transparent backdrop-blur-md shadow-sm">
             {/* Desktop Header */}
             <div className="hidden sm:flex items-center justify-between px-4 py-3">
                 <div className="flex items-center">

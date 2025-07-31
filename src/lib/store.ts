@@ -236,7 +236,7 @@ const removeLocalStorageValue = (key: string): void => {
 // API base URL - adjust this to your actual API endpoint
 
 // Helper function to get auth token
-const getAuthToken = (): string | null => {
+export const getAuthToken = (): string | null => {
     return getLocalStorageValue('authToken');
 };
 
