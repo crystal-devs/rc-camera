@@ -5,6 +5,7 @@ import { API_BASE_URL } from '@/lib/api-config';
 import { ApiEvent } from '@/types/events';
 import { useStore } from '@/lib/store';
 import { Event } from '@/types/backend-types/event.type';
+import { setHeader } from '../common/api.fetch';
 
 export interface ApiEventResponse {
   status: boolean;
@@ -29,12 +30,10 @@ const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
 };
 
 // Fetch all events for the authenticated user
-export const fetchEvents = async (authToken: string): Promise<Event[]> => {
+export const fetchEvents = async (): Promise<Event[]> => {
   try {
     const response = await axios.get(`${API_BASE_URL}/event`, {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-      },
+      headers: setHeader(),
     });
 
     if (response.data && response.data.data) {

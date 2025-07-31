@@ -48,14 +48,10 @@ export default function EventsPage() {
   const [filterType, setFilterType] = useState<'all' | 'active' | 'past'>('all');
   const [activeTab, setActiveTab] = useState<'grid' | 'list'>('grid');
 
-  // User ID would come from auth in a real app
-  const userId = 1;
-
   useEffect(() => {
     const loadEvents = async () => {
       try {
-        const token = localStorage.getItem('authToken') || '';
-        let getAllEvents = await fetchEvents(token);
+        let getAllEvents = await fetchEvents();
         console.log("getAllEvents", getAllEvents);
         setEvents(getAllEvents || []);
       } catch (error) {
@@ -67,7 +63,7 @@ export default function EventsPage() {
     };
 
     loadEvents();
-  }, [userId, toast]);
+  }, [toast]);
 
   // Filter and sort events
   const filteredAndSortedEvents = events
@@ -274,13 +270,15 @@ export default function EventsPage() {
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
                   {event?.cover_image?.thumbnail_url ? (
-                    // <Image
-                    //   src={event?.cover_image?.thumbnail_url}
-                    //   alt={'title'}
-                    //   fill
-                    //   className="object-cover"
-                    // />
-                    <></>
+                    <Image
+                      src={event?.cover_image?.thumbnail_url}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/images/event-thumbnail-placeholder.jpg'
+                      }}
+                      alt={'title'}
+                      fill
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">
                       {event.template === 'wedding' && <span className="text-4xl">💍</span>}
@@ -347,15 +345,13 @@ export default function EventsPage() {
                   <h3 className="font-medium text-lg line-clamp-1">{event.title}</h3>
                   <div className="flex items-center text-sm">
                     <CalendarIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                    {/* {format(new Date(event.date), 'MMM d, yyyy')} */}
+                    {format(new Date(event.start_date), 'MMM d, yyyy')}
                   </div>
-                  {event.location && (
+                  {event?.location?.name && (
                     <div className="flex items-center text-sm">
                       <MapPinIcon className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                       <span className="truncate">
-                        {typeof event.location === 'object' && event.location !== null
-                          ? (event.location as any).name || (event.location as any).address || ''
-                          : event.location}
+                        {event.location.name || event.location.address || ''}
                       </span>
                     </div>
                   )}
@@ -435,9 +431,7 @@ export default function EventsPage() {
                       <div className="flex items-center">
                         <MapPinIcon className="h-3 w-3 mr-1" />
                         <span className="truncate max-w-[120px]">
-                          {typeof event.location === 'object' && event.location !== null
-                            ? (event.location as any).name || (event.location as any).address || ''
-                            : event.location}
+                          {event.location.name || event.location.address || ''}
                         </span>
                       </div>
                     )}
