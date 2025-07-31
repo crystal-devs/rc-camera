@@ -96,14 +96,11 @@ const SimpleEventCreateForm = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-semibold text-gray-100 mb-2">Create Event</h1>
-          <p className="text-gray-600 text-sm">Share photos with your guests</p>
-        </div>
+    <div className=" flex items-center justify-center md:p-4">
+      <div className="w-full ">
+        
 
-        <div className="rounded-lg shadow-sm border p-6">
+        <div className="rounded-lg w-full  md:shadow-sm md:border md:p-6">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
               <FormField
@@ -176,7 +173,7 @@ const SimpleEventCreateForm = () => {
                     name="end_date"
                     render={({ field }) => (
                       <FormItem className="w-full">
-                        <FormLabel>End Date</FormLabel>
+                        <FormLabel>End Date (optional)</FormLabel>
                         <FormControl>
                           <DatePicker
                             date={field.value}
