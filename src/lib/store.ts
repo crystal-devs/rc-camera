@@ -237,7 +237,7 @@ const removeLocalStorageValue = (key: string): void => {
 
 // Helper function to get auth token
 export const getAuthToken = (): string | null => {
-    return getLocalStorageValue('authToken');
+    return getLocalStorageValue('rc-token');
 };
 
 // Helper function to get user data from localStorage
@@ -738,7 +738,7 @@ export const useStore = create<SettingsState & SettingsActions>()(
                     state.setHydrated(true);
 
                     // Check if we have auth data in localStorage after rehydration
-                    const authToken = getLocalStorageValue('authToken');
+                    const authToken = getLocalStorageValue('rc-token');
                     const userData = getUserDataFromStorage();
 
                     if (authToken && userData) {

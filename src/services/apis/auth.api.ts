@@ -18,6 +18,7 @@ export const loginUser = async (userData: Omit<UserData, 'id'>) => {
         
         if (data.token) {
             localStorage.setItem("rc-token", data.token);
+            localStorage.setItem("authToken", data.token);
             
             // Store user data separately from the token
             const userDataToStore = {

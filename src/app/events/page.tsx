@@ -273,9 +273,9 @@ export default function EventsPage() {
               >
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
-                  {event?.cover_image?.thumbnail_url ? (
+                  {event?.cover_image?.url ? (
                     <Image
-                      src={event?.cover_image?.thumbnail_url}
+                      src={event?.cover_image?.url}
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = '/images/event-thumbnail-placeholder.jpg'
                       }}

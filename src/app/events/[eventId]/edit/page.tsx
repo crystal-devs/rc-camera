@@ -139,7 +139,7 @@ const EventSettingsPage = () => {
   const [eventCreatorId, setEventCreatorId] = useState<string>('');
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = localStorage.getItem('rc-token');
     if (storedToken) {
       setAuthToken(storedToken);
     } else {

@@ -138,7 +138,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
     useEffect(() => {
         const loadEvent = async () => {
             try {
-                const token = localStorage.getItem('authToken') || '';
+                const token = localStorage.getItem('rc-token') || '';
                 console.log(`Loading event data for ID: ${eventId}`);
 
                 // Verify token presence
@@ -222,7 +222,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 return [];
             }
 
-            const token = localStorage.getItem('authToken') || '';
+            const token = localStorage.getItem('rc-token') || '';
             if (!token) {
                 console.error('No auth token available for refreshAlbums');
                 toast.error("Authentication required. Please log in again.");

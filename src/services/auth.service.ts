@@ -23,7 +23,7 @@ export const authenticateUser = async (
     });
 
     const token = response.data.token;
-    localStorage.setItem("authToken", token);
+    localStorage.setItem("rc-token", token);
     
     // Store user data separately
     const userData = {

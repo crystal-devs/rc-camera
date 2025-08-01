@@ -32,7 +32,7 @@ export default function AlbumPage({ params }: AlbumPageProps) {
     const loadAlbum = async () => {
       try {
         // Try to get the auth token from local storage
-        const authToken = localStorage.getItem('authToken');
+        const authToken = localStorage.getItem('rc-token');
         if (!authToken) {
           console.error('No auth token found');
           toast.error("Authentication required. Please log in again.");
