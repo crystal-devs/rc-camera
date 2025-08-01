@@ -262,31 +262,7 @@ export default function AlbumManagement({ eventId, initialAlbums, onAlbumCreated
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <h2 className="text-2xl font-bold">Albums</h2>
-          {onRefresh && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={async () => {
-                setIsLoading(true);
-                try {
-                  const refreshedAlbums = await onRefresh();
-                  setAlbums(refreshedAlbums);
-                  toast.success("Albums refreshed");
-                } catch (error) {
-                  console.error('Error refreshing albums:', error);
-                } finally {
-                  setIsLoading(false);
-                }
-              }}
-              className="text-xs"
-            >
-              ↻ Refresh
-            </Button>
-          )}
-        </div>
+      <div className="flex items-center justify-end mb-6">
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>

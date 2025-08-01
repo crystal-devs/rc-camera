@@ -8,23 +8,42 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { createEvent } from '@/services/apis/events.api';
 import { useRouter } from 'next/navigation';
+import { useForm } from "react-hook-form"
+import { z } from "zod"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { DatePicker } from '@/components/layout/date-picker';
+import { Event } from '@/types/backend-types/event.type';
 
-type SimpleEventData = {
+type TEvent = {
   title: string;
   template: 'wedding' | 'birthday' | 'concert' | 'corporate' | 'vacation' | 'custom';
-  start_date?: string;
-  end_date?: string;
+  start_date?: Date;
+  end_date?: Date;
 };
+
+const eventFormSchema = z.object({
+  title: z.string().min(1, "Event name is required"),
+  template: z.enum(['wedding', 'birthday', 'concert', 'corporate', 'vacation', 'custom']),
+  start_date: z.date(),
+  end_date: z.date().optional(),
+})
 
 const SimpleEventCreateForm = () => {
   const router = useRouter();
 
-  const [formData, setFormData] = useState<SimpleEventData>({
-    title: '',
-    template: 'custom',
-    start_date: '',
-    end_date: '',
-  });
+  const form = useForm<z.infer<typeof eventFormSchema>>({
+    resolver: zodResolver(eventFormSchema),
+    defaultValues: {
+      title: '',
+      template: 'custom',
+      start_date: new Date(),
+      end_date: undefined,
+    },
+  })
+
+  const [startDate, setStartDate] = useState<Date | undefined>(new Date());
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -40,10 +59,7 @@ const SimpleEventCreateForm = () => {
 
     // Set default start date to today
     const today = new Date();
-    setFormData((prev) => ({
-      ...prev,
-      start_date: today.toISOString().slice(0, 16),
-    }));
+    form.setValue('start_date', today);
   }, [router]);
 
   const eventTemplates = [
@@ -55,45 +71,17 @@ const SimpleEventCreateForm = () => {
     { value: 'custom', label: 'Other' },
   ];
 
-  const handleInputChange = (field: keyof SimpleEventData, value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
-
-  const validateForm = () => {
-    const errors: string[] = [];
-    if (!formData.title.trim()) errors.push('Event name is required');
-    if (!formData.template) errors.push('Please select event type');
-    if (!formData.start_date) errors.push('Start date is required');
-
-    const startDate = new Date(formData.start_date);
-    const endDate = formData.end_date ? new Date(formData.end_date) : null;
-    if (endDate && startDate >= endDate) {
-      errors.push('End date must be after start date');
-    }
-
-    return errors;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const errors = validateForm();
-    if (errors.length > 0) {
-      toast.error(errors[0]);
-      return;
-    }
-
+  const handleSubmit = async (data: TEvent) => {
     setIsSubmitting(true);
 
+    console.log("data on submit", data)
+
     try {
-      const submitData: SimpleEventData = {
-        title: formData.title.trim(),
-        template: formData.template,
-        start_date: formData.start_date ? new Date(formData.start_date).toISOString() : undefined,
-        end_date: formData.end_date ? new Date(formData.end_date).toISOString() : undefined,
+      const submitData: Partial<Event> = {
+        title: data.title.trim(),
+        template: data.template,
+        start_date: data.start_date ? new Date(data.start_date)  : undefined,
+        end_date: data.end_date ? new Date(data.end_date) : undefined,
       };
 
       const createdEvent = await createEvent(submitData, authToken!);
@@ -108,73 +96,105 @@ const SimpleEventCreateForm = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-semibold text-gray-100 mb-2">Create Event</h1>
-          <p className="text-gray-600 text-sm">Share photos with your guests</p>
-        </div>
+    <div className=" flex items-center justify-center md:p-4">
+      <div className="w-full ">
+        
 
-        <div className="rounded-lg shadow-sm border p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="title" className="text-sm font-medium">Event Name</Label>
-              <Input
-                id="title"
-                value={formData.title}
-                onChange={(e) => handleInputChange('title', e.target.value)}
-                placeholder="My Wedding"
-                className="mt-1"
-                maxLength={100}
+        <div className="rounded-lg w-full  md:shadow-sm md:border md:p-6">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Event Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="My Wedding" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
 
-            <div>
-              <Label htmlFor="template" className="text-sm font-medium">Event Type</Label>
-              <Select
-                value={formData.template}
-                onValueChange={(value) => handleInputChange('template', value)}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {eventTemplates.map((template) => (
-                    <SelectItem key={template.value} value={template.value}>
-                      {template.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="start_date" className="text-sm font-medium">Start Date</Label>
-                <Input
-                  id="start_date"
-                  type="datetime-local"
-                  value={formData.start_date}
-                  onChange={(e) => handleInputChange('start_date', e.target.value)}
-                  className="mt-1"
+              <div className="flex flex-col gap-3 w-full">
+                <FormField
+                  control={form.control}
+                  name="template"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Event Type</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {eventTemplates.map((template) => (
+                            <SelectItem key={template.value} value={template.value}>
+                              {template.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
               </div>
-              <div>
-                <Label htmlFor="end_date" className="text-sm font-medium">End Date (Optional)</Label>
-                <Input
-                  id="end_date"
-                  type="datetime-local"
-                  value={formData.end_date}
-                  onChange={(e) => handleInputChange('end_date', e.target.value)}
-                  className="mt-1"
-                />
-              </div>
-            </div>
 
-            <Button type="submit" disabled={isSubmitting} className="w-full mt-6">
-              {isSubmitting ? 'Creating...' : 'Create Event'}
-            </Button>
-          </form>
+              <div className="flex flex-col gap-3 w-full">
+                <div>
+                  <FormField
+                    control={form.control}
+                    name="start_date"
+                    render={({ field }) => (
+                      <FormItem className="w-full">
+                        <FormLabel>Date</FormLabel>
+                        <FormControl>
+                          <DatePicker
+                            date={field.value}
+                            setDate={(newDate) => {
+                              field.onChange(newDate);
+                              setStartDate(newDate);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div>
+                  <FormField
+                    control={form.control}
+                    name="end_date"
+                    render={({ field }) => (
+                      <FormItem className="w-full">
+                        <FormLabel>End Date (optional)</FormLabel>
+                        <FormControl>
+                          <DatePicker
+                            date={field.value}
+                            setDate={(newDate) => {
+                              field.onChange(newDate);
+                              setEndDate(newDate);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <Button type="submit" disabled={isSubmitting} className="w-full mt-6">
+                {isSubmitting ? 'Creating...' : 'Create Event'}
+              </Button>
+            </form>
+          </Form>
         </div>
 
         <p className="text-center text-xs text-gray-500 mt-4">

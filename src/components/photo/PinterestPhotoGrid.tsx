@@ -21,7 +21,7 @@ export const PinterestPhotoGrid: React.FC<{
     }, []);
 
     return (
-        <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-2 space-y-4">
+        <div className="columns-2 sm:columns-3 md:columns-3 lg:columns-4 xl:columns-5 gap-1 space-y-2">
             {photos.map((photo, index) => {
                 // Calculate optimized height maintaining aspect ratio
                 const baseWidth = 280;
@@ -35,7 +35,7 @@ export const PinterestPhotoGrid: React.FC<{
                 optimizedHeight = Math.max(200, Math.min(optimizedHeight, 500));
 
                 return (
-                    <div key={photo.id} className="break-inside-avoid mb-4">
+                    <div key={photo.id} className="break-inside-avoid mb-1">
                         <PinterestPhotoCard
                             photo={photo}
                             index={index}

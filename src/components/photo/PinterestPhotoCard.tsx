@@ -27,7 +27,7 @@ export const PinterestPhotoCard: React.FC<{
 
     return (
         <div
-            className="group relative bg-white rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden cursor-pointer transform hover:-translate-y-1"
+            className="group relative bg-white rounded-sm shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden cursor-pointer transform"
             style={{
                 gridRowEnd: `span ${rowSpan}`,
                 height: 'fit-content'
@@ -41,10 +41,10 @@ export const PinterestPhotoCard: React.FC<{
                         alt={`Photo by ${photo.uploaded_by}`}
                         width={baseWidth}
                         height={Math.round(optimizedHeight)}
-                        transformation={transformation}
+                        transformation={transformation as any}
                         lqip={{ active: true, quality: 20, blur: 6 }}
-                        className={`w-full h-auto object-cover rounded-xl transition-all duration-500 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
-                            } group-hover:scale-105`}
+                        className={`w-full h-auto object-cover rounded-sm transition-all duration-500 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
+                            }`}
                         onLoad={() => setIsLoaded(true)}
                         onError={() => setHasError(true)}
                         priority={index < 4}
@@ -52,7 +52,7 @@ export const PinterestPhotoCard: React.FC<{
                     />
                 ) : (
                     <div
-                        className="w-full bg-gray-200 flex items-center justify-center rounded-xl"
+                        className="w-full bg-gray-200 flex items-center justify-center rounded-sm"
                         style={{ height: optimizedHeight }}
                     >
                         <Camera className="w-8 h-8 text-gray-400" />
@@ -69,13 +69,9 @@ export const PinterestPhotoCard: React.FC<{
                 )}
 
                 {/* Hover overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-sm">
                     {/* Action buttons */}
                     <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                        <div className="text-white">
-                            <p className="font-medium text-sm">{photo.uploaded_by}</p>
-                        </div>
-
                         <div className="flex gap-2">
                             <button
                                 onClick={(e) => {
@@ -83,8 +79,8 @@ export const PinterestPhotoCard: React.FC<{
                                     onLike();
                                 }}
                                 className={`p-2 rounded-full transition-all duration-200 ${isLiked
-                                        ? 'bg-red-500 text-white scale-110'
-                                        : 'bg-white/20 text-white hover:bg-white/30'
+                                    ? 'bg-red-500 text-white scale-110'
+                                    : 'bg-white/20 text-white hover:bg-white/30'
                                     }`}
                             >
                                 <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />

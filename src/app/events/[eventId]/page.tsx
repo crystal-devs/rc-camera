@@ -343,7 +343,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                 <div className="flex flex-wrap gap-3 mb-4 sm:mb-6">
                     <div className="flex items-center text-sm ">
                         <CalendarIcon className="h-4 w-4 mr-1.5" />
-                         {format(new Date(event.start_date), 'MMM d, yyyy')}
+                        {format(new Date(event.start_date), 'MMM d, yyyy')}
                     </div>
 
 
@@ -399,13 +399,6 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                         </DialogContent>
                     </Dialog>
                 </div> */}
-
-                
-                <PhotoGallery
-                    eventId={eventId}
-                    albumId={null}
-                    canUpload={true}
-                />
                 {/* Tabs Section */}
                 <Tabs
                     value={activeTab}
@@ -438,6 +431,13 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
                         />
                     </TabsContent>
                 </Tabs>
+
+                <PhotoGallery
+                    eventId={eventId}
+                    albumId={null}
+                    canUpload={true}
+                />
+
             </div>
         </div>
     );

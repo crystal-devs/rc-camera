@@ -12,7 +12,7 @@ export default function Camera() {
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const router = useRouter();
-  // const { data: session, status } = useSession();
+  const { data: session, status } = useSession();
 
   useEffect(() => {
     async function setupCamera() {

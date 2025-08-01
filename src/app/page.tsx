@@ -14,95 +14,50 @@ import { db } from '@/lib/db';
 import { FolderPlus, PlusCircle, ScanLineIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { verifyUser } from '@/services/apis/auth.api';
 
 export default function HomePage() {
   const router = useRouter();
-  const [myAlbums, setMyAlbums] = useState<any[]>([]);
-  const [accessibleAlbums, setAccessibleAlbums] = useState<any[]>([]);
+  const [myEvents, setMyEvents] = useState<any[]>([]);
+  const [accessibleEvents, setAccessibleEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const userId = 1; // In a real app, get this from authentication
 
   useEffect(() => {
-    const loadAlbums = async () => {
-      try {
-        // Check if this is first time user
-        const userExists = await db.users.get(userId);
+    // first get the user. if user not logged in kick out them to login page.
+    verifyUser(router)
+  }, [router]);
 
-        if (!userExists) {
-          // Create demo user
-          await db.users.add({
-            id: userId,
-            name: 'Demo User',
-            email: 'demo@example.com'
-          });
-        }
-
-        // Get albums created by user
-        const createdAlbums = await db.albums
-          .where('createdById')
-          .equals(userId)
-          .toArray();
-
-        setMyAlbums(createdAlbums);
-
-        // Get albums user has access to
-        const accessList = await db.albumAccess
-          .where('userId')
-          .equals(userId)
-          .toArray();
-
-        const accessibleAlbumIds = accessList
-          .filter(access => access.accessType !== 'owner')
-          .map(access => access.albumId);
-
-        if (accessibleAlbumIds.length > 0) {
-          const sharedAlbums = await db.albums
-            .where('id')
-            .anyOf(accessibleAlbumIds)
-            .toArray();
-
-          setAccessibleAlbums(sharedAlbums);
-        }
-      } catch (error) {
-        console.error('Error loading albums:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadAlbums();
-  }, []);
-
-  const handleCreateAlbum = () => {
-    router.push('/albums/create');
+  const handleCreateEvent = () => {
+    router.push('/events/create');
   };
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-3xl">
-      <h1 className="text-2xl font-bold mb-6">Photo Albums</h1>
+      <h1 className="text-2xl font-bold mb-6">Home Page</h1>
 
       {loading ? (
-        <div className="py-8 text-center">Loading albums...</div>
+        <div className="py-8 text-center">This Page will get New UI</div>
       ) : (
         <>
-          {myAlbums.length === 0 && accessibleAlbums.length === 0 ? (
+          {myEvents.length === 0 && accessibleEvents.length === 0 ? (
             <Card className="mb-8">
               <CardHeader>
                 <CardTitle>Welcome to Rose Click</CardTitle>
                 <CardDescription>
-                  Create your first album to start capturing and sharing photos
+                  Create your first event to start capturing and sharing photos
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex justify-center">
                 <div className="text-center py-8">
                   <FolderPlus className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                   <p className="text-sm text-gray-500 mb-4">
-                    No albums yet. Create your first album to get started.
+                    No events yet. Create your first event to get started.
                   </p>
-                  <Button onClick={handleCreateAlbum}>
+                  <Button onClick={handleCreateEvent}>
                     <PlusCircle className="mr-2 h-4 w-4" />
-                    Create Album
+                    Create Event
                   </Button>
                 </div>
               </CardContent>
@@ -111,46 +66,24 @@ export default function HomePage() {
             <>
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold">Your Albums</h2>
-                  <Button onClick={handleCreateAlbum} size="sm">
+                  <h2 className="text-xl font-semibold">Your Events</h2>
+                  <Button onClick={handleCreateEvent} size="sm">
                     <PlusCircle className="mr-2 h-4 w-4" />
-                    New Album
+                    New Event
                   </Button>
                 </div>
 
-                {myAlbums.length === 0 ? (
+                {myEvents.length === 0 ? (
                   <div className="text-center py-6 border-2 border-dashed rounded-lg">
-                    <p className="text-sm text-gray-500">You haven't created any albums yet</p>
+                    <p className="text-sm text-gray-500">You haven't created any events yet</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {myAlbums.map(album => (
-                      <AlbumCard
-                        key={album.id}
-                        album={album}
-                        onClick={() => router.push(`/albums/${album.id}`)}
-                        isOwner={true}
-                      />
-                    ))}
-                  </div>
+                  <>
+                  {/* need to create grid of events */}
+                  </>
                 )}
               </div>
 
-              {accessibleAlbums.length > 0 && (
-                <div className="mb-8">
-                  <h2 className="text-xl font-semibold mb-4">Shared With You</h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {accessibleAlbums.map(album => (
-                      <AlbumCard
-                        key={album.id}
-                        album={album}
-                        onClick={() => router.push(`/albums/${album.id}`)}
-                        isOwner={false}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
 
@@ -163,7 +96,7 @@ export default function HomePage() {
             >
               <ScanLineIcon className="h-7! w-7!" />
             </Button>
-            <p className="mt-2 text-xs text-gray-500 text-center">Scan to join album</p>
+            <p className="mt-2 text-xs text-gray-500 text-center">Scan to join event</p>
           </div>
         </>
       )}

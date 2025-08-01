@@ -72,8 +72,8 @@ export interface Location {
     co_host_invite_token: CoHostInviteToken;
     co_hosts: CoHost[];
     visibility: 'anyone_with_link' | 'invited_only' | 'private';
-    start_date: string; // ISO date string
-    end_date: string | null; // ISO date string or null
+    start_date: string | Date; // ISO date string
+    end_date: string | Date | null; // ISO date string or null
     timezone: string;
     location: Location;
     cover_image: CoverImage;

@@ -84,55 +84,53 @@ export default function PhotoGallery({
 
   // Navigation functions
   const navigateToPhoto = useCallback((direction: 'next' | 'prev') => {
-    if (selectedPhotoIndex === null || photos.length <= 1) return;
-
-    let newIndex: number;
-    if (direction === 'next' && selectedPhotoIndex < photos.length - 1) {
-      newIndex = selectedPhotoIndex + 1;
-    } else if (direction === 'prev' && selectedPhotoIndex > 0) {
-      newIndex = selectedPhotoIndex - 1;
-    } else {
-      // Don't navigate if at boundaries
-      console.log('🚫 Navigation blocked - at boundary:', {
-        direction,
-        currentIndex: selectedPhotoIndex,
-        totalPhotos: photos.length
+    if (selectedPhotoIndex === null || photos.length <= 1) {
+      console.log('🚫 Navigation blocked - invalid state:', {
+        selectedPhotoIndex,
+        photosLength: photos.length
       });
       return;
     }
 
-    console.log('📸 Navigation successful:', {
-      direction,
-      from: selectedPhotoIndex,
-      to: newIndex,
-      totalPhotos: photos.length,
-      fromPhotoId: photos[selectedPhotoIndex]?.id,
-      toPhotoId: photos[newIndex]?.id
-    });
+    let newIndex: number = selectedPhotoIndex;
 
-    setSelectedPhotoIndex(newIndex);
-    setSelectedPhoto(photos[newIndex]);
-  }, [selectedPhotoIndex, photos]);
-
-
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!photoViewerOpen) return;
-
-      if (e.key === 'ArrowRight') {
-        navigateToPhoto('next');
-      } else if (e.key === 'ArrowLeft') {
-        navigateToPhoto('prev');
-      } else if (e.key === 'Escape') {
-        setPhotoViewerOpen(false);
-        setIsFullscreen(false);
+    if (direction === 'next') {
+      if (selectedPhotoIndex < photos.length - 1) {
+        newIndex = selectedPhotoIndex + 1;
+      } else {
+        console.log('🚫 Navigation blocked - at end of photos');
+        return;
       }
-    };
+    } else if (direction === 'prev') {
+      if (selectedPhotoIndex > 0) {
+        newIndex = selectedPhotoIndex - 1;
+      } else {
+        console.log('🚫 Navigation blocked - at beginning of photos');
+        return;
+      }
+    }
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [photoViewerOpen, navigateToPhoto]);
+    // Only update if we have a valid new index and it's different
+    if (newIndex !== selectedPhotoIndex && newIndex >= 0 && newIndex < photos.length) {
+      console.log('📸 Navigation successful:', {
+        direction,
+        from: selectedPhotoIndex,
+        to: newIndex,
+        totalPhotos: photos.length,
+        fromPhotoId: photos[selectedPhotoIndex]?.id,
+        toPhotoId: photos[newIndex]?.id
+      });
+
+      setSelectedPhotoIndex(newIndex);
+      setSelectedPhoto(photos[newIndex]);
+    } else {
+      console.log('🚫 Navigation blocked - invalid new index:', {
+        newIndex,
+        selectedPhotoIndex,
+        photosLength: photos.length
+      });
+    }
+  }, [selectedPhotoIndex, photos]);
 
   // Smart cache key generation
   const getCacheKey = useCallback((eventId: string, albumId: string | null, status?: string) => {

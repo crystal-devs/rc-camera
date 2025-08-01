@@ -1,5 +1,6 @@
 import axios from "axios"
-import { LOGIN_ROUTE } from "./z.all-routes"
+import { LOGIN_ROUTE, VERIFY_USER_ROUTE } from "./z.all-routes"
+import { setHeader } from "../common/api.fetch";
 
 export interface UserData {
     id?: string;
@@ -16,7 +17,7 @@ export const loginUser = async (userData: Omit<UserData, 'id'>) => {
         const { data } = await axios.post(LOGIN_ROUTE, { ...userData });
         
         if (data.token) {
-            localStorage.setItem("authToken", data.token);
+            localStorage.setItem("rc-token", data.token);
             
             // Store user data separately from the token
             const userDataToStore = {
@@ -59,6 +60,19 @@ export const getUserData = (): UserData | null => {
 }
 
 export const logout = () => {
-    localStorage.removeItem("authToken");
+    localStorage.removeItem("rc-token");
     localStorage.removeItem("userData");
+}
+
+export const verifyUser = async (router: any) => {
+    try{
+        await axios.get(VERIFY_USER_ROUTE, {
+            headers: setHeader()
+        })
+        return true
+    }catch(error){
+        console.log(error)
+        router.push('/login')
+        return false
+    }
 }

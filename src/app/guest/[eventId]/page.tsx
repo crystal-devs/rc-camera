@@ -344,7 +344,7 @@ export default function EventDetailsPage({ params }: { params: Promise<{ eventId
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="max-w-7xl mx-auto px-1 sm-px-4 py-8">
           {/* Error State */}
           {error && (
             <div className="text-center py-16">
