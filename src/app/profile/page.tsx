@@ -86,9 +86,9 @@ export default function ProfilePage() {
 
               {hydrated && isAuthenticated ? (
                 <div className="flex justify-center sm:justify-start gap-6 mt-4">
-                  <StatItem label="Events" value={userStat?.totalEvents} />
-                  <StatItem label="Photos" value={userStat.totalPhotos} />
-                  <StatItem label="Video" value={userStat.totalVideos} />
+                  <StatItem label="Events" value={userStat?.totalEvents.toString()} />
+                  <StatItem label="Photos" value={userStat?.totalPhotos.toString()} />
+                  <StatItem label="Video" value={userStat?.totalVideos.toString()} />
                 </div>
               ) : (
                 <div className="mt-4 p-3 bg-muted rounded-md text-sm">
@@ -151,7 +151,7 @@ export default function ProfilePage() {
             </SectionCard>
 
             {/* Storage */}
-            <SectionCard title="Storage" icon={<HardDrive className="h-5 w-5" />}>
+            {/* <SectionCard title="Storage" icon={<HardDrive className="h-5 w-5" />}>
               <div>
                 <div className="mb-2">
                   <div className="flex justify-between mb-1 text-sm">
@@ -164,7 +164,7 @@ export default function ProfilePage() {
                 </div>
                 <Button variant="outline" className="w-full">Upgrade Storage</Button>
               </div>
-            </SectionCard>
+            </SectionCard> */}
 
             {/* Actions */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center sm:justify-end mt-4">
@@ -188,7 +188,7 @@ export default function ProfilePage() {
             {/* Guest sections */}
             <Card className="p-6 text-center">
               <div className="max-w-md mx-auto">
-                <h2 className="text-2xl font-semibold mb-4">Welcome to the app!</h2>
+                <h2 className="text-2xl font-semibold mb-4">Welcome to Rose Click!</h2>
                 <p className="text-muted-foreground mb-6">
                   Login to create events, upload photos, and access your personal profile.
                 </p>

@@ -113,7 +113,7 @@ const EventActions: React.FC<EventActionsProps> = ({
                         onClick={async () => {
                             if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
                                 try {
-                                    const authToken = localStorage.getItem('authToken');
+                                    const authToken = localStorage.getItem('rc-token');
                                     if (!authToken) {
                                         toast.error("You need to be logged in to delete this event");
                                         return;

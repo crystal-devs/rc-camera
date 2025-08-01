@@ -60,7 +60,7 @@ const JoinCoHostPage = () => {
 
     try {
       // Get auth token from localStorage
-      const authToken = localStorage.getItem('authToken');
+      const authToken = localStorage.getItem('rc-token');
       
       if (!authToken) {
         // No auth token, redirect to login
@@ -111,7 +111,7 @@ const JoinCoHostPage = () => {
         }, 2000);
       } else if (error.message?.includes('logged in')) {
         // Auth token might be invalid, redirect to login
-        localStorage.removeItem('authToken');
+        localStorage.removeItem('rc-token');
         redirectToLogin();
         return;
       } else {

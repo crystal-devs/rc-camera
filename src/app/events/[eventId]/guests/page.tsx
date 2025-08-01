@@ -153,7 +153,7 @@ export default function GuestManagementPage({ params }: PageProps) {
     
     const loadEventAndGuests = async () => {
       // Try to get the token from the hook or directly from localStorage as fallback
-      const token = authToken || localStorage.getItem('authToken');
+      const token = authToken || localStorage.getItem('rc-token');
       
       console.log('Using token for API request:', token ? 'Token available' : 'No token');
       
@@ -297,7 +297,7 @@ export default function GuestManagementPage({ params }: PageProps) {
   const getShareToken = async () => {
     if (shareToken) return shareToken;
     
-    const token = authToken || localStorage.getItem('authToken');
+    const token = authToken || localStorage.getItem('rc-token');
     if (!token) return null;
     
     try {
@@ -354,7 +354,7 @@ export default function GuestManagementPage({ params }: PageProps) {
     
     try {
       setIsLoading(true);
-      const token = authToken || localStorage.getItem('authToken');
+      const token = authToken || localStorage.getItem('rc-token');
       
       if (!token) {
         toast.error("You need to be logged in to invite guests.");

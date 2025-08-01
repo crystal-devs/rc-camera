@@ -203,7 +203,7 @@ export default function JoinPage() {
       // Debug auth token storage
       if (typeof window !== 'undefined') {
         console.log('🔍 Debugging auth token storage:');
-        const authToken = localStorage.getItem('authToken');
+        const authToken = localStorage.getItem('rc-token');
         const accessToken = localStorage.getItem('accessToken'); 
         const user = localStorage.getItem('user');
         

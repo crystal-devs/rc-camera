@@ -62,7 +62,7 @@ export default function AlbumManagement({ eventId, initialAlbums, onAlbumCreated
 
   // Get auth token
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = localStorage.getItem('rc-token');
     if (storedToken) {
       setAuthToken(storedToken);
     } else {

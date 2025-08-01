@@ -145,7 +145,7 @@ export default function PhotoGallery({
 
   // Fetch media counts
   const fetchMediaCounts = useCallback(async () => {
-    const authToken = token || localStorage.getItem('authToken');
+    const authToken = token || localStorage.getItem('rc-token');
     if (!authToken || guestToken) return; // Skip for guest access
 
     try {
@@ -165,7 +165,7 @@ export default function PhotoGallery({
     cursor?: string,
     forceRefresh = false
   ) => {
-    const authToken = token || localStorage.getItem('authToken');
+    const authToken = token || localStorage.getItem('rc-token');
     const isGuestAccess = Boolean(guestToken);
 
     if (!authToken && !isGuestAccess) {
@@ -339,7 +339,7 @@ export default function PhotoGallery({
       return;
     }
 
-    const authToken = token || localStorage.getItem('authToken');
+    const authToken = token || localStorage.getItem('rc-token');
     if (!authToken) {
       return;
     }
