@@ -48,6 +48,7 @@ export default function EventsPage() {
   const [sortOrder, setSortOrder] = useState<'date-desc' | 'date-asc' | 'name-asc' | 'name-desc'>('date-desc');
   const [filterType, setFilterType] = useState<'all' | 'active' | 'past'>('all');
   const [activeTab, setActiveTab] = useState<'grid' | 'list'>('grid');
+  const [showCreateEventDialogue, setShowCreateEventDialogue] = useState(false);
 
   useEffect(() => {
     const loadEvents = async () => {
@@ -126,10 +127,10 @@ export default function EventsPage() {
 
 
         {/* here  */}
-        <Dialog>
+        <Dialog open={showCreateEventDialogue} onOpenChange={setShowCreateEventDialogue}>
           <DialogTrigger asChild>
             <Button
-              // onClick={createNewEvent}
+              onClick={() => setShowCreateEventDialogue(true)}
               className="mt-4 md:mt-0"
             >
               <PlusIcon className="h-4 w-4 mr-2" />
@@ -148,9 +149,6 @@ export default function EventsPage() {
             <SimpleEventCreateForm />
           </DialogContent>
         </Dialog>
-
-
-
       </div>
 
       {/* Single line filter controls that work on all screen sizes */}
@@ -257,7 +255,7 @@ export default function EventsPage() {
             <p className="text-gray-500 max-w-md mx-auto mb-6">
               You haven't created any events yet. Create your first event to start collecting photos!
             </p>
-            <Button onClick={createNewEvent}>
+            <Button onClick={() => setShowCreateEventDialogue(true)}>
               <PlusIcon className="h-4 w-4 mr-2" />
               Create First Event
             </Button>
