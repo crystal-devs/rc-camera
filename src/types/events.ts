@@ -145,3 +145,95 @@ export interface EventTemplate {
   label: string;
   desc: string;
 }
+
+// types/event.types.ts
+export interface ApiPhoto {
+  _id: string;
+  albumId: string;
+  eventId: string;
+  imageUrl: string;
+  thumbnail: string;
+  createdAt: string;
+  approval: {
+    status: 'auto_approved' | 'approved' | 'pending' | 'rejected';
+    approved_by?: string | null;
+    approved_at?: string;
+    rejection_reason?: string;
+    auto_approval_reason?: string;
+  };
+  metadata: {
+    width: number;
+    height: number;
+    device_info: {
+      brand: string;
+      model: string;
+      os: string;
+    };
+    timestamp: string | null;
+  };
+  url: string;
+}
+
+export interface TransformedPhoto {
+  id: string;
+  src: string;
+  width: number;
+  height: number;
+  uploaded_by: string;
+  approval: ApiPhoto['approval'];
+  createdAt: string;
+  albumId: string;
+  eventId: string;
+}
+
+export interface EventDetails {
+  title: string;
+  start_date: string;
+  location?: {
+    name: string;
+  };
+  permissions?: {
+    can_upload: boolean;
+    can_download: boolean;
+    require_approval: boolean;
+  };
+}
+
+export interface Pagination {
+  page: number;
+  hasMore: boolean;
+  total: number;
+  loading: boolean;
+}
+
+export interface MediaFetchOptions {
+  page: number;
+  limit: number;
+  scroll_type: 'pagination' | 'infinite';
+  quality: 'thumbnail' | 'display' | 'full';
+}
+
+export interface MediaResponse {
+  data: ApiPhoto[];
+  total?: number;
+  hasMore?: boolean;
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  };
+}
+
+// Transform function
+export const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => ({
+  id: apiPhoto._id,
+  src: apiPhoto.url,
+  width: apiPhoto.metadata?.width || 400,
+  height: apiPhoto.metadata?.height || 600,
+  uploaded_by: "Guest",
+  approval: apiPhoto.approval,
+  createdAt: apiPhoto.createdAt,
+  albumId: apiPhoto.albumId,
+  eventId: apiPhoto.eventId
+});

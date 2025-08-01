@@ -2,6 +2,7 @@
 
 import axios from 'axios';
 import { API_BASE_URL } from '@/lib/api-config';
+import { MediaFetchOptions, MediaResponse } from '@/types/events';
 
 // Enhanced media response type with progressive loading support
 export interface MediaItem {
@@ -275,77 +276,68 @@ export const getEventMediaCounts = async (
  * Guest access functions with progressive loading
  */
 export const getEventMediaWithGuestToken = async (
-    eventId: string,
-    authToken?: string | null,
-    guestToken?: string,
-    options: {
-        page?: number;
-        limit?: number;
-        quality?: 'thumbnail' | 'display' | 'full';
-    } = {}
-): Promise<MediaItem[]> => {
-    try {
-        const cacheKey = `guest_event_${eventId}_${guestToken}`;
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
+  eventId: string,
+  authToken?: string | null,
+  options: Partial<MediaFetchOptions> = {}
+): Promise<MediaResponse> => {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
 
-        // Add auth token if available (for authenticated users)
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        }
-        // Check cache first
-        const cached = imageCache.get(cacheKey);
-        if (cached && !options.page) {
-            console.log(`Using cached guest event media (${cached.length} items)`);
-            return cached;
-        }
-
-        console.log(`Fetching guest event media: ${eventId}`);
-
-        // const params = new URLSearchParams({
-        //     token: guestToken,
-        //     includeAllAlbums: includeAllAlbums.toString()
-        // });
-
-        // if (options.page) params.append('page', options.page.toString());
-        // if (options.limit) params.append('limit', options.limit.toString());
-        // if (options.quality) params.append('quality', options.quality);
-
-        const response = await axios.get(`${API_BASE_URL}/media/guest/${eventId}`, {
-            timeout: 15000,
-            headers
-        });
-        // const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/guest?${params}`, {
-        //     timeout: 15000
-        // });
-
-        console.log(response, 'response from guest event media API asdfasdf');
-
-        if (response.data && (response.data.status === true || response.data.success)) {
-            const mediaItems = response.data.data || [];
-
-            if (!options.page) {
-                imageCache.set(cacheKey, mediaItems);
-            }
-
-            console.log(`Fetched ${mediaItems.length} media items as guest`);
-            return mediaItems;
-        }
-
-        throw new Error(response.data?.message || 'Failed to fetch event media');
-    } catch (error) {
-        console.error('Error fetching event media with guest token:', error);
-
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Share link has expired or is no longer valid');
-            }
-        }
-
-        throw error;
+    // Add auth token if available
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
     }
+
+    // Build query parameters
+    const params = new URLSearchParams();
+    if (options.page) params.append('page', options.page.toString());
+    if (options.limit) params.append('limit', options.limit.toString());
+    if (options.quality) params.append('quality', options.quality);
+    if (options.scroll_type) params.append('scroll_type', options.scroll_type);
+
+    console.log(`Fetching guest event media: ${eventId} with params:`, Object.fromEntries(params));
+
+    const url = `${API_BASE_URL}/media/guest/${eventId}${params.toString() ? `?${params.toString()}` : ''}`;
+    
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers
+    });
+
+    console.log('API Response:', {
+      status: response.status,
+      dataKeys: Object.keys(response.data || {}),
+      itemCount: response.data?.data?.length || 0,
+      pagination: response.data?.pagination
+    });
+
+    if (response.data && (response.data.status === true || response.data.success)) {
+      const mediaItems = response.data.data || [];
+      
+      return {
+        data: mediaItems,
+        total: response.data.pagination?.total || response.data.total,
+        hasMore: response.data.pagination?.hasMore || response.data.hasMore,
+        nextCursor: response.data.nextCursor
+      };
+    }
+
+    throw new Error(response.data?.message || 'Failed to fetch event media');
+  } catch (error) {
+    console.error('Error fetching event media with guest token:', error);
+
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        throw new Error('Share link has expired or is no longer valid');
+      }
+    }
+
+    throw error;
+  }
 };
+
 
 export const getAlbumMediaWithGuestToken = async (
     albumId: string,

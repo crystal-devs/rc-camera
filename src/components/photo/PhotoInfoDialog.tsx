@@ -13,13 +13,14 @@ interface PhotoInfoDialogProps {
 }
 
 const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({ photo, open, onClose }) => {
+  console.log(JSON.stringify(photo, null, 2), 'JSON.stringify(photo, null, 2)')
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Photo Information</DialogTitle>
         </DialogHeader>
-        <pre className="whitespace-pre-wrap break-words">{JSON.stringify(photo, null, 2)}</pre>
+        {/* <pre className="whitespace-pre-wrap break-words">{JSON.stringify(photo, null, 2)}</pre> */}
       </DialogContent>
     </Dialog>
   );

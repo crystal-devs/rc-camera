@@ -1,4 +1,4 @@
-// Fixed FullscreenPhotoViewer - Resolves keyboard navigation skipping issue + Mobile swipe support
+// Professional Photo Viewer - Google Photos Style Implementation
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, InfoIcon, TrashIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,34 +38,16 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [imageLoading, setImageLoading] = useState(true);
   const controlsTimeoutRef = useRef<NodeJS.Timeout>();
-  const keyboardHandledRef = useRef(false);
-
-  // Touch/Swipe handling
+  
+  // Simplified touch handling - Google Photos style
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const swipeThreshold = 50; // Minimum distance for a swipe
-  const swipeTimeout = 300; // Maximum time for a swipe (ms)
-
-  // ImageKit URL optimization
-  const getOptimizedImageUrl = useCallback((imageUrl: string) => {
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-    const dpr = window.devicePixelRatio || 1;
-
-    const optimalWidth = Math.min(screenWidth * dpr, 2048);
-    const optimalHeight = Math.min(screenHeight * dpr, 2048);
-
-    const transformations = [
-      'f-auto',
-      'q-95',
-      `w-${Math.round(optimalWidth)}`,
-      `h-${Math.round(optimalHeight)}`,
-      'fit-inside',
-      'pr-true',
-      `dpr-${dpr}`
-    ];
-
-    return `${imageUrl}?tr=${transformations.join(':')}`;
-  }, []);
+  const [dragOffset, setDragOffset] = useState(0);
+  const isDraggingRef = useRef(false);
+  
+  // Constants
+  const SWIPE_THRESHOLD = 50;
+  const SWIPE_TIMEOUT = 300;
+  const MAX_DRAG = 100;
 
   // Auto-hide controls
   const resetControlsTimeout = useCallback(() => {
@@ -73,91 +55,110 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
       clearTimeout(controlsTimeoutRef.current);
     }
     setShowControls(true);
-    controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000);
+    controlsTimeoutRef.current = setTimeout(() => {
+      if (!isDraggingRef.current) { // Don't hide controls while dragging
+        setShowControls(false);
+      }
+    }, 3000);
   }, []);
 
-  // Touch event handlers for mobile swipe (React synthetic events - not used due to passive limitation)
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    // This is now handled by native event listeners
-  }, []);
+  // Simple navigation - immediate state change like Google Photos
+  const handleNavigation = useCallback((direction: 'prev' | 'next') => {
+    console.log(`📸 Navigation: ${direction}`);
+    
+    if (direction === 'prev' && selectedPhotoIndex !== null && selectedPhotoIndex > 0) {
+      setImageLoading(true);
+      onPrev();
+    } else if (direction === 'next' && selectedPhotoIndex !== null && selectedPhotoIndex < photos.length - 1) {
+      setImageLoading(true);
+      onNext();
+    }
+  }, [selectedPhotoIndex, photos.length, onPrev, onNext]);
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    // This is now handled by native event listeners
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    // This is now handled by native event listeners
-  }, []);
-
-  // Native touch event handlers with proper preventDefault support
-  const handleTouchStartNative = useCallback((e: TouchEvent) => {
-    if (e.touches.length === 1) {
-      const touch = e.touches[0];
+  // Touch event handlers - simplified and reliable with proper TypeScript types
+  const handleTouchStart = useCallback((e: Event) => {
+    const touchEvent = e as TouchEvent;
+    if (touchEvent.touches.length === 1) {
+      const touch = touchEvent.touches[0];
       touchStartRef.current = {
         x: touch.clientX,
         y: touch.clientY,
         time: Date.now()
       };
+      isDraggingRef.current = false;
+      setDragOffset(0);
     }
   }, []);
 
-  const handleTouchEndNative = useCallback((e: TouchEvent) => {
-    if (!touchStartRef.current || e.changedTouches.length !== 1) return;
+  const handleTouchMove = useCallback((e: Event) => {
+    const touchEvent = e as TouchEvent;
+    if (!touchStartRef.current) return;
 
-    const touch = e.changedTouches[0];
+    const touch = touchEvent.touches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    
+    // Check if this is a horizontal swipe
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
+      e.preventDefault();
+      isDraggingRef.current = true;
+      
+      // Apply drag with resistance at boundaries
+      let limitedDragOffset = deltaX * 0.5; // Reduce sensitivity
+      
+      // Add resistance at boundaries
+      const atFirstPhoto = selectedPhotoIndex === 0;
+      const atLastPhoto = selectedPhotoIndex === photos.length - 1;
+      
+      if ((deltaX > 0 && atFirstPhoto) || (deltaX < 0 && atLastPhoto)) {
+        limitedDragOffset = deltaX * 0.2; // More resistance
+      }
+      
+      // Limit maximum drag
+      limitedDragOffset = Math.max(-MAX_DRAG, Math.min(MAX_DRAG, limitedDragOffset));
+      setDragOffset(limitedDragOffset);
+    }
+  }, [selectedPhotoIndex, photos.length]);
+
+  const handleTouchEnd = useCallback((e: Event) => {
+    const touchEvent = e as TouchEvent;
+    if (!touchStartRef.current || touchEvent.changedTouches.length !== 1) return;
+
+    const touch = touchEvent.changedTouches[0];
     const deltaX = touch.clientX - touchStartRef.current.x;
     const deltaY = touch.clientY - touchStartRef.current.y;
     const deltaTime = Date.now() - touchStartRef.current.time;
+    const velocity = Math.abs(deltaX) / deltaTime;
 
-    // Check if this is a valid swipe (horizontal movement, within time limit)
-    if (
-      Math.abs(deltaX) > swipeThreshold &&
-      Math.abs(deltaX) > Math.abs(deltaY) * 2 && // More horizontal than vertical
-      deltaTime < swipeTimeout
-    ) {
+    // Reset drag offset
+    setDragOffset(0);
+    isDraggingRef.current = false;
+
+    // Check for valid swipe
+    const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY) * 1.5;
+    const isValidSwipe = isHorizontalSwipe && 
+      (Math.abs(deltaX) > SWIPE_THRESHOLD || velocity > 0.3) && 
+      deltaTime < SWIPE_TIMEOUT;
+
+    if (isValidSwipe) {
       e.preventDefault();
       if (deltaX > 0) {
-        // Swipe right - go to previous photo
-        console.log('👆 Mobile: Swipe right (prev)');
-        onPrev();
+        console.log('👆 Swipe right (prev)');
+        handleNavigation('prev');
       } else {
-        // Swipe left - go to next photo
-        console.log('👆 Mobile: Swipe left (next)');
-        onNext();
+        console.log('👆 Swipe left (next)');
+        handleNavigation('next');
       }
     }
 
     touchStartRef.current = null;
-  }, [onPrev, onNext]);
-
-  const handleTouchMoveNative = useCallback((e: TouchEvent) => {
-    // Prevent scrolling during potential swipe gesture
-    if (touchStartRef.current) {
-      const touch = e.touches[0];
-      const deltaX = Math.abs(touch.clientX - touchStartRef.current.x);
-      const deltaY = Math.abs(touch.clientY - touchStartRef.current.y);
-
-      // Only prevent default if this looks like a horizontal swipe
-      if (deltaX > deltaY && deltaX > 10) {
-        e.preventDefault();
-      }
-    }
-  }, []);
-
-  // FIXED: Single keyboard event handler with proper event management
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // Prevent event bubbling and multiple handling
-    if (keyboardHandledRef.current) return;
-
-    keyboardHandledRef.current = true;
-
-    // Reset the flag after a short delay to allow next keypress
-    setTimeout(() => {
-      keyboardHandledRef.current = false;
-    }, 100);
-
     resetControlsTimeout();
+  }, [handleNavigation, resetControlsTimeout]);
 
+  // Keyboard navigation
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    resetControlsTimeout();
+    
     switch (e.key) {
       case 'Escape':
         e.preventDefault();
@@ -165,92 +166,42 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         break;
       case 'ArrowLeft':
         e.preventDefault();
-        console.log('🔑 Keyboard: Left arrow pressed, calling onPrev');
-        onPrev();
+        console.log('⌨️ Keyboard: Left arrow');
+        handleNavigation('prev');
         break;
       case 'ArrowRight':
         e.preventDefault();
-        console.log('🔑 Keyboard: Right arrow pressed, calling onNext');
-        onNext();
+        console.log('⌨️ Keyboard: Right arrow');
+        handleNavigation('next');
         break;
       case ' ':
         e.preventDefault();
         setShowControls(prev => !prev);
         break;
     }
-  }, [onClose, onPrev, onNext, resetControlsTimeout]);
+  }, [onClose, handleNavigation, resetControlsTimeout]);
 
-  // Setup effects - FIXED: Single event listener setup with proper touch event handling
-  useEffect(() => {
-    console.log('🔍 FullscreenPhotoViewer mounted with photo index:', selectedPhotoIndex);
+  // Button click handlers
+  const handlePrevClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log('🖱️ Button: Prev clicked');
+    handleNavigation('prev');
+  }, [handleNavigation]);
 
-    setIsFullscreenActive(true);
-    document.body.style.overflow = 'hidden';
-    resetControlsTimeout();
+  const handleNextClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log('🖱️ Button: Next clicked');
+    handleNavigation('next');
+  }, [handleNavigation]);
 
-    const handleMouseMove = () => resetControlsTimeout();
-
-    // Add event listeners
-    document.addEventListener('keydown', handleKeyDown, true); // Use capture phase
-    document.addEventListener('mousemove', handleMouseMove);
-
-    // Add touch event listeners with passive: false to allow preventDefault
-    const viewerElement = document.querySelector('[data-fullscreen-viewer]');
-    if (viewerElement) {
-      viewerElement.addEventListener('touchstart', handleTouchStartNative, { passive: false });
-      viewerElement.addEventListener('touchend', handleTouchEndNative, { passive: false });
-      viewerElement.addEventListener('touchmove', handleTouchMoveNative, { passive: false });
-    }
-
-    return () => {
-      console.log('🔍 FullscreenPhotoViewer unmounting');
-      setIsFullscreenActive(false);
-      document.body.style.overflow = 'unset';
-
-      // Remove event listeners
-      document.removeEventListener('keydown', handleKeyDown, true);
-      document.removeEventListener('mousemove', handleMouseMove);
-
-      // Remove touch event listeners
-      if (viewerElement) {
-        viewerElement.removeEventListener('touchstart', handleTouchStartNative);
-        viewerElement.removeEventListener('touchend', handleTouchEndNative);
-        viewerElement.removeEventListener('touchmove', handleTouchMoveNative);
-      }
-
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-
-      // Reset keyboard flag
-      keyboardHandledRef.current = false;
-    };
-  }, [setIsFullscreenActive, handleKeyDown, resetControlsTimeout, handleTouchStartNative, handleTouchEndNative, handleTouchMoveNative]);
-
-  // Preload adjacent images
-  useEffect(() => {
-    if (selectedPhotoIndex !== null && photos.length > 1) {
-      // Preload previous
-      if (selectedPhotoIndex > 0) {
-        const prevImage = new Image();
-        prevImage.src = getOptimizedImageUrl(photos[selectedPhotoIndex - 1].imageUrl);
-      }
-
-      // Preload next
-      if (selectedPhotoIndex < photos.length - 1) {
-        const nextImage = new Image();
-        nextImage.src = getOptimizedImageUrl(photos[selectedPhotoIndex + 1].imageUrl);
-      }
-    }
-  }, [selectedPhotoIndex, photos, getOptimizedImageUrl]);
-
-  // Event handlers with proper event stopping
+  // Background click handler
   const handleBackgroundClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
+    if (e.target === e.currentTarget && !isDraggingRef.current) {
       setShowControls(prev => !prev);
     }
   }, []);
 
+  // Action handlers
   const handleDownload = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     const originalUrl = `${selectedPhoto.imageUrl}?tr=orig-true`;
@@ -269,29 +220,57 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     setPhotoInfoOpen(true);
   }, [setPhotoInfoOpen]);
 
-  // FIXED: Button click handlers with proper event management
-  const handlePrevClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    console.log('👆 Button: Prev clicked');
-    onPrev();
-  }, [onPrev]);
+  // Setup effect
+  useEffect(() => {
+    console.log('🔍 PhotoViewer mounted, photo index:', selectedPhotoIndex);
+    
+    setIsFullscreenActive(true);
+    document.body.style.overflow = 'hidden';
+    resetControlsTimeout();
+    setImageLoading(true); // Reset loading state for new photo
 
-  const handleNextClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    console.log('👆 Button: Next clicked');
-    onNext();
-  }, [onNext]);
+    const handleMouseMove = () => resetControlsTimeout();
+
+    // Event listeners
+    document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('mousemove', handleMouseMove);
+
+    // Touch event listeners with passive: false
+    const viewerElement = document.querySelector('[data-photo-viewer]');
+    if (viewerElement) {
+      viewerElement.addEventListener('touchstart', handleTouchStart, { passive: false });
+      viewerElement.addEventListener('touchmove', handleTouchMove, { passive: false });
+      viewerElement.addEventListener('touchend', handleTouchEnd, { passive: false });
+    }
+
+    return () => {
+      setIsFullscreenActive(false);
+      document.body.style.overflow = 'unset';
+      
+      document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('mousemove', handleMouseMove);
+      
+      if (viewerElement) {
+        viewerElement.removeEventListener('touchstart', handleTouchStart);
+        viewerElement.removeEventListener('touchmove', handleTouchMove);
+        viewerElement.removeEventListener('touchend', handleTouchEnd);
+      }
+      
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [setIsFullscreenActive, handleKeyDown, resetControlsTimeout, handleTouchStart, handleTouchMove, handleTouchEnd, selectedPhotoIndex]);
 
   if (!selectedPhoto) return null;
 
-  const optimizedImageUrl = getOptimizedImageUrl(selectedPhoto.imageUrl);
   const canGoPrev = selectedPhotoIndex !== null && selectedPhotoIndex > 0;
   const canGoNext = selectedPhotoIndex !== null && selectedPhotoIndex < photos.length - 1;
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black flex flex-col touch-none"
-      data-fullscreen-viewer
+    <div 
+      className="fixed inset-0 z-50 bg-black"
+      data-photo-viewer
     >
       {/* Loading indicator */}
       {imageLoading && (
@@ -300,89 +279,93 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         </div>
       )}
 
-      {/* Header */}
-      <div className={`absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full'
-        }`}>
-        <div className="flex items-center justify-between p-4 text-white">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-white hover:bg-white/20 rounded-full"
-              onClick={onClose}
-            >
-              <ArrowLeftIcon className="h-5 w-5" />
-            </Button>
-
-            {selectedPhotoIndex !== null && (
-              <span className="text-sm opacity-80 font-medium">
-                {selectedPhotoIndex + 1} of {photos.length}
-              </span>
-            )}
-
-            {selectedPhoto.approval && (
-              <Badge
-                variant={
-                  selectedPhoto.approval.status === 'approved' || selectedPhoto.approval.status === 'auto_approved'
-                    ? 'default'
-                    : selectedPhoto.approval.status === 'pending'
-                      ? 'secondary'
-                      : 'destructive'
-                }
-                className="text-xs"
+      {/* Header controls */}
+      <div className={`absolute top-0 left-0 right-0 z-10 transition-all duration-300 ${
+        showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full'
+      }`}>
+        <div className="bg-gradient-to-b from-black/80 to-transparent backdrop-blur-sm">
+          <div className="flex items-center justify-between p-4 text-white">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-white hover:bg-white/20 rounded-full"
+                onClick={onClose}
               >
-                {selectedPhoto.approval.status === 'auto_approved' ? 'Auto Approved' : selectedPhoto.approval.status}
-              </Badge>
-            )}
-          </div>
+                <ArrowLeftIcon className="h-5 w-5" />
+              </Button>
 
-          <div className="flex space-x-1">
-            {userPermissions.download && (
+              {selectedPhotoIndex !== null && (
+                <span className="text-sm opacity-80 font-medium">
+                  {selectedPhotoIndex + 1} of {photos.length}
+                </span>
+              )}
+
+              {selectedPhoto.approval && (
+                <Badge
+                  variant={
+                    selectedPhoto.approval.status === 'approved' || selectedPhoto.approval.status === 'auto_approved'
+                      ? 'default'
+                      : selectedPhoto.approval.status === 'pending'
+                        ? 'secondary'
+                        : 'destructive'
+                  }
+                  className="text-xs"
+                >
+                  {selectedPhoto.approval.status === 'auto_approved' ? 'Auto Approved' : selectedPhoto.approval.status}
+                </Badge>
+              )}
+            </div>
+
+            <div className="flex space-x-1">
+              {userPermissions.download && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-white/20"
+                  onClick={handleDownload}
+                  title="Download original quality"
+                >
+                  <DownloadIcon className="h-5 w-5" />
+                </Button>
+              )}
+
               <Button
                 variant="ghost"
                 size="icon"
                 className="text-white hover:bg-white/20"
-                onClick={handleDownload}
-                title="Download original quality"
+                onClick={handleInfo}
               >
-                <DownloadIcon className="h-5 w-5" />
+                <InfoIcon className="h-5 w-5" />
               </Button>
-            )}
 
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-white hover:bg-white/20"
-              onClick={handleInfo}
-            >
-              <InfoIcon className="h-5 w-5" />
-            </Button>
-
-            {userPermissions.delete && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-red-400 hover:bg-red-400/20"
-                onClick={handleDelete}
-              >
-                <TrashIcon className="h-5 w-5" />
-              </Button>
-            )}
+              {userPermissions.delete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-red-400 hover:bg-red-400/20"
+                  onClick={handleDelete}
+                >
+                  <TrashIcon className="h-5 w-5" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main image container */}
-      <div className="flex-1 relative overflow-hidden" onClick={handleBackgroundClick}>
-        {/* Navigation buttons - Desktop only */}
+      {/* Main photo area */}
+      <div className="h-full flex items-center justify-center relative" onClick={handleBackgroundClick}>
+        {/* Desktop navigation arrows */}
         {photos.length > 1 && (
           <>
             {canGoPrev && (
               <Button
                 variant="ghost"
                 size="icon"
-                className={`absolute left-4 top-1/2 transform -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all duration-300 hidden md:flex ${showControls ? 'opacity-100' : 'opacity-0'
-                  }`}
+                className={`absolute left-4 top-1/2 -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all duration-300 hidden md:flex ${
+                  showControls ? 'opacity-100' : 'opacity-0'
+                }`}
                 onClick={handlePrevClick}
               >
                 <ChevronLeftIcon className="h-6 w-6" />
@@ -393,8 +376,9 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className={`absolute right-4 top-1/2 transform -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all duration-300 hidden md:flex ${showControls ? 'opacity-100' : 'opacity-0'
-                  }`}
+                className={`absolute right-4 top-1/2 -translate-y-1/2 z-10 h-12 w-12 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all duration-300 hidden md:flex ${
+                  showControls ? 'opacity-100' : 'opacity-0'
+                }`}
                 onClick={handleNextClick}
               >
                 <ChevronRightIcon className="h-6 w-6" />
@@ -403,28 +387,37 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           </>
         )}
 
-        {/* Image */}
-        <div className="w-full h-full flex items-center justify-center p-4">
+        {/* Photo container with drag feedback */}
+        <div 
+          className="w-full h-full flex items-center justify-center p-4 transition-transform duration-200 ease-out"
+          style={{
+            transform: `translateX(${dragOffset}px)`,
+            opacity: Math.abs(dragOffset) > 0 ? Math.max(0.8, 1 - Math.abs(dragOffset) / 150) : 1
+          }}
+        >
           <img
+            key={selectedPhoto.id} // Force re-render for new photos
             src={selectedPhoto.imageUrl}
             alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
             className="max-w-full max-h-full object-contain"
-            style={{
-              width: 'auto',
-              height: 'auto',
-              maxWidth: '100%',
-              maxHeight: '100%'
+            onLoad={() => {
+              console.log('📸 Image loaded');
+              setImageLoading(false);
             }}
-            onLoad={() => setImageLoading(false)}
-            onError={() => setImageLoading(false)}
+            onError={() => {
+              console.log('❌ Image load error');
+              setImageLoading(false);
+            }}
             onClick={(e) => e.stopPropagation()}
+            draggable={false}
           />
         </div>
       </div>
 
-      {/* Mobile swipe instructions */}
-      <div className={`md:hidden absolute bottom-6 left-1/2 transform -translate-x-1/2 text-white text-xs text-center transition-all duration-300 ${showControls ? 'opacity-60' : 'opacity-0'
-        }`}>
+      {/* Mobile instructions */}
+      <div className={`md:hidden absolute bottom-6 left-1/2 -translate-x-1/2 text-white text-xs text-center transition-all duration-300 pointer-events-none ${
+        showControls ? 'opacity-60' : 'opacity-0'
+      }`}>
         <div>Tap to show/hide controls</div>
         <div className="mt-1">Swipe left/right to navigate</div>
       </div>

@@ -63,7 +63,6 @@ export default function EventDetailsHeader({ event }: EventHeaderProps) {
         }
     };
 
-    console.log('Event Details Header:', event);
     return (
         <div className="sticky top-0 z-30 w-full bg-transparent backdrop-blur-md shadow-sm">
             {/* Desktop Header */}
@@ -75,16 +74,6 @@ export default function EventDetailsHeader({ event }: EventHeaderProps) {
 
                 {/* Right side actions - desktop */}
                 <div className="flex gap-2">
-                    {/* Like/Heart Button */}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`h-9 w-9 rounded-full ${isFavorite ? 'text-green-400' : ''}`}
-                        onClick={toggleFavorite}
-                    >
-                        <HeartIcon className="h-4 w-4" fill={isFavorite ? "currentColor" : "none"} />
-                    </Button>
-
                     {/* Share Button */}
                     <Button
                         variant="ghost"
@@ -139,16 +128,6 @@ export default function EventDetailsHeader({ event }: EventHeaderProps) {
 
                 {/* Right side actions - mobile */}
                 <div className="flex gap-1">
-                    {/* Like/Heart Button */}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`h-9 w-9 rounded-full ${isFavorite ? 'text-green-400' : ''}`}
-                        onClick={toggleFavorite}
-                    >
-                        <HeartIcon className="h-4 w-4" fill={isFavorite ? "currentColor" : "none"} />
-                    </Button>
-
                     {/* Share Button */}
                     <Button
                         variant="ghost"
@@ -172,7 +151,7 @@ export default function EventDetailsHeader({ event }: EventHeaderProps) {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => router.push(`/events/${event._id}/edit`)}>
-                                Edit Event {event._id}
+                                Edit Event
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => router.push(`/events/${event._id}/guests`)}>
                                 Manage Guests

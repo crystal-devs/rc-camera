@@ -123,14 +123,15 @@ export default function PhotoGallery({
 
       setSelectedPhotoIndex(newIndex);
       setSelectedPhoto(photos[newIndex]);
-    } else {
-      console.log('🚫 Navigation blocked - invalid new index:', {
-        newIndex,
-        selectedPhotoIndex,
-        photosLength: photos.length
-      });
     }
   }, [selectedPhotoIndex, photos]);
+
+  const handlePhotoIndexChange = useCallback((newIndex: number) => {
+    if (newIndex >= 0 && newIndex < photos.length && newIndex !== selectedPhotoIndex) {
+      setSelectedPhotoIndex(newIndex);
+      setSelectedPhoto(photos[newIndex]);
+    }
+  }, [photos, selectedPhotoIndex]);
 
   // Smart cache key generation
   const getCacheKey = useCallback((eventId: string, albumId: string | null, status?: string) => {
@@ -856,27 +857,24 @@ export default function PhotoGallery({
                 setIsFullscreen(false);
                 setPhotoViewerOpen(false);
               }}
-              onPrev={handlePrevPhoto}  // ✅ Use dedicated handlers
-              onNext={handleNextPhoto}  // ✅ Use dedicated handlers
+              onPrev={handlePrevPhoto}
+              onNext={handleNextPhoto}
+              onPhotoIndexChange={handlePhotoIndexChange} // NEW: Add this callback
               setPhotoInfoOpen={setPhotoInfoOpen}
               deletePhoto={deletePhoto}
               downloadPhoto={downloadPhoto}
-            // Add moderation actions to photo viewer
-            // approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
-            // rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
-            // hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
             />
           )}
 
 
 
-          {selectedPhoto && (
+          {/* {selectedPhoto && (
             <PhotoInfoDialog
               photo={selectedPhoto}
               open={photoInfoOpen}
               onClose={() => setPhotoInfoOpen(false)}
             />
-          )}
+          )} */}
         </>
       )}
     </div>
