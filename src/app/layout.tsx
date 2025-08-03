@@ -2,7 +2,6 @@
 import Providers from '@/components/Providers';
 import { ConditionalNavigation } from '@/components/navigation/ConditionalNavigation';
 import { Toaster } from "@/components/ui/sonner";
-import { AppProvider } from '@/lib/AppContext';
 import { FullscreenProvider } from '@/lib/FullscreenContext';
 import type { Metadata } from 'next';
 import { Manrope } from 'next/font/google';
@@ -30,7 +29,6 @@ export default function RootLayout({
       <body className={manrope.className}>
         <Providers>
           <ImageKitProvider urlEndpoint={process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT}>
-            <AppProvider>
               <FullscreenProvider>
                 <ConditionalNavigation>
                   {children}
@@ -38,7 +36,6 @@ export default function RootLayout({
                 {/* Toaster notification system */}
                 <Toaster />
               </FullscreenProvider>
-            </AppProvider>
           </ImageKitProvider>
         </Providers>
       </body>
