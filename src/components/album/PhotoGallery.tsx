@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogContent } from '@/components/ui/dialog';
-import { db } from '@/lib/db';
 import { toast } from 'sonner';
 import PhotoInfoDialog from '@/components/photo/PhotoInfoDialog';
 import {
@@ -528,18 +527,6 @@ export default function PhotoGallery({
                 fileSize: file.size
               }
             };
-
-            try {
-              if (newPhoto.albumId) {
-                await db.photos.add({
-                  ...newPhoto,
-                  albumId: newPhoto.albumId
-                });
-              }
-            } catch (dbError) {
-              console.warn('Failed to add to local DB, continuing:', dbError);
-            }
-
             return newPhoto;
           } catch (error) {
             console.error(`Error uploading file ${file.name}:`, error);
@@ -628,8 +615,6 @@ export default function PhotoGallery({
           console.error('Error deleting photo from backend:', apiError);
         }
       }
-
-      await db.photos.where('id').equals(photoId).delete();
 
       setPhotos(prev => prev.filter(p => p.id !== photoId));
 
