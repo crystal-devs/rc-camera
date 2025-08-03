@@ -114,7 +114,7 @@ export default function PhotoGallery({
     if (newIndex !== selectedPhotoIndex && newIndex >= 0 && newIndex < photos.length) {
       console.log('📸 Navigation successful:', {
         direction,
-        from: selectedPhotoIndex,
+        from: selectedPhotoIndex, 
         to: newIndex,
         totalPhotos: photos.length,
         fromPhotoId: photos[selectedPhotoIndex]?.id,
@@ -141,8 +141,8 @@ export default function PhotoGallery({
 
   // Fetch media counts
   const fetchMediaCounts = useCallback(async () => {
-    const authToken = token || localStorage.getItem('authToken');
-    if (!authToken) return; // Skip for guest access
+    const authToken = token || localStorage.getItem('rc-token');
+    if (!authToken || guestToken) return; // Skip for guest access
 
     try {
       const counts = 0
@@ -161,7 +161,8 @@ export default function PhotoGallery({
     cursor?: string,
     forceRefresh = false
   ) => {
-    const authToken = token || localStorage.getItem('authToken');
+    const authToken = token || localStorage.getItem('rc-token');
+    const isGuestAccess = Boolean(guestToken);
 
     if (!authToken) {
       console.error('No auth token or guest token available');
@@ -332,7 +333,7 @@ export default function PhotoGallery({
       return;
     }
 
-    const authToken = token || localStorage.getItem('authToken');
+    const authToken = token || localStorage.getItem('rc-token');
     if (!authToken) {
       return;
     }

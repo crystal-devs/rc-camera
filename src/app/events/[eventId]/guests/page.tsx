@@ -151,9 +151,9 @@
 //       return;
 //     }
     
-//     const loadEventAndGuests = async () => {
-//       // Try to get the token from the hook or directly from localStorage as fallback
-//       const token = authToken || localStorage.getItem('authToken');
+    // const loadEventAndGuests = async () => {
+      // Try to get the token from the hook or directly from localStorage as fallback
+      // const token = authToken || localStorage.getItem('rc-token');
       
 //       console.log('Using token for API request:', token ? 'Token available' : 'No token');
       
@@ -297,8 +297,8 @@
 //   const getShareToken = async () => {
 //     if (shareToken) return shareToken;
     
-//     const token = authToken || localStorage.getItem('authToken');
-//     if (!token) return null;
+    // const token = authToken || localStorage.getItem('rc-token');
+    // if (!token) return null;
     
 //     try {
 //       // const tokenData = await getTokenByEventId(eventId, token as string);
@@ -352,9 +352,9 @@
 //       return;
 //     }
     
-//     try {
-//       setIsLoading(true);
-//       const token = authToken || localStorage.getItem('authToken');
+    // try {
+    //   setIsLoading(true);
+    //   const token = authToken || localStorage.getItem('rc-token');
       
 //       if (!token) {
 //         toast.error("You need to be logged in to invite guests.");

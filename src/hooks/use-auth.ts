@@ -9,7 +9,7 @@ export const useAuth = () => {
   const router = useRouter();
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = localStorage.getItem('rc-token');
     if (storedToken) {
       setAuthToken(storedToken);
     } else {
@@ -28,7 +28,7 @@ export const useAuth = () => {
       }
 
       // If you need to decode it from the auth token
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem('rc-token');
       if (token) {
         try {
           // Decode JWT token to get user ID
@@ -57,13 +57,13 @@ export const useAuthToken = () => {
   useEffect(() => {
     // Try to get token from localStorage
     try {
-      const tokenFromStorage = localStorage.getItem('authToken');
+      const tokenFromStorage = localStorage.getItem('rc-token');
       console.log('useAuthToken: Initial token check -', tokenFromStorage ? 'Found' : 'Not found');
       setToken(tokenFromStorage);
 
       // Check for token in storage changes (for multi-tab support)
       const handleStorageChange = (e: StorageEvent) => {
-        if (e.key === 'authToken') {
+        if (e.key === 'rc-token') {
           console.log('useAuthToken: Token changed in another tab');
           setToken(e.newValue);
         }
@@ -73,7 +73,7 @@ export const useAuthToken = () => {
       // This helps in cases where the storage event might not fire
       const intervalId = setInterval(() => {
         try {
-          const currentToken = localStorage.getItem('authToken');
+          const currentToken = localStorage.getItem('rc-token');
           if (currentToken !== token) {
             console.log('useAuthToken: Token updated via polling');
             setToken(currentToken);

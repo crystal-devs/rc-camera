@@ -20,7 +20,7 @@ export default function MediaUploadDebugger() {
   const [authToken, setAuthToken] = useState<string>('');
   
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('rc-token');
     if (token) {
       setAuthToken(token);
     }

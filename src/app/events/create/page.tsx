@@ -49,7 +49,7 @@ const SimpleEventCreateForm = () => {
   const [authToken, setAuthToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = localStorage.getItem('rc-token');
     if (storedToken) {
       setAuthToken(storedToken);
     } else {

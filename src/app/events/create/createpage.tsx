@@ -110,7 +110,7 @@ export default function CreateEventPage() {
 
   // Get auth token on page load
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = localStorage.getItem('rc-token');
     if (storedToken) {
       setAuthToken(storedToken);
     } else {
