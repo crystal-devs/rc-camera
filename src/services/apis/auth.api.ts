@@ -73,6 +73,19 @@ export const verifyUser = async (router: any) => {
         return true
     }catch(error){
         console.log(error)
+        // router.push('/login')
+        return false
+    }
+}
+
+export const verifyUserAndIfNotThenRedirectToLogin = async (router: any) => {
+    try{
+        await axios.get(VERIFY_USER_ROUTE, {
+            headers: setHeader()
+        })
+        return true
+    }catch(error){
+        console.log(error)
         router.push('/login')
         return false
     }
