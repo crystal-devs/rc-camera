@@ -300,11 +300,16 @@ export const getEventMediaCounts = async (
  * Guest access functions with progressive loading
  */
 export const getEventMediaWithGuestToken = async (
-    eventId: string,
+    shareToken: string,
     authToken?: string | null,
     options: Partial<MediaFetchOptions> = {}
 ): Promise<MediaResponse> => {
     try {
+        // Input validation
+        if (!shareToken) {
+            throw new Error('Share token is required');
+        }
+
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
         };
@@ -314,51 +319,142 @@ export const getEventMediaWithGuestToken = async (
             headers['Authorization'] = `Bearer ${authToken}`;
         }
 
-        // Build query parameters
+        // Build query parameters with defaults
         const params = new URLSearchParams();
         if (options.page) params.append('page', options.page.toString());
         if (options.limit) params.append('limit', options.limit.toString());
         if (options.quality) params.append('quality', options.quality);
-        if (options.scroll_type) params.append('scroll_type', options.scroll_type);
+        if (options.scroll_type) params.append('scrollType', options.scroll_type); // Fixed param name
 
-        console.log(`Fetching guest event media: ${eventId} with params:`, Object.fromEntries(params));
+        console.log(`🔗 Fetching guest event media: ${shareToken.substring(0, 8)}... with params:`, Object.fromEntries(params));
 
-        const url = `${API_BASE_URL}/media/guest/${eventId}${params.toString() ? `?${params.toString()}` : ''}`;
+        const url = `${API_BASE_URL}/media/guest/${shareToken}${params.toString() ? `?${params.toString()}` : ''}`;
+        console.log(`📡 API URL: ${url}`);
 
         const response = await axios.get(url, {
             timeout: 15000,
-            headers
+            headers,
+            validateStatus: (status) => status < 500 // Accept 4xx errors to handle them properly
         });
 
-        console.log('API Response:', {
+        console.log('📦 API Response:', {
             status: response.status,
-            dataKeys: Object.keys(response.data || {}),
+            statusText: response.statusText,
+            dataKeys: response.data ? Object.keys(response.data) : [],
+            hasData: !!response.data?.data,
             itemCount: response.data?.data?.length || 0,
-            pagination: response.data?.pagination
+            apiStatus: response.data?.status,
+            apiSuccess: response.data?.success,
+            pagination: response.data?.pagination,
+            other: response.data?.other
         });
 
-        if (response.data && (response.data.status === true || response.data.success)) {
-            const mediaItems = response.data.data || [];
-
-            return {
-                data: mediaItems,
-                total: response.data.pagination?.total || response.data.total,
-                hasMore: response.data.pagination?.hasMore || response.data.hasMore,
-                nextCursor: response.data.nextCursor
-            };
-        }
-
-        throw new Error(response.data?.message || 'Failed to fetch event media');
-    } catch (error) {
-        console.error('Error fetching event media with guest token:', error);
-
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 401 || error.response?.status === 403) {
+        // Handle different HTTP status codes
+        if (response.status >= 400) {
+            const errorMessage = response.data?.message || response.data?.error?.message || `HTTP ${response.status}`;
+            
+            if (response.status === 401 || response.status === 403) {
                 throw new Error('Share link has expired or is no longer valid');
+            } else if (response.status === 404) {
+                throw new Error('Event not found or share link is invalid');
+            } else {
+                throw new Error(errorMessage);
             }
         }
 
-        throw error;
+        // Check API response structure
+        if (!response.data) {
+            throw new Error('No response data received');
+        }
+
+        // Handle different API response formats
+        const isSuccessful = response.data.status === true || 
+                            response.data.success === true || 
+                            response.status === 200;
+
+        if (!isSuccessful) {
+            const errorMessage = response.data.message || 
+                               response.data.error?.message || 
+                               'API request was not successful';
+            throw new Error(errorMessage);
+        }
+
+        const mediaItems = response.data.data || [];
+
+        // Enhanced response structure to handle multiple pagination formats
+        const result: MediaResponse = {
+            data: mediaItems,
+            // Try multiple sources for total count
+            total: response.data.pagination?.total || 
+                  response.data.pagination?.totalCount || 
+                  response.data.total || 
+                  response.data.other?.pagination?.totalCount || 
+                  mediaItems.length,
+            
+            // Try multiple sources for hasMore
+            hasMore: response.data.pagination?.hasMore || 
+                    response.data.hasMore || 
+                    response.data.pagination?.hasNext || 
+                    response.data.other?.pagination?.hasNext || 
+                    false,
+            
+            nextCursor: response.data.nextCursor,
+            
+            // Preserve original pagination structure
+            pagination: response.data.pagination,
+            other: response.data.other
+        };
+
+        console.log('✅ Processed API response:', {
+            dataCount: result.data.length,
+            total: result.total,
+            hasMore: result.hasMore,
+            hasPagination: !!result.pagination,
+            hasOther: !!result.other
+        });
+
+        return result;
+
+    } catch (error) {
+        console.error('❌ Error fetching event media with guest token:', {
+            shareToken: shareToken.substring(0, 8) + '...',
+            error: error instanceof Error ? error.message : String(error),
+            options
+        });
+
+        // Enhanced error handling
+        if (axios.isAxiosError(error)) {
+            if (error.code === 'ECONNABORTED') {
+                throw new Error('Request timeout - please check your connection');
+            }
+            
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw new Error('Share link has expired or is no longer valid');
+            }
+            
+            if (error.response?.status === 404) {
+                throw new Error('Event not found or share link is invalid');
+            }
+            
+            if (error.response?.status >= 500) {
+                throw new Error('Server error - please try again later');
+            }
+
+            // Use response error message if available
+            const responseMessage = error.response?.data?.message || 
+                                  error.response?.data?.error?.message;
+            if (responseMessage) {
+                throw new Error(responseMessage);
+            }
+        }
+
+        // Re-throw the error if it's already a custom error
+        if (error instanceof Error) {
+            throw error;
+        }
+
+        // Generic fallback error
+        throw new Error('Failed to fetch event media - please try again');
     }
 };
 

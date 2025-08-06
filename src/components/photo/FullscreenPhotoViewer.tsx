@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, Download, Share2, X } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { useEffect, useState } from "react";
-import { TransformedPhoto } from "@/app/guest/[eventId]/page";
+import { TransformedPhoto } from "@/types/events";
 
 export const FullscreenPhotoViewer: React.FC<{
   selectedPhoto: TransformedPhoto;

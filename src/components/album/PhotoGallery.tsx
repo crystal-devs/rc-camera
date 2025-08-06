@@ -1,33 +1,36 @@
-// components/OptimizedPhotoGallery.tsx - Fixed to use proper hooks
-
 'use client';
 
-import { useState, useRef, useCallback, useMemo } from 'react';
-import { XIcon } from 'lucide-react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { XIcon, WifiIcon, WifiOffIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
   useEventMedia,
-  useInfiniteEventMediaFlat, // Use the flat version for easier handling
+  useInfiniteEventMediaFlat,
   useEventMediaCounts,
-  useUploadMedia,
+  useUploadMultipleMedia,
   useUpdateMediaStatus,
   useDeleteMedia,
-  useGalleryUtils,
-  useUploadMultipleMedia
+  useGalleryUtils
 } from '@/hooks/useMediaQueries';
 import { StatusTabs } from './StatusTabs';
 import { EmptyState } from './EmptyState';
 import PhotoUploadDialog from './PhotoUploadDialog';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
-import { useMediaStatusUpdate } from '@/hooks/useMediaStatusUpdate';
 import { OptimizedPhotoGrid } from './PhotoGrid';
+import { useSimpleWebSocket } from '@/hooks/useWebSocket';
+
+interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
+  shareToken?: string;
+}
 
 export default function OptimizedPhotoGallery({
   eventId,
   albumId,
+  shareToken,
   canUpload = true,
   userPermissions = {
     upload: true,
@@ -36,7 +39,7 @@ export default function OptimizedPhotoGallery({
     delete: true
   },
   approvalMode = 'auto'
-}: PhotoGalleryProps) {
+}: OptimizedPhotoGalleryProps) {
   // State management
   const [activeTab, setActiveTab] = useState<'approved' | 'pending' | 'rejected' | 'hidden'>('approved');
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
@@ -44,13 +47,15 @@ export default function OptimizedPhotoGallery({
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
-  const statusUpdateMutation = useMediaStatusUpdate(eventId);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Choose between regular and infinite query based on photo count
+  // 🚀 SIMPLE WEBSOCKET CONNECTION - Admin mode
+  const webSocket = useSimpleWebSocket(eventId, shareToken, 'admin');
+
+  // Data fetching hooks with better error handling
   const {
     data: regularPhotos = [],
     isLoading: regularLoading,
@@ -69,7 +74,8 @@ export default function OptimizedPhotoGallery({
     isFetchingNextPage,
     hasNextPage,
     fetchNextPage,
-    error: infiniteError
+    error: infiniteError,
+    refetch: refetchInfinite
   } = useInfiniteEventMediaFlat(eventId, {
     status: activeTab,
     limit: 20,
@@ -81,36 +87,71 @@ export default function OptimizedPhotoGallery({
   const photos = useInfiniteScroll ? infinitePhotos : regularPhotos;
   const isLoading = useInfiniteScroll ? infiniteLoading : regularLoading;
   const photosError = useInfiniteScroll ? infiniteError : regularError;
+  const refetchPhotos = useInfiniteScroll ? refetchInfinite : refetchRegular;
 
   // Switch to infinite scroll if we have many photos
-  useMemo(() => {
+  useEffect(() => {
     if (regularPhotos.length > 50 && !useInfiniteScroll) {
       console.log('Switching to infinite scroll mode due to large photo count');
       setUseInfiniteScroll(true);
     }
   }, [regularPhotos.length, useInfiniteScroll]);
 
-  let mediaCounts = 0
-  let countsLoading = false
-  // const {
-  //   data: mediaCounts,
-  //   isLoading: countsLoading
-  // } = useEventMediaCounts(eventId, userPermissions.moderate);
+  // Media counts
+  const {
+    data: mediaCounts,
+    isLoading: countsLoading,
+    refetch: refetchCounts
+  } = useEventMediaCounts(eventId, userPermissions.moderate);
 
-  // Mutations
-
-    const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
+  // Mutations with better success/error handling
+  const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
     onSuccess: () => {
       setUploadDialogOpen(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
+      // Refetch counts and photos
+      refetchCounts();
+      refetchPhotos();
+    },
+    onError: (error) => {
+      console.error('Upload failed:', error);
     }
   });
+
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
 
   // Gallery utilities
   const { getCachedPhotoCount } = useGalleryUtils(eventId);
+
+  // 🎯 SIMPLE CONNECTION STATUS DISPLAY
+  const ConnectionStatus = () => {
+    if (!webSocket.isConnected) {
+      return (
+        <Badge variant="destructive" className="flex items-center gap-1">
+          <WifiOffIcon className="h-3 w-3" />
+          Offline
+        </Badge>
+      );
+    }
+
+    if (!webSocket.isAuthenticated) {
+      return (
+        <Badge variant="secondary" className="flex items-center gap-1">
+          <WifiIcon className="h-3 w-3" />
+          Connecting...
+        </Badge>
+      );
+    }
+
+    return (
+      <Badge variant="default" className="flex items-center gap-1 bg-green-500">
+        <WifiIcon className="h-3 w-3" />
+        Live
+      </Badge>
+    );
+  };
 
   // Memoized computed values
   const canUserUpload = useMemo(() =>
@@ -124,6 +165,7 @@ export default function OptimizedPhotoGallery({
       pending: getCachedPhotoCount('pending'),
       rejected: getCachedPhotoCount('rejected'),
       hidden: getCachedPhotoCount('hidden'),
+      auto_approved: getCachedPhotoCount('auto_approved'),
       total: 0
     },
     [mediaCounts, getCachedPhotoCount]
@@ -137,18 +179,16 @@ export default function OptimizedPhotoGallery({
     setActiveTab(newTab);
     setSelectedPhoto(null);
     setPhotoViewerOpen(false);
-
-    // Reset infinite scroll mode when changing tabs
     setUseInfiniteScroll(false);
   }, [activeTab]);
 
   const handleStatusUpdate = useCallback((photoId: string, status: string, reason?: string) => {
-    statusUpdateMutation.mutate({
+    updateStatusMutation.mutate({
       mediaId: photoId,
       status: status as 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved',
       reason
     });
-  }, [statusUpdateMutation]);
+  }, [updateStatusMutation]);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -159,7 +199,6 @@ export default function OptimizedPhotoGallery({
       return;
     }
 
-    // Validate files
     const validFiles = Array.from(files).filter(file => {
       if (!file.type.startsWith('image/')) {
         toast.error(`"${file.name}" is not a valid image file.`);
@@ -184,7 +223,6 @@ export default function OptimizedPhotoGallery({
     uploadMutation.mutate(validFiles);
   }, [canUserUpload, uploadMutation]);
 
-  // Photo viewer handlers
   const openPhotoViewer = useCallback((photo: Photo, index: number) => {
     setSelectedPhoto(photo);
     setSelectedPhotoIndex(index);
@@ -233,18 +271,39 @@ export default function OptimizedPhotoGallery({
     document.body.removeChild(link);
   }, [userPermissions.download]);
 
-  const handleCameraCapture = useCallback(() => {
-    if (cameraInputRef.current) {
-      cameraInputRef.current.click();
-    }
-  }, []);
-
-  // Load more handler for infinite scroll
   const handleLoadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Manual refresh function for debugging
+  const handleManualRefresh = useCallback(() => {
+    console.log('🔄 Manual refresh triggered');
+    refetchPhotos();
+    refetchCounts();
+    toast.info('Refreshing data...');
+  }, [refetchPhotos, refetchCounts]);
+
+  // 🚀 SIMPLIFIED WEBSOCKET EFFECT HANDLERS
+  useEffect(() => {
+    if (webSocket.connectionError) {
+      console.error('WebSocket in photo gallery connection error:', webSocket.connectionError);
+      toast.error(`Connection failed: ${webSocket.connectionError}`, {
+        description: 'Real-time updates may not work',
+        duration: 5000
+      });
+    }
+  }, [webSocket.connectionError]);
+
+  useEffect(() => {
+    if (webSocket.isAuthenticated && webSocket.user) {
+      console.log('✅ Admin WebSocket authenticated:', webSocket.user);
+      if (process.env.NODE_ENV === 'development') {
+        toast.success(`Connected as ${webSocket.user.name}`, { duration: 2000 });
+      }
+    }
+  }, [webSocket.isAuthenticated, webSocket.user]);
 
   // Error handling
   if (photosError) {
@@ -259,19 +318,20 @@ export default function OptimizedPhotoGallery({
         <p className="text-red-600 dark:text-red-400 text-center max-w-md mb-6">
           {photosError.message || 'Something went wrong while loading photos.'}
         </p>
-        <Button
-          onClick={() => useInfiniteScroll ? fetchNextPage() : refetchRegular()}
-          variant="outline"
-        >
-          Try Again
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={refetchPhotos} variant="outline">
+            Try Again
+          </Button>
+          <Button onClick={handleManualRefresh} variant="outline">
+            Force Refresh
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header with status tabs and controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <StatusTabs
@@ -280,8 +340,7 @@ export default function OptimizedPhotoGallery({
             mediaCounts={displayCounts}
             userPermissions={userPermissions}
           />
-
-          {/* Show mode indicator */}
+          <ConnectionStatus />
           {useInfiniteScroll && (
             <div className="text-xs text-gray-500">
               Infinite scroll mode ({photos.length} photos loaded)
@@ -289,20 +348,48 @@ export default function OptimizedPhotoGallery({
           )}
         </div>
 
-        {canUserUpload && (
-          <PhotoUploadDialog
-            open={uploadDialogOpen}
-            setOpen={setUploadDialogOpen}
-            isUploading={uploadMutation.isPending}
-            approvalMode={approvalMode}
-            onFileUpload={handleFileUpload}
-            fileInputRef={fileInputRef}
-            cameraInputRef={cameraInputRef}
-          />
-        )}
+        <div className="flex items-center gap-2">
+          {process.env.NODE_ENV === 'development' && (
+            <>
+              {webSocket.isAuthenticated && webSocket.user && (
+                <Badge variant="outline" className="text-xs">
+                  {webSocket.user.type}: {webSocket.user.name}
+                </Badge>
+              )}
+              <Button 
+                onClick={handleManualRefresh} 
+                variant="outline" 
+                size="sm"
+                className="text-xs"
+              >
+                🔄 Refresh
+              </Button>
+            </>
+          )}
+
+          {canUserUpload && (
+            <PhotoUploadDialog
+              open={uploadDialogOpen}
+              setOpen={setUploadDialogOpen}
+              isUploading={uploadMutation.isPending}
+              approvalMode={approvalMode}
+              onFileUpload={handleFileUpload}
+              fileInputRef={fileInputRef}
+              cameraInputRef={cameraInputRef}
+            />
+          )}
+        </div>
       </div>
 
-      {/* Main content */}
+      {(updateStatusMutation.isPending || uploadMutation.isPending) && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-blue-700 dark:text-blue-300">
+            {uploadMutation.isPending ? 'Uploading photos...' : 'Updating status...'}
+          </span>
+        </div>
+      )}
+
       {isLoading || countsLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4">
           {Array.from({ length: 16 }).map((_, i) => (
@@ -328,7 +415,6 @@ export default function OptimizedPhotoGallery({
             onDelete={handleDelete}
           />
 
-          {/* Load more button for infinite scroll */}
           {useInfiniteScroll && hasNextPage && (
             <div className="flex justify-center pt-6">
               <Button
@@ -341,7 +427,6 @@ export default function OptimizedPhotoGallery({
             </div>
           )}
 
-          {/* Photo viewer */}
           {photoViewerOpen && selectedPhoto && (
             <FullscreenPhotoViewer
               selectedPhoto={selectedPhoto}
@@ -371,7 +456,6 @@ export default function OptimizedPhotoGallery({
         </>
       )}
 
-      {/* Hidden file inputs */}
       <input
         ref={fileInputRef}
         type="file"
