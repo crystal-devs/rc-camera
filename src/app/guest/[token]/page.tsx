@@ -1,7 +1,7 @@
 // app/guest/[token]/page.tsx - Fixed version
 'use client';
 
-import React, { useState, useCallback, use, useEffect } from 'react';
+import React, { useState, useCallback, use, useEffect, memo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WifiIcon, WifiOffIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +37,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<TransformedPhoto | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  const [roomStats, setRoomStats] = useState<{
+    eventId?: string;
+    guestCount?: number;
+    adminCount?: number;
+    total?: number;
+  }>({});
 
   const [auth] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -67,49 +73,19 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     limit: 20,
   });
 
-  // Real-time WebSocket handlers
+  // Optimize room stats handler with useCallback
+  const handleRoomStats = useCallback((payload: any) => {
+    console.log('📊 Room stats update:', payload);
+    setRoomStats(payload);
+  }, []);
+
+  // Clean up the WebSocket effect
   useEffect(() => {
     if (!webSocket.socket) return;
 
-    const socket = webSocket.socket;
-
-    // Handle media status updates (admin changes status)
-    const handleStatusUpdate = (payload: any) => {
-      console.log('📡 Guest received status update:', payload);
-
-      const { previousStatus, newStatus } = payload;
-      const wasVisible = ['approved', 'auto_approved'].includes(previousStatus);
-      const isVisible = ['approved', 'auto_approved'].includes(newStatus);
-
-      // Only refresh if visibility changed
-      if (wasVisible !== isVisible) {
-        console.log('🔄 Guest: Photo visibility changed, refreshing...');
-        refresh();
-      }
-    };
-
-    // Handle specific guest events from backend
-    const handleMediaApproved = (payload: any) => {
-      console.log('📸 Guest: New media approved:', payload);
-      refresh(); // Refresh to show new photo
-    };
-
-    const handleMediaRemoved = (payload: any) => {
-      console.log('📸 Guest: Media removed:', payload);
-      refresh(); // Refresh to hide removed photo
-    };
-
-    // Subscribe to events
-    socket.on('media_status_updated', handleStatusUpdate);
-    socket.on('media_approved', handleMediaApproved);
-    socket.on('media_removed', handleMediaRemoved);
-
-    return () => {
-      socket.off('media_status_updated', handleStatusUpdate);
-      socket.off('media_approved', handleMediaApproved);
-      socket.off('media_removed', handleMediaRemoved);
-    };
-  }, [webSocket.socket, refresh]);
+    webSocket.socket.on('room_user_counts', handleRoomStats);
+    return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
+  }, [webSocket.socket, handleRoomStats]);
 
   // 🎯 Connection Status Component
   const ConnectionStatus = () => {
@@ -169,6 +145,22 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     link.click();
     document.body.removeChild(link);
   }, []);
+
+  // Create a separate component for room stats
+  const RoomStatsDisplay = memo(({ roomStats }: { roomStats: any }) => {
+    if (!roomStats.guestCount) return null;
+
+    return (
+      <Badge variant="secondary" className="text-xs">
+        👥 {roomStats.guestCount} guest{roomStats.guestCount !== 1 ? 's' : ''} online
+        {roomStats.total && roomStats.total !== roomStats.guestCount && (
+          <span className="ml-1 text-gray-500">
+            ({roomStats.total} total)
+          </span>
+        )}
+      </Badge>
+    );
+  });
 
   const renderContent = useCallback(() => {
     if (isInitialLoading) {
@@ -257,6 +249,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
             <div className="flex items-center gap-3">
               <ConnectionStatus />
+              <RoomStatsDisplay roomStats={roomStats} />
               <button
                 onClick={refresh}
                 disabled={isInitialLoading || isLoadingMore}

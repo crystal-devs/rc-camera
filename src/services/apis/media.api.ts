@@ -274,22 +274,23 @@ export const getEventMediaCounts = async (
     total: number;
 } | null> => {
     try {
-        const endpoint = `${API_BASE_URL}/media/event/${eventId}/counts`;
+        // const endpoint = `${API_BASE_URL}/media/event/${eventId}/counts`;
 
-        console.log(`Fetching media counts for eventId: ${eventId}`);
+        // console.log(`Fetching media counts for eventId: ${eventId}`);
 
-        const response = await axios.get(endpoint, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-            },
-            timeout: 10000,
-        });
+        // const response = await axios.get(endpoint, {
+        //     headers: {
+        //         'Authorization': `Bearer ${authToken}`,
+        //     },
+        //     timeout: 10000,
+        // });
 
-        if (response.data && response.data.status === true) {
-            return response.data.data;
-        }
+        // if (response.data && response.data.status === true) {
+        //     return response.data.data;
+        // }
 
-        throw new Error(response.data?.message || 'Failed to fetch media counts');
+        // throw new Error(response.data?.message || 'Failed to fetch media counts');
+        return null;
     } catch (error) {
         console.error('Error fetching media counts:', error);
         return null;
@@ -352,7 +353,7 @@ export const getEventMediaWithGuestToken = async (
         // Handle different HTTP status codes
         if (response.status >= 400) {
             const errorMessage = response.data?.message || response.data?.error?.message || `HTTP ${response.status}`;
-            
+
             if (response.status === 401 || response.status === 403) {
                 throw new Error('Share link has expired or is no longer valid');
             } else if (response.status === 404) {
@@ -368,14 +369,14 @@ export const getEventMediaWithGuestToken = async (
         }
 
         // Handle different API response formats
-        const isSuccessful = response.data.status === true || 
-                            response.data.success === true || 
-                            response.status === 200;
+        const isSuccessful = response.data.status === true ||
+            response.data.success === true ||
+            response.status === 200;
 
         if (!isSuccessful) {
-            const errorMessage = response.data.message || 
-                               response.data.error?.message || 
-                               'API request was not successful';
+            const errorMessage = response.data.message ||
+                response.data.error?.message ||
+                'API request was not successful';
             throw new Error(errorMessage);
         }
 
@@ -385,21 +386,21 @@ export const getEventMediaWithGuestToken = async (
         const result: MediaResponse = {
             data: mediaItems,
             // Try multiple sources for total count
-            total: response.data.pagination?.total || 
-                  response.data.pagination?.totalCount || 
-                  response.data.total || 
-                  response.data.other?.pagination?.totalCount || 
-                  mediaItems.length,
-            
+            total: response.data.pagination?.total ||
+                response.data.pagination?.totalCount ||
+                response.data.total ||
+                response.data.other?.pagination?.totalCount ||
+                mediaItems.length,
+
             // Try multiple sources for hasMore
-            hasMore: response.data.pagination?.hasMore || 
-                    response.data.hasMore || 
-                    response.data.pagination?.hasNext || 
-                    response.data.other?.pagination?.hasNext || 
-                    false,
-            
+            hasMore: response.data.pagination?.hasMore ||
+                response.data.hasMore ||
+                response.data.pagination?.hasNext ||
+                response.data.other?.pagination?.hasNext ||
+                false,
+
             nextCursor: response.data.nextCursor,
-            
+
             // Preserve original pagination structure
             pagination: response.data.pagination,
             other: response.data.other
@@ -427,22 +428,22 @@ export const getEventMediaWithGuestToken = async (
             if (error.code === 'ECONNABORTED') {
                 throw new Error('Request timeout - please check your connection');
             }
-            
+
             if (error.response?.status === 401 || error.response?.status === 403) {
                 throw new Error('Share link has expired or is no longer valid');
             }
-            
+
             if (error.response?.status === 404) {
                 throw new Error('Event not found or share link is invalid');
             }
-            
+
             if (error.response?.status >= 500) {
                 throw new Error('Server error - please try again later');
             }
 
             // Use response error message if available
-            const responseMessage = error.response?.data?.message || 
-                                  error.response?.data?.error?.message;
+            const responseMessage = error.response?.data?.message ||
+                error.response?.data?.error?.message;
             if (responseMessage) {
                 throw new Error(responseMessage);
             }

@@ -1,10 +1,11 @@
-// hooks/useSimpleWebSocket.ts - Fixed version
+// hooks/useSimpleWebSocket.ts - Clean production version
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { io, Socket } from 'socket.io-client';
 import { useAuthToken } from '@/hooks/use-auth';
 
+// Types
 interface WebSocketState {
   isConnected: boolean;
   isAuthenticated: boolean;
@@ -26,9 +27,48 @@ interface StatusUpdatePayload {
   };
 }
 
+interface RoomStatsPayload {
+  eventId: string;
+  guestCount?: number;
+  adminCount?: number;
+  total?: number;
+}
+
+interface MediaApprovedPayload {
+  mediaId: string;
+  eventId: string;
+  mediaData?: any;
+  timestamp: Date;
+}
+
+interface MediaRemovedPayload {
+  mediaId: string;
+  eventId: string;
+  reason: string;
+  timestamp: Date;
+}
+
+interface HeartbeatAckPayload {
+  timestamp: number;
+  latency: number;
+}
+
+interface ConnectionSettings {
+  heartbeatInterval: number;
+  heartbeatTimeout: number;
+}
+
+// Environment-based logging utility
+const isDev = process.env.NODE_ENV === 'development';
+const devLog = {
+  info: (...args: any[]) => isDev && console.log(...args),
+  warn: (...args: any[]) => isDev && console.warn(...args),
+  error: (...args: any[]) => console.error(...args), // Always log errors
+};
+
 export function useSimpleWebSocket(
-  eventIdOrShareToken: string, // This could be eventId for admin or shareToken for guest
-  shareToken?: string, // Optional: only used for guest mode
+  eventIdOrShareToken: string,
+  shareToken?: string,
   userType: 'admin' | 'guest' = 'admin'
 ) {
   const token = useAuthToken();
@@ -43,181 +83,258 @@ export function useSimpleWebSocket(
 
   const socketRef = useRef<Socket | null>(null);
   const mountedRef = useRef(true);
+  const statusUpdateTimeoutRef = useRef<NodeJS.Timeout>();
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout>();
+  const connectionSettingsRef = useRef<ConnectionSettings | null>(null);
 
-  // Handle status updates
-  const handleStatusUpdate = useCallback((payload: StatusUpdatePayload) => {
-    console.log(`📸 ${userType} received status update:`, payload);
+  // Debounced status update handler
+  const debouncedHandleStatusUpdate = useCallback((payload: StatusUpdatePayload) => {
+    clearTimeout(statusUpdateTimeoutRef.current);
 
-    const { previousStatus, newStatus, updatedBy, eventId } = payload;
+    statusUpdateTimeoutRef.current = setTimeout(() => {
+      if (!mountedRef.current) return;
 
-    if (userType === 'admin') {
-      // Admin: Show all status changes
-      const statusText = {
-        approved: '✅ approved',
-        rejected: '❌ rejected',
-        hidden: '👁️ hidden',
-        pending: '⏳ moved to pending',
-        auto_approved: '✅ auto-approved'
-      }[newStatus] || 'updated';
+      const { previousStatus, newStatus, updatedBy, eventId } = payload;
 
-      toast.success(`Photo ${statusText} by ${updatedBy.name}`, {
-        duration: 3000
-      });
+      if (userType === 'admin') {
+        const statusText: Record<string, string> = {
+          approved: '✅ approved',
+          rejected: '❌ rejected',
+          hidden: '👁️ hidden',
+          pending: '⏳ moved to pending',
+          auto_approved: '✅ auto-approved',
+          deleted: '🗑️ deleted'
+        };
 
-      // Invalidate all admin queries for this event
-      const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
-      statuses.forEach(status => {
-        queryClient.invalidateQueries({
-          queryKey: ['event-media', eventId, status]
+        const statusMessage = statusText[newStatus] || 'updated';
+        toast.success(`Photo ${statusMessage} by ${updatedBy.name}`, {
+          duration: 3000
         });
-        queryClient.invalidateQueries({
-          queryKey: ['event-media', eventId, status, 'infinite']
+
+        // Invalidate admin queries
+        const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved', 'deleted'];
+        statuses.forEach(status => {
+          queryClient.invalidateQueries({
+            queryKey: ['event-media', eventId, status],
+            exact: true
+          });
+          queryClient.invalidateQueries({
+            queryKey: ['event-media', eventId, status, 'infinite'],
+            exact: true
+          });
         });
-      });
 
-      // Invalidate counts
-      queryClient.invalidateQueries({
-        queryKey: ['event-counts', eventId]
-      });
+        queryClient.invalidateQueries({
+          queryKey: ['event-counts', eventId],
+          exact: true
+        });
 
-    } else if (userType === 'guest') {
-      // Guest: Only handle visibility changes (approved/hidden)
-      const wasVisible = ['approved', 'auto_approved'].includes(previousStatus);
-      const isVisible = ['approved', 'auto_approved'].includes(newStatus);
+      } else if (userType === 'guest') {
+        const wasVisible = ['approved', 'auto_approved'].includes(previousStatus);
+        const isVisible = ['approved', 'auto_approved'].includes(newStatus);
 
-      if (wasVisible !== isVisible) {
-        if (isVisible) {
-          toast.success('📸 New photo approved!', { duration: 2000 });
+        if (wasVisible !== isVisible) {
+          if (isVisible) {
+            toast.success('📸 New photo approved!', { duration: 2000 });
+          }
+
+          const queryKey = shareToken
+            ? ['guest-media', shareToken]
+            : ['guest-media', eventIdOrShareToken];
+
+          queryClient.invalidateQueries({
+            queryKey,
+            exact: true
+          });
         }
-
-        // Invalidate guest queries - use shareToken if available
-        const queryKey = shareToken 
-          ? ['guest-media', shareToken]
-          : ['event-media', eventIdOrShareToken];
-
-        queryClient.invalidateQueries({ queryKey });
-
-        console.log('🔄 Guest queries invalidated for visibility change');
       }
-    }
-
+    }, 150);
   }, [eventIdOrShareToken, shareToken, queryClient, userType]);
 
   // Handle guest specific events
-  const handleMediaApproved = useCallback((payload: any) => {
-    console.log('📸 Guest: New media approved:', payload);
-    toast.success('📸 New photo approved!', { duration: 2000 });
-    
-    // Invalidate guest queries
-    const queryKey = shareToken 
-      ? ['guest-media', shareToken]
-      : ['event-media', eventIdOrShareToken];
-    
-    queryClient.invalidateQueries({ queryKey });
-  }, [shareToken, eventIdOrShareToken, queryClient]);
+  const handleMediaApproved = useCallback((payload: MediaApprovedPayload) => {
+    if (userType === 'guest') {
+      toast.success('📸 New photo approved!', { duration: 2000 });
 
-  const handleMediaRemoved = useCallback((payload: any) => {
-    console.log('📸 Guest: Media removed:', payload);
+      const queryKey = shareToken
+        ? ['guest-media', shareToken]
+        : ['guest-media', eventIdOrShareToken];
+
+      queryClient.invalidateQueries({
+        queryKey,
+        exact: true
+      });
+    }
+  }, [shareToken, eventIdOrShareToken, queryClient, userType]);
+
+  const handleMediaRemoved = useCallback((payload: MediaRemovedPayload) => {
+    if (userType === 'guest') {
+      const queryKey = shareToken
+        ? ['guest-media', shareToken]
+        : ['guest-media', eventIdOrShareToken];
+
+      queryClient.invalidateQueries({
+        queryKey,
+        exact: true
+      });
+    }
+  }, [shareToken, eventIdOrShareToken, queryClient, userType]);
+
+  // Handle room stats updates
+  const handleRoomStats = useCallback((payload: RoomStatsPayload) => {
+    devLog.info('📊 Room stats received:', payload);
+  }, []);
+
+  // Handle heartbeat acknowledgment
+  const handleHeartbeatAck = useCallback((data: HeartbeatAckPayload) => {
+    devLog.info(`💓 Heartbeat latency: ${data.latency}ms`);
+  }, []);
+
+  // Handle unhealthy connection
+  const handleConnectionUnhealthy = useCallback((data: { message: string }) => {
+    devLog.warn('⚠️ Connection marked as unhealthy:', data.message);
     
-    // Invalidate guest queries
-    const queryKey = shareToken 
-      ? ['guest-media', shareToken]
-      : ['event-media', eventIdOrShareToken];
-    
-    queryClient.invalidateQueries({ queryKey });
-  }, [shareToken, eventIdOrShareToken, queryClient]);
+    // Attempt reconnection for unhealthy connections
+    if (socketRef.current?.connected) {
+      devLog.info('🔄 Attempting to reconnect due to unhealthy connection...');
+      socketRef.current.disconnect();
+      setTimeout(() => {
+        if (mountedRef.current) {
+          connect();
+        }
+      }, 1000);
+    }
+  }, []);
+
+  // Start heartbeat mechanism
+  const startHeartbeat = useCallback(() => {
+    const settings = connectionSettingsRef.current;
+    const interval = settings?.heartbeatInterval || 30000;
+
+    clearInterval(heartbeatIntervalRef.current);
+
+    heartbeatIntervalRef.current = setInterval(() => {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('heartbeat', { timestamp: Date.now() });
+      }
+    }, interval);
+
+    devLog.info(`💓 Heartbeat started with ${interval}ms interval`);
+  }, []);
+
+  // Stop heartbeat mechanism
+  const stopHeartbeat = useCallback(() => {
+    clearInterval(heartbeatIntervalRef.current);
+    devLog.info('💓 Heartbeat stopped');
+  }, []);
 
   // Connect function
   const connect = useCallback(() => {
     if (!eventIdOrShareToken) {
-      console.log(`⚠️ ${userType}: Cannot connect - missing eventId/shareToken`);
+      devLog.warn(`⚠️ ${userType}: Cannot connect - missing eventId/shareToken`);
       return;
     }
 
-    // Check auth requirements
     if (userType === 'admin' && !token) {
-      console.log('⚠️ Admin needs auth token');
+      devLog.warn('⚠️ Admin needs auth token');
       return;
     }
 
     if (userType === 'guest' && !shareToken && !eventIdOrShareToken.startsWith('evt_')) {
-      console.log('⚠️ Guest needs share token or valid share token format');
+      devLog.warn('⚠️ Guest needs share token or valid share token format');
       return;
     }
 
     if (socketRef.current?.connected) {
-      console.log(`⚠️ ${userType} already connected`);
+      devLog.warn(`⚠️ ${userType} already connected`);
       return;
     }
 
     try {
-      console.log(`🔌 ${userType} connecting to WebSocket...`);
+      devLog.info(`🔌 ${userType} connecting to WebSocket...`);
 
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'; // Fixed to 3001
-      console.log(`🔌 ${userType} connecting to WebSocket URL:`, wsUrl);
-      console.log(`🔌 ${userType} auth params:`, {
-        hasToken: !!token,
-        hasShareToken: !!(shareToken || eventIdOrShareToken.startsWith('evt_')),
-        eventIdOrShareToken: eventIdOrShareToken?.substring(0, 10) + '...',
-        shareToken: shareToken?.substring(0, 10) + '...'
-      });
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
       
       const socket = io(wsUrl, {
         transports: ['websocket', 'polling'],
         timeout: 15000,
         reconnection: true,
         reconnectionAttempts: 5,
-        reconnectionDelay: 1000
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000
       });
 
       socketRef.current = socket;
 
       // Connection handlers
       socket.on('connect', () => {
-        console.log(`✅ ${userType} connected:`, socket.id);
-        console.log(`✅ Socket connected to:`, socket.io);
+        devLog.info(`✅ ${userType} connected:`, socket.id);
+
+        if (!mountedRef.current) return;
+
         setState(prev => ({ ...prev, isConnected: true, connectionError: null }));
 
-        // Authenticate based on user type
         const authData = userType === 'admin'
           ? {
               token,
-              eventId: eventIdOrShareToken, // For admin, this should be the actual eventId
-              userType: 'admin'
+              eventId: eventIdOrShareToken,
+              userType: 'admin' as const
             }
           : {
-              shareToken: shareToken || eventIdOrShareToken, // For guest, use shareToken
-              eventId: shareToken || eventIdOrShareToken,   // Backend will resolve this
-              userType: 'guest',
+              shareToken: shareToken || eventIdOrShareToken,
+              eventId: shareToken || eventIdOrShareToken,
+              userType: 'guest' as const,
               guestName: 'Guest User'
             };
-
-        console.log(`🔐 ${userType} sending auth:`, {
-          ...authData,
-          token: authData.token ? '***' : undefined,
-          shareToken: authData.shareToken ? authData.shareToken.substring(0, 8) + '...' : undefined
-        });
 
         socket.emit('authenticate', authData);
       });
 
       socket.on('disconnect', (reason) => {
-        console.log(`🔌 ${userType} disconnected:`, reason);
+        devLog.info(`🔌 ${userType} disconnected:`, reason);
+
+        if (!mountedRef.current) return;
+
+        stopHeartbeat();
+
         setState(prev => ({
           ...prev,
           isConnected: false,
           isAuthenticated: false
         }));
+
+        // Auto-reconnect for unexpected disconnections
+        if (reason === 'io server disconnect') {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (mountedRef.current && !socketRef.current?.connected) {
+              devLog.info(`🔄 ${userType} attempting reconnection...`);
+              connect();
+            }
+          }, 2000);
+        }
       });
 
       socket.on('connect_error', (error) => {
-        console.error(`❌ ${userType} connection error:`, error);
+        devLog.error(`❌ ${userType} connection error:`, error);
+
+        if (!mountedRef.current) return;
+
         setState(prev => ({ ...prev, connectionError: error.message }));
       });
 
       // Auth handlers
       socket.on('auth_success', (data) => {
-        console.log(`✅ ${userType} authenticated:`, data);
+        devLog.info(`✅ ${userType} authenticated:`, data);
+
+        if (!mountedRef.current) return;
+
+        // Store connection settings if provided
+        if (data.connectionSettings) {
+          connectionSettingsRef.current = data.connectionSettings;
+        }
+
         setState(prev => ({
           ...prev,
           isAuthenticated: true,
@@ -225,14 +342,20 @@ export function useSimpleWebSocket(
           connectionError: null
         }));
 
+        // Start heartbeat after successful authentication
+        startHeartbeat();
+
         // Join event room
         const roomEventId = data.eventId || eventIdOrShareToken;
         socket.emit('join_event', roomEventId);
-        console.log(`🏠 ${userType} joining event room:`, roomEventId);
+        devLog.info(`🏠 ${userType} joining event room:`, roomEventId);
       });
 
       socket.on('auth_error', (error) => {
-        console.error(`❌ ${userType} auth failed:`, error);
+        devLog.error(`❌ ${userType} auth failed:`, error);
+
+        if (!mountedRef.current) return;
+
         setState(prev => ({
           ...prev,
           connectionError: error.message || 'Authentication failed',
@@ -240,8 +363,8 @@ export function useSimpleWebSocket(
         }));
       });
 
-      // Status update handlers
-      socket.on('media_status_updated', handleStatusUpdate);
+      // Event handlers
+      socket.on('media_status_updated', debouncedHandleStatusUpdate);
 
       // Guest-specific handlers
       if (userType === 'guest') {
@@ -250,23 +373,56 @@ export function useSimpleWebSocket(
       }
 
       socket.on('joined_event', (data) => {
-        console.log(`🏠 ${userType} successfully joined event:`, data);
+        devLog.info(`🏠 ${userType} successfully joined event:`, data);
+      });
+
+      socket.on('room_user_counts', handleRoomStats);
+
+      // Enhanced heartbeat handlers
+      socket.on('heartbeat_ack', handleHeartbeatAck);
+      socket.on('connection_unhealthy', handleConnectionUnhealthy);
+
+      // Legacy ping support
+      socket.on('ping', () => {
+        socket.emit('pong', { timestamp: Date.now() });
       });
 
       socket.on('error', (error) => {
-        console.error(`❌ ${userType} socket error:`, error);
+        devLog.error(`❌ ${userType} socket error:`, error);
       });
 
     } catch (error: any) {
-      console.error(`❌ ${userType} failed to connect:`, error);
-      setState(prev => ({ ...prev, connectionError: 'Failed to connect' }));
+      devLog.error(`❌ ${userType} failed to connect:`, error);
+
+      if (mountedRef.current) {
+        setState(prev => ({ ...prev, connectionError: 'Failed to connect' }));
+      }
     }
-  }, [eventIdOrShareToken, token, shareToken, userType, handleStatusUpdate, handleMediaApproved, handleMediaRemoved]);
+  }, [
+    eventIdOrShareToken,
+    token,
+    shareToken,
+    userType,
+    debouncedHandleStatusUpdate,
+    handleMediaApproved,
+    handleMediaRemoved,
+    handleRoomStats,
+    handleHeartbeatAck,
+    handleConnectionUnhealthy,
+    startHeartbeat,
+    stopHeartbeat
+  ]);
 
   // Disconnect function
   const disconnect = useCallback(() => {
-    console.log(`🔌 Disconnecting ${userType}...`);
+    devLog.info(`🔌 Disconnecting ${userType}...`);
+
     mountedRef.current = false;
+
+    // Clear all timeouts and intervals
+    clearTimeout(statusUpdateTimeoutRef.current);
+    clearTimeout(reconnectTimeoutRef.current);
+    stopHeartbeat();
 
     if (socketRef.current) {
       socketRef.current.removeAllListeners();
@@ -280,13 +436,11 @@ export function useSimpleWebSocket(
       connectionError: null,
       user: null
     });
-  }, [userType]);
+  }, [userType, stopHeartbeat]);
 
   // Setup and cleanup
   useEffect(() => {
     mountedRef.current = true;
-
-    // Small delay to prevent connection storms
     const timer = setTimeout(connect, 100);
 
     return () => {
@@ -297,8 +451,8 @@ export function useSimpleWebSocket(
 
   // Show connection errors
   useEffect(() => {
-    if (state.connectionError) {
-      console.error(`${userType} WebSocket error:`, state.connectionError);
+    if (state.connectionError && mountedRef.current) {
+      devLog.error(`${userType} WebSocket error:`, state.connectionError);
       toast.error(`Connection failed: ${state.connectionError}`, {
         description: 'Real-time updates may not work',
         duration: 5000
@@ -308,13 +462,19 @@ export function useSimpleWebSocket(
 
   // Show authentication success
   useEffect(() => {
-    if (state.isAuthenticated && state.user) {
-      console.log(`✅ ${userType} authenticated as:`, state.user.name);
-      if (process.env.NODE_ENV === 'development') {
-        toast.success(`Connected as ${state.user.name}`, { duration: 2000 });
-      }
+    if (state.isAuthenticated && state.user && mountedRef.current && isDev) {
+      toast.success(`Connected as ${state.user.name}`, { duration: 2000 });
     }
-  }, [state.isAuthenticated, state.user, userType]);
+  }, [state.isAuthenticated, state.user]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearTimeout(statusUpdateTimeoutRef.current);
+      clearTimeout(reconnectTimeoutRef.current);
+      clearInterval(heartbeatIntervalRef.current);
+    };
+  }, []);
 
   return {
     ...state,

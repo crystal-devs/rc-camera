@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { XIcon, WifiIcon, WifiOffIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,6 +47,12 @@ export default function OptimizedPhotoGallery({
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
+  const [roomStats, setRoomStats] = useState<{
+    eventId?: string;
+    guestCount?: number;
+    adminCount?: number;
+    total?: number;
+  }>({});
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -54,6 +60,21 @@ export default function OptimizedPhotoGallery({
 
   // 🚀 SIMPLE WEBSOCKET CONNECTION - Admin mode
   const webSocket = useSimpleWebSocket(eventId, shareToken, 'admin');
+
+
+  // Optimize room stats handler with useCallback
+  const handleRoomStats = useCallback((payload: any) => {
+    console.log('📊 Room stats update:', payload);
+    setRoomStats(payload);
+  }, []);
+
+  // Clean up the WebSocket effect
+  useEffect(() => {
+    if (!webSocket.socket) return;
+
+    webSocket.socket.on('room_user_counts', handleRoomStats);
+    return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
+  }, [webSocket.socket, handleRoomStats]);
 
   // Data fetching hooks with better error handling
   const {
@@ -305,6 +326,24 @@ export default function OptimizedPhotoGallery({
     }
   }, [webSocket.isAuthenticated, webSocket.user]);
 
+  console.log(roomStats, 'romstatetetetete')
+
+  const RoomStatsDisplay = memo(({ roomStats }: { roomStats: any }) => {
+    if (!roomStats.adminCount) return null;
+
+    return (
+      <Badge variant="secondary" className="text-xs">
+        👥 {roomStats.guestCount} guest{roomStats.guestCount !== 1 ? 's' : ''} online
+        👥 {roomStats.adminCount} admins{roomStats.guestCount !== 1 ? 's' : ''} online
+        {roomStats.total && roomStats.total !== roomStats.guestCount && (
+          <span className="ml-1 text-gray-500">
+            ({roomStats.total} total)
+          </span>
+        )}
+      </Badge>
+    );
+  });
+
   // Error handling
   if (photosError) {
     return (
@@ -334,6 +373,7 @@ export default function OptimizedPhotoGallery({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
+          <RoomStatsDisplay roomStats={roomStats}/>
           <StatusTabs
             activeTab={activeTab}
             onTabChange={handleTabChange}
@@ -356,9 +396,9 @@ export default function OptimizedPhotoGallery({
                   {webSocket.user.type}: {webSocket.user.name}
                 </Badge>
               )}
-              <Button 
-                onClick={handleManualRefresh} 
-                variant="outline" 
+              <Button
+                onClick={handleManualRefresh}
+                variant="outline"
                 size="sm"
                 className="text-xs"
               >
