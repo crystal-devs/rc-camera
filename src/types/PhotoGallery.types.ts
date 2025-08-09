@@ -8,20 +8,22 @@ export interface Photo {
   imageUrl: string; // Original URL - ONLY for downloads
   thumbnail?: string; // Legacy support
   createdAt: Date;
-  
+  originalFilename?: string;
+  processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  processingProgress?: number; // 0-100
   approval?: {
     status: string;
     approved_at?: Date;
     approved_by?: string;
     rejection_reason?: string;
   };
-  
+
   processing?: {
     status: string;
     thumbnails_generated?: boolean;
     variants_generated?: boolean;
   };
-  
+
   // Progressive loading URLs - CORE optimization
   progressiveUrls?: {
     placeholder: string; // Tiny placeholder (~5KB)
@@ -30,7 +32,7 @@ export interface Photo {
     full: string;        // For full-screen (~540KB)
     original: string;    // For download only (~1.8MB)
   };
-  
+
   metadata?: {
     width: number;
     height: number;
@@ -38,7 +40,7 @@ export interface Photo {
     fileType?: string;
     fileSize?: number;
   };
-  
+
   stats: {
     views: number;
     downloads: number;

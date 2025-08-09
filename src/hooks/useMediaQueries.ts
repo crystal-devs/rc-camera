@@ -1,7 +1,7 @@
-// hooks/useMediaQueries.ts - FIXED Final Version
+// hooks/useMediaQueries.ts - IMPROVED Final Version
 
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
   getEventMedia,           // Returns MediaItem[]
@@ -30,7 +30,7 @@ interface MediaFetchOptions {
 }
 
 /**
- * FIXED: Regular query for event media
+ * IMPROVED: Regular query for event media with better cache management
  */
 export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) {
   const token = useAuthToken();
@@ -61,16 +61,19 @@ export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) 
       return mediaItems.map(transformMediaToPhoto);
     },
     enabled: enabled && !!token && !!eventId,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-    retry: 1
+    staleTime: 2 * 60 * 1000, // Reduced to 2 minutes for more real-time updates
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    refetchOnWindowFocus: true, // Enable refetch on focus for better cross-tab sync
+    refetchOnMount: 'always', // Always refetch on mount
+    refetchOnReconnect: true,
+    retry: 2,
+    // Add network mode for better offline handling
+    networkMode: 'online'
   });
 }
 
 /**
- * FIXED: Infinite query for event media
+ * IMPROVED: Infinite query for event media with better pagination
  */
 export function useInfiniteEventMedia(eventId: string, options: MediaFetchOptions = {}) {
   const token = useAuthToken();
@@ -116,13 +119,17 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
         hasMore: response.pagination?.hasNext || false
       };
     },
+    initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       return lastPage.nextPage;
     },
     enabled: enabled && !!token && !!eventId,
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    retry: 1,
+    staleTime: 2 * 60 * 1000, // Reduced for real-time updates
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    retry: 2,
+    networkMode: 'online',
     meta: {
       errorMessage: 'Failed to load more photos'
     }
@@ -145,7 +152,7 @@ export function useInfiniteEventMediaFlat(eventId: string, options: MediaFetchOp
 }
 
 /**
- * Media counts for moderators
+ * IMPROVED: Media counts with better cache strategy
  */
 export function useEventMediaCounts(eventId: string, enabled = true) {
   const token = useAuthToken();
@@ -158,90 +165,19 @@ export function useEventMediaCounts(eventId: string, enabled = true) {
       return await getEventMediaCounts(eventId, token);
     },
     enabled: enabled && !!token && !!eventId,
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-    retry: 1
+    staleTime: 1 * 60 * 1000, // 1 minute for counts
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    refetchOnReconnect: true,
+    retry: 2,
+    networkMode: 'online'
   });
 }
 
 /**
- * Upload mutation with proper cache invalidation
+ * IMPROVED: Upload mutation with comprehensive cache invalidation
  */
-export function useUploadMedia(
-  eventId: string,
-  albumId: string | null,
-  options: {
-    onSuccess?: (data: any) => void;
-    onError?: (error: Error) => void;
-  } = {}
-) {
-  const token = useAuthToken();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (files: File[]) => {
-      if (!token) throw new Error('Authentication required');
-
-      console.log('🔍 Starting upload mutation for', files.length, 'files');
-
-      const uploadPromises = files.map(async (file) => {
-        return await uploadAlbumMedia(file, albumId, token, eventId, {
-          compressionQuality: 'auto',
-          generateThumbnails: true,
-          autoApprove: false
-        });
-      });
-
-      return await Promise.allSettled(uploadPromises);
-    },
-    onSuccess: (results) => {
-      const successful = results.filter(r => r.status === 'fulfilled');
-      const failed = results.filter(r => r.status === 'rejected');
-
-      console.log('✅ Upload completed:', { successful: successful.length, failed: failed.length });
-
-      // Invalidate relevant queries - including infinite queries
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.eventPhotos(eventId, 'pending')
-      });
-      queryClient.invalidateQueries({
-        queryKey: [...queryKeys.eventPhotos(eventId, 'pending'), 'infinite']
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.eventCounts(eventId)
-      });
-
-      if (albumId) {
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.albumPhotos(albumId, 'pending')
-        });
-      }
-
-      // Show results
-      if (successful.length > 0) {
-        toast.success(
-          `${successful.length} photo${successful.length > 1 ? 's' : ''} uploaded successfully`
-        );
-      }
-
-      if (failed.length > 0) {
-        toast.error(
-          `Failed to upload ${failed.length} photo${failed.length > 1 ? 's' : ''}`
-        );
-      }
-
-      options.onSuccess?.(results);
-    },
-    onError: (error: Error) => {
-      console.error('❌ Upload failed:', error);
-      toast.error(error.message || 'Upload failed');
-      options.onError?.(error);
-    }
-  });
-}
-
 export function useUploadMultipleMedia(
   eventId: string,
   albumId: string | null,
@@ -258,17 +194,15 @@ export function useUploadMultipleMedia(
       if (!token) throw new Error('Authentication required');
       if (!files || files.length === 0) throw new Error('No files selected');
 
-      console.log('🔍 Starting multiple upload mutation for', files.length, 'files');
+      console.log('🔍 Starting upload for', files.length, 'files');
 
       // Validate files before upload
       const validFiles = files.filter(file => {
-        // Check file type
         if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
           toast.error(`"${file.name}" is not a valid image or video file.`);
           return false;
         }
 
-        // Check file size (100MB limit)
         const maxSize = 100 * 1024 * 1024;
         if (file.size > maxSize) {
           const sizeMB = (file.size / 1024 / 1024).toFixed(2);
@@ -283,38 +217,79 @@ export function useUploadMultipleMedia(
         throw new Error('No valid files to upload');
       }
 
-      if (validFiles.length !== files.length) {
-        console.warn(`Filtered ${files.length - validFiles.length} invalid files`);
-      }
-
       return await uploadMultipleMedia(validFiles, eventId, albumId, token);
     },
     onSuccess: (result) => {
       const { summary } = result.data || {};
 
-      console.log('✅ Multiple upload completed:', summary);
+      console.log('✅ Upload completed:', summary);
 
-      // Invalidate relevant queries to refresh the UI
-      queryClient.invalidateQueries({
-        queryKey: ['eventPhotos', eventId, 'pending']
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['eventPhotos', eventId, 'approved']
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['eventCounts', eventId]
-      });
-
-      if (albumId) {
-        queryClient.invalidateQueries({
-          queryKey: ['albumPhotos', albumId]
+      // 🔧 IMMEDIATE CACHE INVALIDATION - Force refresh
+      const invalidateAllQueries = async () => {
+        // Clear all existing cache for this event
+        queryClient.removeQueries({
+          queryKey: ['eventPhotos', eventId],
+          exact: false
         });
-      }
 
-      // Show success/error messages
+        // Invalidate and refetch all status queries
+        const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+
+        await Promise.all([
+          // Regular queries
+          ...statuses.map(status =>
+            queryClient.invalidateQueries({
+              queryKey: queryKeys.eventPhotos(eventId, status),
+              exact: false,
+              refetchType: 'all'
+            })
+          ),
+
+          // Infinite queries
+          ...statuses.map(status =>
+            queryClient.invalidateQueries({
+              queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite'],
+              exact: false,
+              refetchType: 'all'
+            })
+          ),
+
+          // Counts
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.eventCounts(eventId),
+            exact: false,
+            refetchType: 'all'
+          })
+        ]);
+
+        // 🔧 FORCE IMMEDIATE REFETCH of active queries
+        await Promise.all([
+          queryClient.refetchQueries({
+            queryKey: queryKeys.eventPhotos(eventId, 'approved'),
+            exact: false
+          }),
+          queryClient.refetchQueries({
+            queryKey: queryKeys.eventPhotos(eventId, 'pending'),
+            exact: false
+          }),
+          queryClient.refetchQueries({
+            queryKey: queryKeys.eventCounts(eventId),
+            exact: false
+          })
+        ]);
+      };
+
+      // Execute cache invalidation immediately
+      invalidateAllQueries().catch(console.error);
+
+      // Show success message
       if (summary?.success > 0) {
         toast.success(
-          `${summary.success} photo${summary.success > 1 ? 's' : ''} uploaded successfully!`
+          `${summary.success} photo${summary.success > 1 ? 's' : ''} uploaded successfully!`,
+          {
+            description: 'Processing in background. Gallery will update automatically.',
+            duration: 5000,
+          }
         );
       }
 
@@ -329,14 +304,16 @@ export function useUploadMultipleMedia(
       options.onSuccess?.(result);
     },
     onError: (error: Error) => {
-      console.error('❌ Multiple upload failed:', error);
+      console.error('❌ Upload failed:', error);
       toast.error(error.message || 'Upload failed');
       options.onError?.(error);
     }
   });
 }
+
+
 /**
- * Update media status with proper cache invalidation
+ * IMPROVED: Update media status with aggressive cache invalidation for real-time updates
  */
 export function useUpdateMediaStatus(eventId: string) {
   const token = useAuthToken();
@@ -361,22 +338,79 @@ export function useUpdateMediaStatus(eventId: string) {
         hideReason: reason
       });
     },
-    onSuccess: (_, { status }) => {
+    onSuccess: async (_, { status, mediaId }) => {
       console.log('✅ Media status updated successfully');
 
-      // Invalidate all status queries for this event (including infinite)
-      ['approved', 'pending', 'rejected', 'hidden'].forEach(s => {
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.eventPhotos(eventId, s)
-        });
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.eventPhotos(eventId, s), 'infinite']
-        });
+      // AGGRESSIVE cache invalidation for immediate cross-tab updates
+      const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+
+      // First: Remove all stale data
+      await queryClient.removeQueries({
+        queryKey: ['eventPhotos', eventId],
+        exact: false
       });
 
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.eventCounts(eventId)
-      });
+      // Second: Invalidate and refetch all queries
+      const invalidationPromises = [
+        // Regular queries - invalidate and refetch
+        ...statuses.map(async (s) => {
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.eventPhotos(eventId, s),
+            exact: false,
+            refetchType: 'all'
+          });
+
+          // Force immediate refetch
+          return queryClient.refetchQueries({
+            queryKey: queryKeys.eventPhotos(eventId, s),
+            exact: false
+          });
+        }),
+
+        // Infinite queries - invalidate and refetch
+        ...statuses.map(async (s) => {
+          await queryClient.invalidateQueries({
+            queryKey: [...queryKeys.eventPhotos(eventId, s), 'infinite'],
+            exact: false,
+            refetchType: 'all'
+          });
+
+          return queryClient.refetchQueries({
+            queryKey: [...queryKeys.eventPhotos(eventId, s), 'infinite'],
+            exact: false
+          });
+        }),
+
+        // Counts - invalidate and refetch
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.eventCounts(eventId),
+          exact: false,
+          refetchType: 'all'
+        }).then(() =>
+          queryClient.refetchQueries({
+            queryKey: queryKeys.eventCounts(eventId),
+            exact: false
+          })
+        )
+      ];
+
+      // Execute all invalidations concurrently
+      await Promise.allSettled(invalidationPromises);
+
+      // Broadcast to other tabs using localStorage
+      try {
+        const event = {
+          type: 'MEDIA_STATUS_UPDATED',
+          eventId,
+          mediaId,
+          status,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('media_update_broadcast', JSON.stringify(event));
+        localStorage.removeItem('media_update_broadcast'); // Triggers storage event
+      } catch (e) {
+        console.warn('Failed to broadcast to other tabs:', e);
+      }
 
       const statusAction = {
         approved: 'approved',
@@ -403,7 +437,7 @@ export function useUpdateMediaStatus(eventId: string) {
 }
 
 /**
- * Delete media mutation
+ * IMPROVED: Delete media mutation with comprehensive cleanup
  */
 export function useDeleteMedia(eventId: string) {
   const token = useAuthToken();
@@ -415,22 +449,48 @@ export function useDeleteMedia(eventId: string) {
       console.log('🔍 Deleting media:', mediaId);
       return await deleteMedia(mediaId, token);
     },
-    onSuccess: () => {
+    onSuccess: async (_, mediaId) => {
       console.log('✅ Media deleted successfully');
 
-      // Invalidate all event queries (including infinite)
-      ['approved', 'pending', 'rejected', 'hidden'].forEach(status => {
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.eventPhotos(eventId, status)
-        });
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite']
-        });
-      });
+      // Comprehensive cleanup for deleted media
+      const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
 
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.eventCounts(eventId)
-      });
+      await Promise.allSettled([
+        // Invalidate all event queries
+        ...statuses.map(status => [
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.eventPhotos(eventId, status),
+            exact: false,
+            refetchType: 'all'
+          }),
+          queryClient.invalidateQueries({
+            queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite'],
+            exact: false,
+            refetchType: 'all'
+          })
+        ]).flat(),
+
+        // Invalidate counts
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.eventCounts(eventId),
+          exact: false,
+          refetchType: 'all'
+        })
+      ]);
+
+      // Broadcast deletion to other tabs
+      try {
+        const event = {
+          type: 'MEDIA_DELETED',
+          eventId,
+          mediaId,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('media_update_broadcast', JSON.stringify(event));
+        localStorage.removeItem('media_update_broadcast');
+      } catch (e) {
+        console.warn('Failed to broadcast deletion to other tabs:', e);
+      }
 
       toast.success('Photo deleted successfully');
     },
@@ -442,16 +502,67 @@ export function useDeleteMedia(eventId: string) {
 }
 
 /**
- * Gallery management utilities
+ * IMPROVED: Gallery management utilities with cross-tab communication
  */
 export function useGalleryUtils(eventId: string) {
   const queryClient = useQueryClient();
 
+  // Listen for cross-tab updates
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'media_update_broadcast' && e.newValue) {
+        try {
+          const event = JSON.parse(e.newValue);
+
+          if (event.eventId === eventId) {
+            console.log('📡 Received cross-tab update:', event);
+
+            // Invalidate all queries when receiving cross-tab updates
+            const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+
+            Promise.allSettled([
+              ...statuses.map(status => [
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.eventPhotos(eventId, status),
+                  exact: false
+                }),
+                queryClient.invalidateQueries({
+                  queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite'],
+                  exact: false
+                })
+              ]).flat(),
+
+              queryClient.invalidateQueries({
+                queryKey: queryKeys.eventCounts(eventId),
+                exact: false
+              })
+            ]);
+          }
+        } catch (error) {
+          console.error('Failed to parse cross-tab update:', error);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [eventId, queryClient]);
+
   // Manual refresh function
-  const refreshData = useCallback(() => {
+  const refreshData = useCallback(async () => {
     console.log('🔄 Manual refresh triggered for event:', eventId);
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.event(eventId)
+
+    // Clear all cache first
+    await queryClient.removeQueries({
+      queryKey: ['eventPhotos', eventId],
+      exact: false
+    });
+
+    // Then invalidate and refetch
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.event(eventId),
+      exact: false,
+      refetchType: 'all'
     });
   }, [eventId, queryClient]);
 
@@ -467,4 +578,5 @@ export function useGalleryUtils(eventId: string) {
     refreshData,
     getCachedPhotoCount
   };
+
 }

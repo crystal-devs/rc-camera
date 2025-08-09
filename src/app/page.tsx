@@ -10,7 +10,6 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
-import { db } from '@/lib/db';
 import { FolderPlus, PlusCircle, ScanLineIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -22,12 +21,16 @@ export default function HomePage() {
   const [accessibleEvents, setAccessibleEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const userId = 1; // In a real app, get this from authentication
-
   useEffect(() => {
-    // first get the user. if user not logged in kick out them to login page.
-    verifyUser(router)
-  }, [router]);
+    (async () => {
+      const ok = await verifyUser();
+      if (!ok) {
+        router.push('/login');
+      }
+    })();
+  }, []);
+
+
 
   const handleCreateEvent = () => {
     router.push('/events/create');
@@ -79,7 +82,7 @@ export default function HomePage() {
                   </div>
                 ) : (
                   <>
-                  {/* need to create grid of events */}
+                    {/* need to create grid of events */}
                   </>
                 )}
               </div>

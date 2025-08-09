@@ -1042,7 +1042,7 @@ export const uploadMultipleMedia = async (
         };
 
         console.log('🔍 Multiple upload request:', {
-            url: `${API_BASE_URL}/media/upload/multiple`,
+            url: `${API_BASE_URL}/media/upload`,
             fileCount: files.length,
             eventId,
             albumId,
@@ -1050,7 +1050,7 @@ export const uploadMultipleMedia = async (
         });
 
         const response = await axios.post(
-            `${API_BASE_URL}/media/upload/multiple`,
+            `${API_BASE_URL}/media/upload`,
             formData,
             {
                 headers,
@@ -1213,22 +1213,50 @@ export const getAlbumMedia = async (
 };
 
 export const transformMediaToPhoto = (mediaItem: any): Photo => {
+    // 🔧 FIX 1: Define hasValidUrl before using it
+    const hasValidUrl = mediaItem.url &&
+        mediaItem.url !== '' &&
+        !mediaItem.url.startsWith('placeholder://');
+
+    // 🔧 FIX 2: Build progressive URLs with fallbacks
     const progressiveUrls = {
-        placeholder: mediaItem.responsive_urls?.thumbnail || mediaItem.url,
-        thumbnail: mediaItem.responsive_urls?.thumbnail || mediaItem.url,
-        display: mediaItem.responsive_urls?.medium || mediaItem.url,
-        full: mediaItem.responsive_urls?.large || mediaItem.url,
-        original: mediaItem.responsive_urls?.original || mediaItem.url
+        placeholder: mediaItem.image_variants?.small?.jpeg?.url ||
+            mediaItem.responsive_urls?.thumbnail ||
+            mediaItem.url || '',
+        thumbnail: mediaItem.image_variants?.small?.jpeg?.url ||
+            mediaItem.responsive_urls?.thumbnail ||
+            mediaItem.url || '',
+        display: mediaItem.image_variants?.medium?.jpeg?.url ||
+            mediaItem.responsive_urls?.medium ||
+            mediaItem.url || '',
+        full: mediaItem.image_variants?.large?.jpeg?.url ||
+            mediaItem.responsive_urls?.large ||
+            mediaItem.url || '',
+        original: mediaItem.image_variants?.original?.url ||
+            mediaItem.responsive_urls?.original ||
+            mediaItem.url || ''
     };
+
+    // 🔧 FIX 3: Correct processing status logic
+    const processingStatus = mediaItem.processing?.status ||
+        (hasValidUrl ? 'completed' : 'pending');
 
     return {
         id: mediaItem._id || mediaItem.id,
         albumId: mediaItem.album_id,
         eventId: mediaItem.event_id,
         takenBy: mediaItem.uploader_display_name || mediaItem.created_by,
-        imageUrl: mediaItem.responsive_urls?.original || mediaItem.url,
-        thumbnail: mediaItem.responsive_urls?.thumbnail || mediaItem.url,
+
+        // 🔧 FIX 4: Use display URL for main imageUrl, empty if processing
+        imageUrl: hasValidUrl ? progressiveUrls.display : '',
+        thumbnail: progressiveUrls.thumbnail,
+
         createdAt: new Date(mediaItem.created_at),
+        originalFilename: mediaItem.original_filename || `Image-${mediaItem._id}`,
+
+        // 🔧 FIX 5: Remove extra comma and fix variable name
+        processingStatus: processingStatus as 'pending' | 'processing' | 'completed' | 'failed',
+        processingProgress: mediaItem.processing?.progress || 0, // Fixed: was 'media', should be 'mediaItem'
 
         approval: {
             status: mediaItem.approval_status || mediaItem.approval?.status,
@@ -1246,11 +1274,11 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
         progressiveUrls,
 
         metadata: {
-            width: mediaItem.dimensions?.width || mediaItem.metadata?.width,
-            height: mediaItem.dimensions?.height || mediaItem.metadata?.height,
+            width: mediaItem.dimensions?.width || mediaItem.metadata?.width || mediaItem.image_variants?.original?.width || 0,
+            height: mediaItem.dimensions?.height || mediaItem.metadata?.height || mediaItem.image_variants?.original?.height || 0,
             fileName: mediaItem.original_filename || mediaItem.metadata?.file_name,
             fileType: mediaItem.format || mediaItem.metadata?.file_type,
-            fileSize: mediaItem.size_mb || mediaItem.metadata?.file_size
+            fileSize: mediaItem.size_mb || mediaItem.metadata?.file_size || 0
         },
 
         stats: mediaItem.stats || {

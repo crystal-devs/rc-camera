@@ -15,11 +15,11 @@ export interface UserData {
 export const loginUser = async (userData: Omit<UserData, 'id'>) => {
     try {
         const { data } = await axios.post(LOGIN_ROUTE, { ...userData });
-        
+
         if (data.token) {
             localStorage.setItem("rc-token", data.token);
             localStorage.setItem("authToken", data.token);
-            
+
             // Store user data separately from the token
             const userDataToStore = {
                 id: data.userId || undefined,
@@ -27,10 +27,10 @@ export const loginUser = async (userData: Omit<UserData, 'id'>) => {
                 email: userData.email,
                 avatar: userData.profile_pic || undefined
             };
-            
+
             localStorage.setItem("userData", JSON.stringify(userDataToStore));
         }
-        
+
         return data;
     } catch (err) {
         console.error("Login error:", err);
@@ -42,9 +42,9 @@ export const getUserData = (): UserData | null => {
     try {
         const userDataString = localStorage.getItem("userData");
         if (!userDataString) return null;
-        
+
         const userData = JSON.parse(userDataString);
-        
+
         // Ensure the data has the required fields for the UserData type
         // Even if some fields are missing, we'll ensure a consistent shape
         return {
@@ -65,15 +65,11 @@ export const logout = () => {
     localStorage.removeItem("userData");
 }
 
-export const verifyUser = async (router: any) => {
-    try{
-        await axios.get(VERIFY_USER_ROUTE, {
-            headers: setHeader()
-        })
-        return true
-    }catch(error){
-        console.log(error)
-        router.push('/login')
-        return false
+export const verifyUser = async (): Promise<boolean> => {
+    try {
+        await axios.get(VERIFY_USER_ROUTE, { headers: setHeader() });
+        return true;
+    } catch {
+        return false;
     }
-}
+};
