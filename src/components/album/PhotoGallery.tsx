@@ -1,10 +1,13 @@
+// components/OptimizedPhotoGallery.tsx - ENHANCED with instant upload feedback
+
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
-import { XIcon, WifiIcon, WifiOffIcon } from 'lucide-react';
+import { XIcon, WifiIcon, WifiOffIcon, UploadIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import {
   useEventMedia,
@@ -15,6 +18,7 @@ import {
   useDeleteMedia,
   useGalleryUtils
 } from '@/hooks/useMediaQueries';
+import { useUploadStatusMonitor } from '@/hooks/useUploadStatusMonitor';
 import { StatusTabs } from './StatusTabs';
 import { EmptyState } from './EmptyState';
 import PhotoUploadDialog from './PhotoUploadDialog';
@@ -54,29 +58,30 @@ export default function OptimizedPhotoGallery({
     total?: number;
   }>({});
 
+  // 🚀 UPLOAD TRACKING: Track uploaded media IDs for status monitoring
+  const [uploadedMediaIds, setUploadedMediaIds] = useState<string[]>([]);
+
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // 🚀 SIMPLE WEBSOCKET CONNECTION - Admin mode
+  // WebSocket connection
   const webSocket = useSimpleWebSocket(eventId, shareToken, 'admin');
 
-
-  // Optimize room stats handler with useCallback
+  // Room stats handler
   const handleRoomStats = useCallback((payload: any) => {
     console.log('📊 Room stats update:', payload);
     setRoomStats(payload);
   }, []);
 
-  // Clean up the WebSocket effect
+  // WebSocket effects
   useEffect(() => {
     if (!webSocket.socket) return;
-
     webSocket.socket.on('room_user_counts', handleRoomStats);
     return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
   }, [webSocket.socket, handleRoomStats]);
 
-  // Data fetching hooks with better error handling
+  // Data fetching hooks
   const {
     data: regularPhotos = [],
     isLoading: regularLoading,
@@ -125,13 +130,53 @@ export default function OptimizedPhotoGallery({
     refetch: refetchCounts
   } = useEventMediaCounts(eventId, userPermissions.moderate);
 
-  // Mutations with better success/error handling
+  // 🚀 UPLOAD STATUS MONITORING: Monitor processing status of uploaded photos
+  const {
+    statuses: uploadStatuses,
+    summary: uploadSummary,
+    isMonitoring
+  } = useUploadStatusMonitor(uploadedMediaIds, eventId, {
+    onComplete: (mediaId, status) => {
+      console.log('✅ Upload completed:', mediaId, status.filename);
+      // Remove from monitoring list
+      setUploadedMediaIds(prev => prev.filter(id => id !== mediaId));
+      // Refresh photos and counts
+      refetchPhotos();
+      refetchCounts();
+    },
+    onFailed: (mediaId, status) => {
+      console.log('❌ Upload failed:', mediaId, status.filename);
+      // Remove from monitoring list
+      setUploadedMediaIds(prev => prev.filter(id => id !== mediaId));
+      // Refresh photos
+      refetchPhotos();
+    },
+    enabled: uploadedMediaIds.length > 0
+  });
+
+  // Mutations with enhanced success handling
   const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
-    onSuccess: () => {
+    onSuccess: (result) => {
+      const { data } = result;
       setUploadDialogOpen(false);
+      
+      // Clear file inputs
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
-      // Refetch counts and photos
+      
+      // 🚀 START MONITORING: Add uploaded media IDs to monitoring list
+      if (data?.uploads && Array.isArray(data.uploads)) {
+        const newMediaIds = data.uploads
+          .filter((upload: any) => upload.id && upload.status !== 'failed')
+          .map((upload: any) => upload.id);
+        
+        if (newMediaIds.length > 0) {
+          setUploadedMediaIds(prev => [...prev, ...newMediaIds]);
+          console.log('📊 Started monitoring uploads:', newMediaIds);
+        }
+      }
+      
+      // Immediate refresh
       refetchCounts();
       refetchPhotos();
     },
@@ -142,12 +187,10 @@ export default function OptimizedPhotoGallery({
 
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
-
-  // Gallery utilities
   const { getCachedPhotoCount } = useGalleryUtils(eventId);
 
-  // 🎯 SIMPLE CONNECTION STATUS DISPLAY
-  const ConnectionStatus = () => {
+  // Connection Status Component
+  const ConnectionStatus = memo(() => {
     if (!webSocket.isConnected) {
       return (
         <Badge variant="destructive" className="flex items-center gap-1">
@@ -172,7 +215,62 @@ export default function OptimizedPhotoGallery({
         Live
       </Badge>
     );
-  };
+  });
+
+  // Room Stats Display
+  const RoomStatsDisplay = memo(({ roomStats }: { roomStats: any }) => {
+    if (!roomStats.adminCount && !roomStats.guestCount) return null;
+
+    return (
+      <Badge variant="secondary" className="text-xs">
+        {roomStats.guestCount > 0 && (
+          <span>👥 {roomStats.guestCount} guest{roomStats.guestCount !== 1 ? 's' : ''}</span>
+        )}
+        {roomStats.adminCount > 0 && (
+          <span className={roomStats.guestCount > 0 ? 'ml-2' : ''}>
+            🔧 {roomStats.adminCount} admin{roomStats.adminCount !== 1 ? 's' : ''}
+          </span>
+        )}
+        {roomStats.total && roomStats.total !== (roomStats.guestCount + roomStats.adminCount) && (
+          <span className="ml-1 text-gray-500">
+            ({roomStats.total} total)
+          </span>
+        )}
+      </Badge>
+    );
+  });
+
+  // 🚀 UPLOAD PROGRESS INDICATOR: Show real-time upload/processing status
+  const UploadProgressIndicator = memo(() => {
+    if (!isMonitoring || !uploadSummary) return null;
+
+    const { total, completed, processing, failed } = uploadSummary;
+    const progress = total > 0 ? ((completed + failed) / total) * 100 : 0;
+
+    return (
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <UploadIcon className="h-4 w-4 text-blue-600" />
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              Processing uploads
+            </span>
+          </div>
+          <span className="text-xs text-blue-600 dark:text-blue-400">
+            {completed + failed}/{total}
+          </span>
+        </div>
+        
+        <Progress value={progress} className="h-2" />
+        
+        <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+          <span>{processing} processing</span>
+          <span>{completed} completed</span>
+          {failed > 0 && <span className="text-red-600">{failed} failed</span>}
+        </div>
+      </div>
+    );
+  });
 
   // Memoized computed values
   const canUserUpload = useMemo(() =>
@@ -245,6 +343,9 @@ export default function OptimizedPhotoGallery({
   }, [canUserUpload, uploadMutation]);
 
   const openPhotoViewer = useCallback((photo: Photo, index: number) => {
+    // Don't open viewer for uploading photos
+    if (photo.status === 'uploading' || photo.isTemporary) return;
+    
     setSelectedPhoto(photo);
     setSelectedPhotoIndex(index);
     setPhotoViewerOpen(true);
@@ -298,7 +399,6 @@ export default function OptimizedPhotoGallery({
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // Manual refresh function for debugging
   const handleManualRefresh = useCallback(() => {
     console.log('🔄 Manual refresh triggered');
     refetchPhotos();
@@ -306,14 +406,16 @@ export default function OptimizedPhotoGallery({
     toast.info('Refreshing data...');
   }, [refetchPhotos, refetchCounts]);
 
-  // 🚀 SIMPLIFIED WEBSOCKET EFFECT HANDLERS
+  // WebSocket error handling
   useEffect(() => {
     if (webSocket.connectionError) {
-      console.error('WebSocket in photo gallery connection error:', webSocket.connectionError);
-      toast.error(`Connection failed: ${webSocket.connectionError}`, {
-        description: 'Real-time updates may not work',
-        duration: 5000
-      });
+      console.error('WebSocket connection error:', webSocket.connectionError);
+      if (process.env.NODE_ENV === 'development') {
+        toast.error(`Connection failed: ${webSocket.connectionError}`, {
+          description: 'Real-time updates may not work',
+          duration: 5000
+        });
+      }
     }
   }, [webSocket.connectionError]);
 
@@ -325,24 +427,6 @@ export default function OptimizedPhotoGallery({
       }
     }
   }, [webSocket.isAuthenticated, webSocket.user]);
-
-  console.log(roomStats, 'romstatetetetete')
-
-  const RoomStatsDisplay = memo(({ roomStats }: { roomStats: any }) => {
-    if (!roomStats.adminCount) return null;
-
-    return (
-      <Badge variant="secondary" className="text-xs">
-        👥 {roomStats.guestCount} guest{roomStats.guestCount !== 1 ? 's' : ''} online
-        👥 {roomStats.adminCount} admins{roomStats.guestCount !== 1 ? 's' : ''} online
-        {roomStats.total && roomStats.total !== roomStats.guestCount && (
-          <span className="ml-1 text-gray-500">
-            ({roomStats.total} total)
-          </span>
-        )}
-      </Badge>
-    );
-  });
 
   // Error handling
   if (photosError) {
@@ -383,7 +467,7 @@ export default function OptimizedPhotoGallery({
           <ConnectionStatus />
           {useInfiniteScroll && (
             <div className="text-xs text-gray-500">
-              Infinite scroll mode ({photos.length} photos loaded)
+              Infinite scroll ({photos.length} loaded)
             </div>
           )}
         </div>
@@ -420,6 +504,9 @@ export default function OptimizedPhotoGallery({
           )}
         </div>
       </div>
+
+      {/* 🚀 UPLOAD PROGRESS: Show upload/processing status */}
+      <UploadProgressIndicator />
 
       {(updateStatusMutation.isPending || uploadMutation.isPending) && (
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">

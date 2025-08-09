@@ -37,7 +37,6 @@ export const OptimizedPhotoGrid = ({
     const optimizedSize = photos.length * 0.04; // MB using thumbnails
     console.log(`🚀 Optimization: ${originalSize.toFixed(1)}MB → ${optimizedSize.toFixed(1)}MB (${Math.round((1 - optimizedSize/originalSize) * 100)}% smaller)`);
   }
-  console.log(photos, 'photosphotosqiqeuiqweruioqwer')
 
   return (
     <div className={className}>

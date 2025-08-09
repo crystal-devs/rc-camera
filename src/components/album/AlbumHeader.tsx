@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { db } from '@/lib/db';
 import { AlbumQR } from '@/components/album/AlbumQR';
 
 interface AlbumHeaderProps {
@@ -40,7 +39,6 @@ export default function AlbumHeader({ album, photoCount, isOwner }: AlbumHeaderP
         if (confirm('Are you sure you want to delete this album? This action cannot be undone.')) {
             try {
                 // In a real app, you'd delete all related data too
-                await db.albums.delete(album.id);
                 router.push(`/events/${album.eventId}`);
                 toast.success("The album has been permanently removed.");
             } catch (error) {

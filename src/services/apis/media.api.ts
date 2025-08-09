@@ -1005,6 +1005,9 @@ async function uploadWithRetry(formData: FormData, authToken: string, maxRetries
 }
 
 
+/**
+ * 🚀 API FUNCTION: Updated upload function
+ */
 export const uploadMultipleMedia = async (
     files: File[],
     eventId: string,
@@ -1014,10 +1017,9 @@ export const uploadMultipleMedia = async (
     try {
         const formData = new FormData();
 
-        // Add all files with 'images' field name (matches backend upload.array('images', 10))
-        files.forEach((file, index) => {
+        // Add all files
+        files.forEach((file) => {
             formData.append('images', file);
-            console.log(`📎 Added file ${index + 1}: ${file.name} (${file.size} bytes)`);
         });
 
         // Add required fields
@@ -1026,73 +1028,32 @@ export const uploadMultipleMedia = async (
             formData.append('album_id', albumId);
         }
 
-        // Debug FormData contents
-        console.log('📋 FormData contents:');
-        for (let [key, value] of formData.entries()) {
-            if (value instanceof File) {
-                console.log(`  ${key}: File(${value.name}, ${value.size} bytes)`);
-            } else {
-                console.log(`  ${key}: ${value}`);
-            }
+        console.log('🚀 Starting upload:', {
+            fileCount: files.length,
+            totalSize: `${(files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)}MB`
+        });
+
+        const response = await fetch(`${API_BASE_URL}/media/upload`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                // Don't set Content-Type for multipart/form-data
+            },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP ${response.status}`);
         }
 
-        const headers: Record<string, string> = {
-            'Authorization': `Bearer ${authToken}`,
-            // Don't set Content-Type - let browser set it with boundary
-        };
-
-        console.log('🔍 Multiple upload request:', {
-            url: `${API_BASE_URL}/media/upload`,
-            fileCount: files.length,
-            eventId,
-            albumId,
-            formDataKeys: Array.from(formData.keys())
-        });
-
-        const response = await axios.post(
-            `${API_BASE_URL}/media/upload`,
-            formData,
-            {
-                headers,
-                timeout: 120000, // 2 minutes for multiple files
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity,
-                onUploadProgress: (progressEvent) => {
-                    if (progressEvent.total) {
-                        const percentCompleted = Math.round(
-                            (progressEvent.loaded * 100) / progressEvent.total
-                        );
-                        console.log(`📊 Upload progress: ${percentCompleted}%`);
-                    }
-                }
-            }
-        );
-
-        console.log('✅ Multiple upload response:', {
-            status: response.data.status,
-            message: response.data.message,
-            summary: response.data.data?.summary
-        });
-
-        return response.data;
+        const result = await response.json();
+        console.log('✅ Upload completed:', result);
+        return result;
 
     } catch (error: any) {
-        console.error('❌ Multiple upload error:', error);
-
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 400) {
-                const errorMsg = error.response.data?.message || 'Bad request';
-                throw new Error(`Upload failed: ${errorMsg}`);
-            } else if (error.response?.status === 403) {
-                throw new Error('You do not have permission to upload to this event');
-            } else if (error.response?.status === 413) {
-                throw new Error('Files are too large. Please choose smaller files.');
-            } else if (error.response?.status) {
-                throw new Error(`Server error (${error.response.status}): ${error.response.data?.message || error.response.statusText}`);
-            }
-        }
-
-        throw new Error('Upload failed. Please try again.');
+        console.error('❌ Upload error:', error);
+        throw new Error(error.message || 'Upload failed. Please try again.');
     }
 };
 

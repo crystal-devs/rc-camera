@@ -46,7 +46,7 @@ export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) 
     queryFn: async (): Promise<Photo[]> => {
       if (!token) throw new Error('Authentication required');
 
-      console.log('🔍 useEventMedia: Fetching regular photos', { eventId, status, limit });
+      // console.log('🔍 useEventMedia: Fetching regular photos', { eventId, status, limit });
 
       // Use the simple version that returns MediaItem[]
       const mediaItems = await getEventMedia(eventId, token, {
@@ -56,7 +56,7 @@ export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) 
         scrollType: 'pagination'
       });
 
-      console.log('✅ useEventMedia: Received media items', { count: mediaItems.length });
+      // console.log('✅ useEventMedia: Received media items', { count: mediaItems.length });
 
       return mediaItems.map(transformMediaToPhoto);
     },
@@ -178,12 +178,33 @@ export function useEventMediaCounts(eventId: string, enabled = true) {
 /**
  * IMPROVED: Upload mutation with comprehensive cache invalidation
  */
+// hooks/useUploadMultipleMedia.ts - OPTIMIZED for instant feedback
+
+// import { useMutation, useQueryClient } from '@tanstack/react-query';
+// import { toast } from 'sonner';
+// import { useAuthToken } from '@/hooks/useAuth';
+// import { queryKeys } from '@/lib/queryKeys';
+
+interface UploadedFile {
+  id: string;
+  filename: string;
+  url: string; // Preview URL - users see this immediately
+  status: 'processing' | 'pending' | 'completed';
+  jobId?: string;
+  size: string;
+  dimensions?: string;
+  aspectRatio?: number;
+  estimatedProcessingTime: string;
+  message: string;
+}
+
 export function useUploadMultipleMedia(
   eventId: string,
   albumId: string | null,
   options: {
     onSuccess?: (data: any) => void;
     onError?: (error: Error) => void;
+    onProgress?: (uploaded: UploadedFile[]) => void;
   } = {}
 ) {
   const token = useAuthToken();
@@ -196,118 +217,192 @@ export function useUploadMultipleMedia(
 
       console.log('🔍 Starting upload for', files.length, 'files');
 
-      // Validate files before upload
-      const validFiles = files.filter(file => {
-        if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-          toast.error(`"${file.name}" is not a valid image or video file.`);
-          return false;
-        }
+      // 🚀 INSTANT PREVIEW: Create preview URLs immediately
+      const filePreviewsWithMetadata = await Promise.all(
+        files.map(async (file, index) => {
+          // Validate file
+          if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+            toast.error(`"${file.name}" is not a valid image or video file.`);
+            return null;
+          }
 
-        const maxSize = 100 * 1024 * 1024;
-        if (file.size > maxSize) {
-          const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-          toast.error(`"${file.name}" is too large (${sizeMB}MB). Maximum size is 100MB.`);
-          return false;
-        }
+          const maxSize = 100 * 1024 * 1024;
+          if (file.size > maxSize) {
+            const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+            toast.error(`"${file.name}" is too large (${sizeMB}MB). Maximum size is 100MB.`);
+            return null;
+          }
 
-        return true;
-      });
+          // 🚀 CREATE INSTANT PREVIEW: Generate blob URL for immediate display
+          const previewUrl = URL.createObjectURL(file);
+          
+          // 🔧 GET IMAGE DIMENSIONS: For better UX
+          const dimensions = await getImageDimensions(file);
+          
+          return {
+            file,
+            tempId: `temp_${Date.now()}_${index}`,
+            previewUrl,
+            filename: file.name,
+            size: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
+            dimensions: dimensions ? `${dimensions.width}x${dimensions.height}` : undefined,
+            aspectRatio: dimensions ? dimensions.height / dimensions.width : undefined,
+            status: 'uploading' as const
+          };
+        })
+      );
 
-      if (validFiles.length === 0) {
+      const validPreviews = filePreviewsWithMetadata.filter(Boolean);
+      if (validPreviews.length === 0) {
         throw new Error('No valid files to upload');
       }
 
-      return await uploadMultipleMedia(validFiles, eventId, albumId, token);
+      // 🚀 INSTANT UI UPDATE: Add previews to cache immediately
+      const tempPhotos = validPreviews.map(preview => ({
+        id: preview!.tempId,
+        imageUrl: preview!.previewUrl,
+        thumbnailUrl: preview!.previewUrl,
+        filename: preview!.filename,
+        size: preview!.size,
+        dimensions: preview!.dimensions,
+        aspectRatio: preview!.aspectRatio || 1,
+        status: 'uploading',
+        processing: true,
+        uploadedBy: 'You',
+        uploadedAt: new Date().toISOString(),
+        approvalStatus: 'pending',
+        tags: [],
+        isTemporary: true // Flag to identify temp photos
+      }));
+
+      // 🚀 OPTIMISTICALLY UPDATE CACHE: Users see photos immediately
+      queryClient.setQueryData(
+        queryKeys.eventPhotos(eventId, 'pending'),
+        (oldData: any) => {
+          if (!oldData) return tempPhotos;
+          return [...tempPhotos, ...oldData];
+        }
+      );
+
+      console.log('✅ Added', tempPhotos.length, 'temporary photos to cache');
+
+      // 🚀 UPLOAD FILES: Now upload in background
+      const uploadResults = await uploadMultipleMedia(
+        validPreviews.map(p => p!.file), 
+        eventId, 
+        albumId, 
+        token
+      );
+
+      // 🔧 CLEANUP: Remove temporary preview URLs
+      validPreviews.forEach(preview => {
+        if (preview?.previewUrl) {
+          URL.revokeObjectURL(preview.previewUrl);
+        }
+      });
+
+      return {
+        ...uploadResults,
+        tempPhotos,
+        validPreviews
+      };
     },
     onSuccess: (result) => {
-      const { summary } = result.data || {};
+      const { data, tempPhotos, validPreviews } = result;
+      const { summary, uploads } = data || {};
 
       console.log('✅ Upload completed:', summary);
 
-      // 🔧 IMMEDIATE CACHE INVALIDATION - Force refresh
-      const invalidateAllQueries = async () => {
-        // Clear all existing cache for this event
-        queryClient.removeQueries({
-          queryKey: ['eventPhotos', eventId],
-          exact: false
-        });
+      // 🔧 REPLACE TEMP PHOTOS: Replace temporary photos with real ones
+      if (uploads && uploads.length > 0) {
+        setTimeout(() => {
+          // Remove temporary photos from cache
+          queryClient.setQueryData(
+            queryKeys.eventPhotos(eventId, 'pending'),
+            (oldData: any) => {
+              if (!oldData) return [];
+              return oldData.filter((photo: any) => !photo.isTemporary);
+            }
+          );
 
-        // Invalidate and refetch all status queries
-        const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
-
-        await Promise.all([
-          // Regular queries
-          ...statuses.map(status =>
-            queryClient.invalidateQueries({
-              queryKey: queryKeys.eventPhotos(eventId, status),
-              exact: false,
-              refetchType: 'all'
-            })
-          ),
-
-          // Infinite queries
-          ...statuses.map(status =>
-            queryClient.invalidateQueries({
-              queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite'],
-              exact: false,
-              refetchType: 'all'
-            })
-          ),
-
-          // Counts
+          // Force refresh to get real photos from server
           queryClient.invalidateQueries({
-            queryKey: queryKeys.eventCounts(eventId),
-            exact: false,
-            refetchType: 'all'
-          })
-        ]);
-
-        // 🔧 FORCE IMMEDIATE REFETCH of active queries
-        await Promise.all([
-          queryClient.refetchQueries({
-            queryKey: queryKeys.eventPhotos(eventId, 'approved'),
-            exact: false
-          }),
-          queryClient.refetchQueries({
             queryKey: queryKeys.eventPhotos(eventId, 'pending'),
             exact: false
-          }),
-          queryClient.refetchQueries({
+          });
+
+          queryClient.invalidateQueries({
             queryKey: queryKeys.eventCounts(eventId),
             exact: false
-          })
-        ]);
-      };
+          });
+        }, 1000); // Small delay to ensure backend processing
+      }
 
-      // Execute cache invalidation immediately
-      invalidateAllQueries().catch(console.error);
-
-      // Show success message
-      if (summary?.success > 0) {
+      // 🎉 SUCCESS TOAST: Better messaging
+      if (summary?.successful > 0) {
         toast.success(
-          `${summary.success} photo${summary.success > 1 ? 's' : ''} uploaded successfully!`,
+          `${summary.successful} photo${summary.successful > 1 ? 's' : ''} uploaded!`,
           {
-            description: 'Processing in background. Gallery will update automatically.',
+            description: 'Photos are visible now. High-quality versions processing in background.',
             duration: 5000,
           }
         );
       }
 
-      if (summary?.failed > 0) {
-        const errors = result.data?.errors || [];
-        const failedFiles = errors.map((e: any) => e.filename).join(', ');
-        toast.error(
-          `Failed to upload ${summary.failed} file${summary.failed > 1 ? 's' : ''}: ${failedFiles}`
-        );
+      // ⚠️ ERROR HANDLING: Show individual file errors
+      if (summary?.failed > 0 && data?.errors) {
+        data.errors.forEach((error: any) => {
+          toast.error(`Failed to upload "${error.filename}": ${error.error}`);
+        });
       }
 
       options.onSuccess?.(result);
     },
     onError: (error: Error) => {
       console.error('❌ Upload failed:', error);
+      
+      // 🧹 CLEANUP: Remove temporary photos on error
+      queryClient.setQueryData(
+        queryKeys.eventPhotos(eventId, 'pending'),
+        (oldData: any) => {
+          if (!oldData) return [];
+          return oldData.filter((photo: any) => !photo.isTemporary);
+        }
+      );
+
       toast.error(error.message || 'Upload failed');
       options.onError?.(error);
     }
+  });
+}
+
+/**
+ * 🚀 HELPER: Get image dimensions for better UX
+ */
+async function getImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) {
+      resolve(null);
+      return;
+    }
+
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({
+        width: img.naturalWidth,
+        height: img.naturalHeight
+      });
+    };
+    
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    
+    img.src = url;
   });
 }
 
