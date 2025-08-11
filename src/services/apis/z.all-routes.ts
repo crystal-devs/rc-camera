@@ -13,3 +13,6 @@ export const UPLOAD_MEDIA_ROUTE = `${RC_API_BASE_URL}/media/upload`
 // auth 
 export const LOGIN_ROUTE = `${RC_API_BASE_URL}/auth/login`
 export const VERIFY_USER_ROUTE = `${RC_API_BASE_URL}/auth/verify-clicky`
+
+// report
+export const REPORT_BUG_ROUTE = `${RC_API_BASE_URL}/report/bug`
