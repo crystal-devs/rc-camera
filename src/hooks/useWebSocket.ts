@@ -148,6 +148,47 @@ interface ConnectionSettings {
   heartbeatTimeout: number;
 }
 
+interface AdminNewUploadNotificationPayload {
+  eventId: string;
+  uploadedBy: {
+    id: string;
+    name: string;
+    type: string;
+    email?: string;
+  };
+  media?: {
+    id: string;
+    url: string;
+    filename: string;
+    type: 'image' | 'video';
+    size: number;
+    approvalStatus: string;
+  };
+  mediaItems?: Array<{
+    id: string;
+    url: string;
+    filename: string;
+    type: 'image' | 'video';
+    size: number;
+    approvalStatus: string;
+  }>;
+  bulkUpload?: {
+    totalCount: number;
+    successCount: number;
+    requiresApproval: boolean;
+  };
+  requiresApproval: boolean;
+  uploadedAt: Date;
+  timestamp: Date;
+}
+
+interface GuestUploadSummaryPayload {
+  eventId: string;
+  newUploadsCount: number;
+  uploaderName: string;
+  timestamp: Date;
+}
+
 // Environment-based logging utility
 const isDev = process.env.NODE_ENV === 'development';
 const devLog = {
@@ -457,6 +498,110 @@ export function useSimpleWebSocket(
     }
   }, []);
 
+  const handleAdminNewUploadNotification = useCallback((payload: AdminNewUploadNotificationPayload) => {
+    if (userType !== 'admin') return;
+
+    devLog.info('📤 Admin: New guest upload notification:', payload);
+
+    const { uploadedBy, requiresApproval, bulkUpload } = payload;
+
+    if (bulkUpload) {
+      // Bulk upload notification
+      const { totalCount, requiresApproval: needsApproval } = bulkUpload;
+
+      toast.success(
+        `📸 ${uploadedBy.name} uploaded ${totalCount} photo${totalCount > 1 ? 's' : ''}`,
+        {
+          duration: 5000,
+          description: needsApproval
+            ? `${totalCount} photo${totalCount > 1 ? 's' : ''} awaiting approval`
+            : 'Photos are now visible to guests',
+          action: {
+            label: needsApproval ? 'Review' : 'View',
+            onClick: () => {
+              // You can add navigation logic here to go to the pending tab
+              // For example: router.push(`/admin/events/${payload.eventId}?tab=pending`)
+              devLog.info('Navigate to review uploads');
+            }
+          }
+        }
+      );
+    } else if (payload.media) {
+      // Single upload notification
+      const { media } = payload;
+
+      toast.success(
+        `📸 ${uploadedBy.name} uploaded a photo`,
+        {
+          duration: 4000,
+          description: requiresApproval
+            ? `"${media.filename}" awaiting approval`
+            : `"${media.filename}" is now visible`,
+          action: {
+            label: requiresApproval ? 'Review' : 'View',
+            onClick: () => {
+              devLog.info('Navigate to review upload:', media.id);
+            }
+          }
+        }
+      );
+    }
+
+    // 🚀 Invalidate admin queries to refresh counts and pending items
+    if (requiresApproval) {
+      // Refresh pending tab and counts
+      queryClient.invalidateQueries({
+        queryKey: ['event-media', payload.eventId, 'pending'],
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ['event-counts', payload.eventId],
+      });
+    } else {
+      // Refresh approved tab if auto-approved
+      queryClient.invalidateQueries({
+        queryKey: ['event-media', payload.eventId, 'approved'],
+      });
+    }
+
+    // 🚀 Optional: Play notification sound for admins
+    if (typeof window !== 'undefined' && window.AudioContext) {
+      try {
+        // You can add a subtle notification sound here
+        // const audio = new Audio('/notification-sound.mp3');
+        // audio.volume = 0.3;
+        // audio.play().catch(() => {}); // Ignore if sound fails
+      } catch (e) {
+        // Ignore audio errors
+      }
+    }
+
+  }, [userType, queryClient]);
+
+  const handleGuestUploadSummary = useCallback((payload: GuestUploadSummaryPayload) => {
+    if (userType !== 'admin') return;
+
+    devLog.info('📊 Admin: Guest upload summary:', payload);
+
+    // This is a lighter notification - maybe just update a badge or counter
+    // You could use this to update a notification badge in the UI
+
+    // Optional: Show a subtle toast for summary
+    toast.info(
+      `📈 Upload activity`,
+      {
+        duration: 2000,
+        description: `${payload.uploaderName} completed ${payload.newUploadsCount} upload${payload.newUploadsCount > 1 ? 's' : ''}`,
+      }
+    );
+
+    // Refresh counts to update any dashboard counters
+    queryClient.invalidateQueries({
+      queryKey: ['event-counts', payload.eventId],
+    });
+
+  }, [userType, queryClient]);
+
   // Start heartbeat mechanism
   const startHeartbeat = useCallback(() => {
     const settings = connectionSettingsRef.current;
@@ -622,6 +767,13 @@ export function useSimpleWebSocket(
       socket.on('media_upload_failed', handleMediaUploadFailed);
       socket.on('event_stats_update', handleEventStatsUpdate);
 
+      if (userType === 'admin') {
+        socket.on('admin_new_upload_notification', handleAdminNewUploadNotification);
+        socket.on('guest_upload_summary', handleGuestUploadSummary);
+
+        devLog.info('✅ Admin event handlers registered');
+      }
+
       // Guest-specific handlers (existing)
       if (userType === 'guest') {
         socket.on('media_approved', handleMediaApproved);
@@ -666,6 +818,8 @@ export function useSimpleWebSocket(
     handleMediaUploadFailed,
     handleEventStatsUpdate,
     handleMediaApproved,
+    handleAdminNewUploadNotification,
+    handleGuestUploadSummary,
     handleMediaRemoved,
     handleRoomStats,
     handleHeartbeatAck,

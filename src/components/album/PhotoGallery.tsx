@@ -26,6 +26,7 @@ import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
 import { OptimizedPhotoGrid } from './PhotoGrid';
 import { useSimpleWebSocket } from '@/hooks/useWebSocket';
+import { AdminNotificationBadge } from './AdminNotificationBadge';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
@@ -81,6 +82,11 @@ export default function OptimizedPhotoGallery({
     return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
   }, [webSocket.socket, handleRoomStats]);
 
+  const handleNavigateToPending = useCallback(() => {
+    if (userPermissions.moderate) {
+      setActiveTab('pending');
+    }
+  }, [userPermissions.moderate]);
   // Data fetching hooks
   const {
     data: regularPhotos = [],
@@ -159,23 +165,23 @@ export default function OptimizedPhotoGallery({
     onSuccess: (result) => {
       const { data } = result;
       setUploadDialogOpen(false);
-      
+
       // Clear file inputs
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
-      
+
       // 🚀 START MONITORING: Add uploaded media IDs to monitoring list
       if (data?.uploads && Array.isArray(data.uploads)) {
         const newMediaIds = data.uploads
           .filter((upload: any) => upload.id && upload.status !== 'failed')
           .map((upload: any) => upload.id);
-        
+
         if (newMediaIds.length > 0) {
           setUploadedMediaIds(prev => [...prev, ...newMediaIds]);
           console.log('📊 Started monitoring uploads:', newMediaIds);
         }
       }
-      
+
       // Immediate refresh
       refetchCounts();
       refetchPhotos();
@@ -260,9 +266,9 @@ export default function OptimizedPhotoGallery({
             {completed + failed}/{total}
           </span>
         </div>
-        
+
         <Progress value={progress} className="h-2" />
-        
+
         <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
           <span>{processing} processing</span>
           <span>{completed} completed</span>
@@ -345,7 +351,7 @@ export default function OptimizedPhotoGallery({
   const openPhotoViewer = useCallback((photo: Photo, index: number) => {
     // Don't open viewer for uploading photos
     if (photo.status === 'uploading' || photo.isTemporary) return;
-    
+
     setSelectedPhoto(photo);
     setSelectedPhotoIndex(index);
     setPhotoViewerOpen(true);
@@ -457,7 +463,7 @@ export default function OptimizedPhotoGallery({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <RoomStatsDisplay roomStats={roomStats}/>
+          <RoomStatsDisplay roomStats={roomStats} />
           <StatusTabs
             activeTab={activeTab}
             onTabChange={handleTabChange}
@@ -465,6 +471,14 @@ export default function OptimizedPhotoGallery({
             userPermissions={userPermissions}
           />
           <ConnectionStatus />
+
+          {userPermissions.moderate && (
+            <AdminNotificationBadge
+              eventId={eventId}
+              onNavigateToPending={handleNavigateToPending}
+              className="ml-2"
+            />
+          )}
           {useInfiniteScroll && (
             <div className="text-xs text-gray-500">
               Infinite scroll ({photos.length} loaded)
