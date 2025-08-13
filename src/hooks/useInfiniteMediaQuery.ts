@@ -1,9 +1,9 @@
-// hooks/useInfiniteMediaQuery.ts - Optimized version with performance improvements
+// hooks/useInfiniteMediaQuery.ts - Updated with proper API response transformation
 'use client';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { getEventMediaWithGuestToken } from '@/services/apis/media.api';
-import { MediaFetchOptions, transformApiPhoto, TransformedPhoto } from '@/types/events';
+import { MediaFetchOptions } from '@/types/events';
 
 interface UseInfiniteMediaQueryProps {
   shareToken: string;
@@ -12,9 +12,95 @@ interface UseInfiniteMediaQueryProps {
   enabled?: boolean;
 }
 
+// Updated to match your API response structure
+interface ApiMediaItem {
+  _id: string;
+  type: 'image' | 'video';
+  url: string;
+  optimized_url?: string;
+  has_variants: boolean;
+  processing_status: 'completed' | 'processing' | 'failed';
+  approval_status: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
+  size_mb: number;
+  original_filename: string;
+  format: string;
+  uploader_type: string;
+  uploader_display_name: string;
+  dimensions: {
+    width: number;
+    height: number;
+    aspect_ratio: number;
+  };
+  stats: {
+    views: number;
+    downloads: number;
+    shares: number;
+    likes: number;
+    comments_count: number;
+  };
+  created_at: string;
+  updated_at: string;
+  responsive_urls: {
+    thumbnail: string;
+    medium: string;
+    large: string;
+    original: string;
+    preferred: string;
+  };
+  available_variants: {
+    small: { webp: boolean; jpeg: boolean };
+    medium: { webp: boolean; jpeg: boolean };
+    large: { webp: boolean; jpeg: boolean };
+  };
+  requested_optimized_url?: string;
+  uploaded_by: string;
+  guest_access: boolean;
+}
+
+// Your expected photo format - updated to match your requirements
+interface TransformedPhoto {
+  id: string;
+  takenBy: string;
+  imageUrl: string;
+  thumbnail: string;
+  createdAt: string;
+  originalFilename: string;
+  processingStatus: string;
+  processingProgress: number;
+  approval: {
+    status: string;
+  };
+  processing: {
+    status: string;
+    thumbnails_generated: boolean;
+    variants_generated: boolean;
+  };
+  progressiveUrls: {
+    placeholder: string;
+    thumbnail: string;
+    display: string;
+    full: string;
+    original: string;
+  };
+  metadata: {
+    width: number;
+    height: number;
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+  };
+  stats: {
+    views: number;
+    downloads: number;
+    shares: number;
+    likes: number;
+    comments_count: number;
+  };
+}
+
 // Extended MediaResponse interface to match your API structure
 interface MediaResponse {
-  data: any[];
+  data: ApiMediaItem[];
   total?: number;
   hasMore?: boolean;
   nextCursor?: string;
@@ -46,6 +132,106 @@ const devLog = {
   error: (...args: any[]) => console.error(...args), // Always log errors
 };
 
+// Transform API response to your required photo format
+const transformApiPhoto = (apiItem: ApiMediaItem | any): TransformedPhoto | null => {
+  try {
+    if (!apiItem) {
+      return null;
+    }
+
+    // Get the item ID (handle both _id and id)
+    const itemId = apiItem._id || apiItem.id;
+    if (!itemId) {
+      return null;
+    }
+
+    // Handle already transformed items or new API format
+    const isNewFormat = !!apiItem._id || !!apiItem.responsive_urls;
+
+    let thumbnailUrl, mediumUrl, largeUrl, originalUrl, preferredUrl;
+    let width, height, fileSize, fileName, fileType, uploadedBy, createdAt, approvalStatus;
+
+    if (isNewFormat) {
+      // New API format
+      thumbnailUrl = apiItem.responsive_urls?.thumbnail || apiItem.thumbnailUrl;
+      mediumUrl = apiItem.responsive_urls?.medium || apiItem.mediumUrl;
+      largeUrl = apiItem.responsive_urls?.large || apiItem.largeUrl;
+      originalUrl = apiItem.responsive_urls?.original || apiItem.url || apiItem.originalUrl;
+      preferredUrl = apiItem.responsive_urls?.preferred || apiItem.preferredUrl;
+
+      width = apiItem.dimensions?.width || 1920;
+      height = apiItem.dimensions?.height || 2400;
+      fileSize = apiItem.size_mb || 0;
+      fileName = apiItem.original_filename || 'unknown';
+      fileType = apiItem.format || 'jpeg';
+      uploadedBy = apiItem.uploader_display_name || apiItem.uploaded_by || 'Guest';
+      createdAt = apiItem.created_at || new Date().toISOString();
+      approvalStatus = apiItem.approval_status || 'approved';
+    } else {
+      // Already transformed format
+      thumbnailUrl = apiItem.thumbnailUrl || apiItem.thumbnail;
+      mediumUrl = apiItem.mediumUrl;
+      largeUrl = apiItem.largeUrl;
+      originalUrl = apiItem.originalUrl || apiItem.src;
+      preferredUrl = apiItem.preferredUrl || apiItem.src;
+
+      width = apiItem.dimensions?.width || apiItem.width || 1920;
+      height = apiItem.dimensions?.height || apiItem.height || 2400;
+      fileSize = apiItem.metadata?.fileSize || 0;
+      fileName = apiItem.originalFilename || apiItem.metadata?.fileName || 'unknown';
+      fileType = apiItem.metadata?.fileType || 'jpeg';
+      uploadedBy = apiItem.uploaded_by || apiItem.takenBy || 'Guest';
+      createdAt = apiItem.uploadedAt || apiItem.createdAt || new Date().toISOString();
+      approvalStatus = apiItem.approval?.status || 'approved';
+    }
+
+    const transformed: TransformedPhoto = {
+      id: itemId,
+      takenBy: uploadedBy,
+      imageUrl: preferredUrl || mediumUrl || originalUrl,
+      thumbnail: thumbnailUrl || mediumUrl || originalUrl,
+      createdAt: createdAt,
+      originalFilename: fileName,
+      processingStatus: apiItem.processing_status || apiItem.processingStatus || 'completed',
+      processingProgress: 0, // Default to 0 since processing is usually complete
+      approval: {
+        status: approvalStatus
+      },
+      processing: {
+        status: apiItem.processing_status || apiItem.processingStatus || 'completed',
+        thumbnails_generated: !!thumbnailUrl,
+        variants_generated: !!(mediumUrl && largeUrl)
+      },
+      progressiveUrls: {
+        placeholder: thumbnailUrl || mediumUrl || originalUrl,
+        thumbnail: thumbnailUrl || mediumUrl || originalUrl,
+        display: mediumUrl || originalUrl,
+        full: largeUrl || originalUrl,
+        original: originalUrl
+      },
+      metadata: {
+        width: width,
+        height: height,
+        fileName: fileName,
+        fileType: fileType,
+        fileSize: fileSize
+      },
+      stats: apiItem.stats || {
+        views: 0,
+        downloads: 0,
+        shares: 0,
+        likes: 0,
+        comments_count: 0
+      }
+    };
+
+    return transformed;
+  } catch (error) {
+    console.error('Error transforming API photo:', error);
+    return null;
+  }
+};
+
 export const useInfiniteMediaQuery = ({
   shareToken,
   auth,
@@ -55,30 +241,21 @@ export const useInfiniteMediaQuery = ({
 
   // Memoized fetch function to prevent unnecessary recreations
   const fetchMediaPage = useCallback(async ({ pageParam = 1 }): Promise<MediaPage> => {
-    devLog.info(`📥 Fetching page ${pageParam} for guest with shareToken: ${shareToken.substring(0, 8)}...`);
+    if (!shareToken) {
+      throw new Error('Share token is required');
+    }
 
     const options: Partial<MediaFetchOptions> = {
       page: pageParam,
       limit,
       scroll_type: 'pagination',
-      quality: 'display'
+      quality: 'thumbnail'
     };
 
     try {
       const response = await getEventMediaWithGuestToken(shareToken, auth, options);
 
-      if (isDev) {
-        devLog.info('📦 Raw API response:', {
-          hasData: !!response?.data,
-          dataLength: response?.data?.length || 0,
-          total: response?.total,
-          hasMore: response?.hasMore,
-          pagination: response?.pagination
-        });
-      }
-
       if (!response?.data || !Array.isArray(response.data)) {
-        devLog.warn('⚠️ No valid data in response:', response);
         return {
           photos: [],
           hasNext: false,
@@ -87,8 +264,7 @@ export const useInfiniteMediaQuery = ({
         };
       }
 
-      // Transform photos using your transform function with error handling
-      devLog.info(`🔄 Transforming ${response.data.length} photos...`);
+      // Transform photos using the local transform function with error handling
       const transformedPhotos = response.data.reduce<TransformedPhoto[]>((acc, item, index) => {
         try {
           const transformedPhoto = transformApiPhoto(item);
@@ -97,33 +273,18 @@ export const useInfiniteMediaQuery = ({
           }
           return acc;
         } catch (error) {
-          devLog.error(`❌ Failed to transform photo at index ${index}:`, error, item);
+          console.error(`Failed to transform photo at index ${index}:`, error);
           return acc;
         }
       }, []);
 
-      devLog.info(`✅ Successfully transformed ${transformedPhotos.length} photos`);
-
-      // For guests: Filter only approved photos with optimized filtering
+      // For guests: Filter only approved photos
       const approvedPhotos = transformedPhotos.filter(photo => {
-        // If no approval info, assume it's approved (for backward compatibility)
         if (!photo.approval) {
-          if (isDev) {
-            devLog.info(`📸 Photo ${photo.id}: No approval info - assuming approved`);
-          }
           return true;
         }
-
-        const isApproved = photo.approval.status === 'approved' || photo.approval.status === 'auto_approved';
-
-        if (isDev) {
-          devLog.info(`📸 Photo ${photo.id}: ${photo.approval.status} -> ${isApproved ? 'SHOW' : 'HIDE'}`);
-        }
-
-        return isApproved;
+        return photo.approval.status === 'approved' || photo.approval.status === 'auto_approved';
       });
-
-      devLog.info(`🎯 Filtered to ${approvedPhotos.length} approved photos out of ${transformedPhotos.length} total`);
 
       // Determine pagination with priority fallback system
       const paginationInfo = getPaginationInfo(response, limit, approvedPhotos.length);
@@ -135,16 +296,10 @@ export const useInfiniteMediaQuery = ({
         page: pageParam
       };
 
-      devLog.info(`✅ Page ${pageParam} result:`, {
-        photosCount: result.photos.length,
-        hasNext: result.hasNext,
-        total: result.total
-      });
-
       return result;
 
     } catch (error) {
-      devLog.error(`❌ Error fetching page ${pageParam}:`, error);
+      console.error(`Error fetching page ${pageParam}:`, error);
 
       // Return empty page on error
       return {
@@ -163,11 +318,6 @@ export const useInfiniteMediaQuery = ({
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       const shouldLoadMore = lastPage.hasNext && lastPage.photos.length > 0;
-
-      if (isDev) {
-        devLog.info(`🔄 getNextPageParam: hasNext=${lastPage.hasNext}, photosLength=${lastPage.photos.length}, shouldLoadMore=${shouldLoadMore}`);
-      }
-
       return shouldLoadMore ? lastPage.page + 1 : undefined;
     },
     enabled: enabled && !!shareToken,
@@ -177,16 +327,10 @@ export const useInfiniteMediaQuery = ({
     refetchOnMount: false, // Reduce unnecessary refetches
     networkMode: 'online', // Only fetch when online
     retry: (failureCount, error: any) => {
-      if (isDev) {
-        devLog.info(`🔄 Retry attempt ${failureCount} for error:`, error);
-      }
-
       // Don't retry on auth/permission errors
       if (error?.status === 404 || error?.status === 403 || error?.status === 401) {
-        devLog.info('🚫 Not retrying due to auth/permission error');
         return false;
       }
-
       // Retry only once for other errors to reduce network load
       return failureCount < 1;
     },
@@ -196,7 +340,6 @@ export const useInfiniteMediaQuery = ({
   // Optimized photo flattening with deduplication
   const allPhotos = useMemo(() => {
     if (!infiniteQuery.data?.pages?.length) {
-      devLog.info('📭 No pages data available');
       return [];
     }
 
@@ -204,9 +347,6 @@ export const useInfiniteMediaQuery = ({
     const photos = infiniteQuery.data.pages.reduce<TransformedPhoto[]>((acc, page) => {
       const validPhotos = page.photos.filter(photo => {
         if (seenIds.has(photo.id)) {
-          if (isDev) {
-            devLog.info(`🔄 Duplicate photo filtered: ${photo.id}`);
-          }
           return false;
         }
         seenIds.add(photo.id);
@@ -216,7 +356,6 @@ export const useInfiniteMediaQuery = ({
       return acc.concat(validPhotos);
     }, []);
 
-    devLog.info(`📸 Total flattened photos: ${photos.length} from ${infiniteQuery.data.pages.length} pages`);
     return photos;
   }, [infiniteQuery.data?.pages]);
 
@@ -238,7 +377,7 @@ export const useInfiniteMediaQuery = ({
   // Performance monitoring (development only)
   if (isDev) {
     devLog.info('🔍 useInfiniteMediaQuery state:', {
-      shareToken: shareToken.substring(0, 8) + '...',
+      shareToken: shareToken ? shareToken.substring(0, 8) + '...' : 'undefined',
       photosCount: allPhotos.length,
       totalPhotos,
       isLoading: infiniteQuery.isLoading,
@@ -246,7 +385,12 @@ export const useInfiniteMediaQuery = ({
       hasNextPage: infiniteQuery.hasNextPage,
       isError: infiniteQuery.isError,
       errorMessage: infiniteQuery.error?.message,
-      pagesCount: infiniteQuery.data?.pages?.length || 0
+      pagesCount: infiniteQuery.data?.pages?.length || 0,
+      samplePhoto: allPhotos[0] ? {
+        id: allPhotos[0].id,
+        imageUrl: allPhotos[0].imageUrl.substring(0, 50) + '...',
+        takenBy: allPhotos[0].takenBy
+      } : null
     });
   }
 
@@ -276,11 +420,6 @@ function getPaginationInfo(response: MediaResponse, limit: number, approvedCount
   if (response.pagination) {
     hasNext = Boolean(response.pagination.hasNext);
     total = response.pagination.totalCount || response.pagination.total || 0;
-
-    if (isDev) {
-      devLog.info('📊 Using response.pagination:', { hasNext, total });
-    }
-
     return { hasNext, total };
   }
 
@@ -288,11 +427,6 @@ function getPaginationInfo(response: MediaResponse, limit: number, approvedCount
   if (response.other?.pagination) {
     hasNext = Boolean(response.other.pagination.hasNext);
     total = response.other.pagination.totalCount || 0;
-
-    if (isDev) {
-      devLog.info('📊 Using response.other.pagination:', { hasNext, total });
-    }
-
     return { hasNext, total };
   }
 
@@ -300,21 +434,12 @@ function getPaginationInfo(response: MediaResponse, limit: number, approvedCount
   if (response.hasMore !== undefined) {
     hasNext = Boolean(response.hasMore);
     total = response.total || 0;
-
-    if (isDev) {
-      devLog.info('📊 Using top-level fields:', { hasNext, total });
-    }
-
     return { hasNext, total };
   }
 
   // Fallback: Estimate based on returned data length
   hasNext = (response.data?.length || 0) === limit;
   total = approvedCount;
-
-  if (isDev) {
-    devLog.info('📊 Using fallback estimation:', { hasNext, total });
-  }
 
   return { hasNext, total };
 }

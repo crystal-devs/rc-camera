@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { FullscreenPhotoViewer } from '@/components/photo/FullscreenPhotoViewer';
 import { TransformedPhoto } from '@/types/events';
 import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
 import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
@@ -18,6 +17,7 @@ import { useSimpleWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
+import { FullscreenPhotoViewer } from '@/components/album/FullscreenPhotoViewer';
 
 // Create a query client
 const queryClient = new QueryClient({
@@ -126,9 +126,10 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   } = useInfiniteMediaQuery({
     shareToken,
     auth,
-    limit: 20,
+    limit: 10,
   });
 
+  console.log(photos, 'photosphotosphotosphotos')
   useEffect(() => {
     if (!webSocket.socket) return;
 
@@ -733,13 +734,29 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
       {photoViewerOpen && selectedPhoto && (
         <FullscreenPhotoViewer
-          selectedPhoto={selectedPhoto}
+          selectedPhoto={{
+            ...selectedPhoto,
+            takenBy: (selectedPhoto as any).takenBy ?? '',
+            imageUrl: (selectedPhoto as any).imageUrl ?? selectedPhoto.src ?? '',
+          }}
           selectedPhotoIndex={selectedPhotoIndex}
-          photos={photos}
+          photos={photos.map(photo => ({
+            ...photo,
+            takenBy: (photo as any).takenBy ?? '',
+            imageUrl: (photo as any).imageUrl ?? photo.src ?? '',
+          }))}
+          // userPermissions={userPermissions}
           onClose={() => setPhotoViewerOpen(false)}
           onPrev={() => navigatePhoto('prev')}
           onNext={() => navigatePhoto('next')}
-          downloadPhoto={downloadPhoto}
+          setPhotoInfoOpen={(open) => {
+            // Handle photo info dialog
+            console.log('Photo info:', open);
+          }}
+          // deletePhoto={handleDelete}
+          downloadPhoto={() => {
+            console.log('Downloading photo:', selectedPhoto);
+          }}
         />
       )}
     </div>

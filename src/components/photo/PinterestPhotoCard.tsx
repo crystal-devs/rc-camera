@@ -30,15 +30,15 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
   const imageRef = useRef<HTMLImageElement>(null);
 
   // ImageKit URL transformations for regular img tag
-  const getOptimizedImageUrl = useCallback((src: string, width: number, quality: number) => {
-    // If it's already an ImageKit URL, add transformations
-    if (src.includes('ik.imagekit.io')) {
-      const separator = src.includes('?') ? '&' : '?';
-      return `${src}${separator}tr=w-${width},f-auto,pr-true,q-${quality}`;
-    }
-    // For other URLs, return as-is or implement your custom transformation logic
-    return src;
-  }, []);
+  // const getOptimizedImageUrl = useCallback((src: string, width: number, quality: number) => {
+  //   // If it's already an ImageKit URL, add transformations
+  //   if (src.includes('ik.imagekit.io')) {
+  //     const separator = src.includes('?') ? '&' : '?';
+  //     return `${src}${separator}tr=w-${width},f-auto,pr-true,q-${quality}`;
+  //   }
+  //   // For other URLs, return as-is or implement your custom transformation logic
+  //   return src;
+  // }, []);
 
   const handleImageLoad = useCallback(() => {
     setIsLoaded(true);
@@ -94,7 +94,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
             {/* Actual Image - Regular img tag for natural aspect ratio */}
             <img
               ref={imageRef}
-              src={getOptimizedImageUrl(photo.src, baseWidth, index < 8 ? 90 : 80)}
+              src={photo.imageUrl}
               alt={`Photo ${photo.id}`}
               className={`
                 w-full h-auto object-cover transition-all duration-500

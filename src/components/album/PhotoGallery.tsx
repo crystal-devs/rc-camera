@@ -1,5 +1,4 @@
-// components/OptimizedPhotoGallery.tsx - ENHANCED with instant upload feedback
-
+// Enhanced Gallery component with proper quality management
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
@@ -59,7 +58,7 @@ export default function OptimizedPhotoGallery({
     total?: number;
   }>({});
 
-  // 🚀 UPLOAD TRACKING: Track uploaded media IDs for status monitoring
+  // Upload tracking
   const [uploadedMediaIds, setUploadedMediaIds] = useState<string[]>([]);
 
   // Refs
@@ -87,7 +86,12 @@ export default function OptimizedPhotoGallery({
       setActiveTab('pending');
     }
   }, [userPermissions.moderate]);
-  // Data fetching hooks
+
+  // 🚀 QUALITY MANAGEMENT: Use thumbnail for grid, full for viewer
+  const gridQuality = 'thumbnail'; // Fast loading for grid
+  const viewerQuality = 'original'; // Full quality for viewer
+
+  // Data fetching hooks with thumbnail quality for grid
   const {
     data: regularPhotos = [],
     isLoading: regularLoading,
@@ -96,7 +100,7 @@ export default function OptimizedPhotoGallery({
   } = useEventMedia(eventId, {
     status: activeTab,
     limit: 100,
-    quality: 'display',
+    quality: gridQuality, // 🚀 Use thumbnail for grid
     enabled: !useInfiniteScroll
   });
 
@@ -111,7 +115,7 @@ export default function OptimizedPhotoGallery({
   } = useInfiniteEventMediaFlat(eventId, {
     status: activeTab,
     limit: 20,
-    quality: 'display',
+    quality: gridQuality, // 🚀 Use thumbnail for grid
     enabled: useInfiniteScroll
   });
 
@@ -136,7 +140,7 @@ export default function OptimizedPhotoGallery({
     refetch: refetchCounts
   } = useEventMediaCounts(eventId, userPermissions.moderate);
 
-  // 🚀 UPLOAD STATUS MONITORING: Monitor processing status of uploaded photos
+  // Upload status monitoring
   const {
     statuses: uploadStatuses,
     summary: uploadSummary,
@@ -144,23 +148,19 @@ export default function OptimizedPhotoGallery({
   } = useUploadStatusMonitor(uploadedMediaIds, eventId, {
     onComplete: (mediaId, status) => {
       console.log('✅ Upload completed:', mediaId, status.filename);
-      // Remove from monitoring list
       setUploadedMediaIds(prev => prev.filter(id => id !== mediaId));
-      // Refresh photos and counts
       refetchPhotos();
       refetchCounts();
     },
     onFailed: (mediaId, status) => {
       console.log('❌ Upload failed:', mediaId, status.filename);
-      // Remove from monitoring list
       setUploadedMediaIds(prev => prev.filter(id => id !== mediaId));
-      // Refresh photos
       refetchPhotos();
     },
     enabled: uploadedMediaIds.length > 0
   });
 
-  // Mutations with enhanced success handling
+  // Mutations
   const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
     onSuccess: (result) => {
       const { data } = result;
@@ -170,7 +170,7 @@ export default function OptimizedPhotoGallery({
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
 
-      // 🚀 START MONITORING: Add uploaded media IDs to monitoring list
+      // Start monitoring uploads
       if (data?.uploads && Array.isArray(data.uploads)) {
         const newMediaIds = data.uploads
           .filter((upload: any) => upload.id && upload.status !== 'failed')
@@ -182,7 +182,6 @@ export default function OptimizedPhotoGallery({
         }
       }
 
-      // Immediate refresh
       refetchCounts();
       refetchPhotos();
     },
@@ -246,7 +245,7 @@ export default function OptimizedPhotoGallery({
     );
   });
 
-  // 🚀 UPLOAD PROGRESS INDICATOR: Show real-time upload/processing status
+  // Upload Progress Indicator
   const UploadProgressIndicator = memo(() => {
     if (!isMonitoring || !uploadSummary) return null;
 
@@ -348,10 +347,12 @@ export default function OptimizedPhotoGallery({
     uploadMutation.mutate(validFiles);
   }, [canUserUpload, uploadMutation]);
 
+  // 🚀 ENHANCED: Photo viewer with full quality loading
   const openPhotoViewer = useCallback((photo: Photo, index: number) => {
     // Don't open viewer for uploading photos
     if (photo.status === 'uploading' || photo.isTemporary) return;
 
+    console.log('🔍 Opening photo viewer with full quality for:', photo.id);
     setSelectedPhoto(photo);
     setSelectedPhotoIndex(index);
     setPhotoViewerOpen(true);
@@ -373,6 +374,7 @@ export default function OptimizedPhotoGallery({
       newIndex = selectedPhotoIndex > 0 ? selectedPhotoIndex - 1 : photos.length - 1;
     }
 
+    console.log(`🔍 Navigating to photo ${newIndex + 1}/${photos.length}`);
     setSelectedPhotoIndex(newIndex);
     setSelectedPhoto(photos[newIndex]);
   }, [selectedPhotoIndex, photos]);
@@ -519,7 +521,7 @@ export default function OptimizedPhotoGallery({
         </div>
       </div>
 
-      {/* 🚀 UPLOAD PROGRESS: Show upload/processing status */}
+      {/* Upload progress indicator */}
       <UploadProgressIndicator />
 
       {(updateStatusMutation.isPending || uploadMutation.isPending) && (
@@ -568,6 +570,7 @@ export default function OptimizedPhotoGallery({
             </div>
           )}
 
+          {/* 🚀 ENHANCED: Photo viewer with full quality support */}
           {photoViewerOpen && selectedPhoto && (
             <FullscreenPhotoViewer
               selectedPhoto={selectedPhoto}
@@ -577,21 +580,12 @@ export default function OptimizedPhotoGallery({
               onClose={closePhotoViewer}
               onPrev={() => navigatePhoto('prev')}
               onNext={() => navigatePhoto('next')}
-              onPhotoIndexChange={(newIndex) => {
-                setSelectedPhotoIndex(newIndex);
-                setSelectedPhoto(photos[newIndex]);
+              setPhotoInfoOpen={(open) => {
+                // Handle photo info dialog
+                console.log('Photo info:', open);
               }}
               deletePhoto={handleDelete}
               downloadPhoto={handleDownload}
-              approvePhoto={userPermissions.moderate ?
-                (photoId) => handleStatusUpdate(photoId, 'approved') : undefined
-              }
-              rejectPhoto={userPermissions.moderate ?
-                (photoId) => handleStatusUpdate(photoId, 'rejected') : undefined
-              }
-              hidePhoto={userPermissions.moderate ?
-                (photoId) => handleStatusUpdate(photoId, 'hidden') : undefined
-              }
             />
           )}
         </>

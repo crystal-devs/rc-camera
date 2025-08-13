@@ -161,6 +161,12 @@ export interface ApiPhoto {
     rejection_reason?: string;
     auto_approval_reason?: string;
   };
+  responsive_urls?: {
+    thumbnail: string;
+    display: string;
+    full: string;
+    original: string;
+  }
   metadata: {
     width: number;
     height: number;

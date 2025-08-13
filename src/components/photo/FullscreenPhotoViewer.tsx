@@ -33,6 +33,7 @@ export const FullscreenPhotoViewer: React.FC<{
     };
   }, [onClose, onPrev, onNext]);
 
+  console.log(photos, 'photosososososasdfoasdfsoso')
   return (
     <div
       className="fixed inset-0 bg-black z-50 flex flex-col"
