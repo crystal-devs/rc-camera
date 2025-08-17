@@ -15,6 +15,7 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
 
   // Define routes where navigation should be hidden
   const isGuestRoute = pathname?.startsWith('/guest/');
+  const isWall = pathname?.startsWith('/wall/');
   const isAuthJoinRoute = pathname?.startsWith('/join/');
   const isLoginRoute = pathname === '/login';
   const isRegisterRoute = pathname === '/register';
@@ -32,6 +33,7 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
     isEventNotFoundRoute ||
     isInviteRequiredRoute ||
     isCohostInvite ||
+    isWall ||
     isPrivateAccessDeniedRoute;
 
   if (shouldHideNavigation) {

@@ -200,7 +200,7 @@ const devLog = {
 export function useSimpleWebSocket(
   eventIdOrShareToken: string,
   shareToken?: string,
-  userType: 'admin' | 'guest' = 'admin'
+  userType: 'admin' | 'guest' | 'photowall' = 'admin'
 ) {
   const token = useAuthToken();
   const queryClient = useQueryClient();
@@ -266,7 +266,7 @@ export function useSimpleWebSocket(
           exact: true
         });
 
-      } else if (userType === 'guest') {
+      } else if (userType === 'guest' || userType === 'photowall') {
         const wasVisible = ['approved', 'auto_approved'].includes(previousStatus);
         const isVisible = ['approved', 'auto_approved'].includes(newStatus);
 
@@ -286,22 +286,31 @@ export function useSimpleWebSocket(
 
   // 🚀 NEW: Handle new media uploaded (for guests)
   const handleNewMediaUploaded = useCallback((payload: NewMediaUploadedPayload) => {
-    if (userType === 'guest' && payload.status === 'auto_approved') {
-      devLog.info('📸 New media uploaded for guests:', payload);
+    if ((userType === 'guest' && payload.status === 'auto_approved') || userType === 'photowall') {
+      devLog.info(`📸 New media uploaded for ${userType}:`, payload);
 
-      // Show toast notification
-      toast.success(`📸 New photo from ${payload.uploadedBy.name}!`, {
-        duration: 3000,
-        description: 'High-quality version processing...'
-      });
+      // Different toast messages for different user types
+      if (userType === 'photowall') {
+        toast.success(`📺 New photo from ${payload.uploadedBy.name}`, {
+          duration: 2000,
+          description: 'Added to slideshow'
+        });
+      } else {
+        toast.success(`📸 New photo from ${payload.uploadedBy.name}!`, {
+          duration: 3000,
+          description: 'High-quality version processing...'
+        });
+      }
 
-      // Invalidate and refetch guest media
-      queryClient.invalidateQueries({
-        queryKey: getGuestQueryKey(),
-        exact: true
-      });
+      // For photo walls, we might not need to invalidate queries since they manage their own state
+      if (userType === 'guest') {
+        queryClient.invalidateQueries({
+          queryKey: getGuestQueryKey(),
+          exact: true
+        });
+      }
 
-      // Optionally, prefetch the new image to improve loading
+      // Prefetch the new image for better performance
       if (payload.media.url) {
         const img = new Image();
         img.src = payload.media.url;
@@ -311,20 +320,28 @@ export function useSimpleWebSocket(
 
   // 🚀 NEW: Handle media processing completion (better quality available)
   const handleMediaProcessingComplete = useCallback((payload: MediaProcessingCompletePayload) => {
-    if (userType === 'guest') {
-      devLog.info('✨ High-quality version ready:', payload);
+    if (userType === 'guest' || userType === 'photowall') {
+      devLog.info(`✨ High-quality version ready for ${userType}:`, payload);
 
-      // Show subtle notification about better quality
-      toast.success('✨ High-quality version ready!', {
-        duration: 2000,
-        description: 'Photo updated with better quality'
-      });
+      // Different handling for photo walls vs guests
+      if (userType === 'photowall') {
+        // Photo walls might want to update the image URL in their slideshow
+        toast.info('✨ Higher quality version ready', {
+          duration: 1500,
+          description: 'Photo updated in slideshow'
+        });
+      } else {
+        toast.success('✨ High-quality version ready!', {
+          duration: 2000,
+          description: 'Photo updated with better quality'
+        });
 
-      // Invalidate queries to fetch updated URLs
-      queryClient.invalidateQueries({
-        queryKey: getGuestQueryKey(),
-        exact: true
-      });
+        // Only invalidate for guests, photo walls handle this internally
+        queryClient.invalidateQueries({
+          queryKey: getGuestQueryKey(),
+          exact: true
+        });
+      }
 
       // Prefetch the new high-quality image
       if (payload.variants.display) {
@@ -356,7 +373,7 @@ export function useSimpleWebSocket(
 
   // Handle guest specific events (existing)
   const handleMediaApproved = useCallback((payload: MediaApprovedPayload) => {
-    if (userType === 'guest') {
+    if (userType === 'guest' || userType === 'photowall') {
       toast.success('📸 New photo approved!', { duration: 2000 });
 
       queryClient.invalidateQueries({
@@ -367,61 +384,45 @@ export function useSimpleWebSocket(
   }, [queryClient, userType, getGuestQueryKey]);
 
   const handleMediaRemoved = useCallback((payload: MediaRemovedPayload) => {
-    if (userType === 'guest') {
-      devLog.info('🗑️ Media removed for guests:', payload);
+    if (userType === 'guest' || userType === 'photowall') {
+      devLog.info(`🗑️ Media removed for ${userType}:`, payload);
 
-      // Show toast notification about removal
       const friendlyReason = payload.guest_context?.reason_display || 'Photo was removed';
+
+      // Different toast handling for photo walls
+      if (userType === 'photowall') {
+        toast.warning(`📺 ${friendlyReason}`, {
+          duration: 2000,
+          description: 'Removed from slideshow'
+        });
+        // Photo walls will handle removal in their own state management
+        return;
+      }
+
+      // Existing guest logic
       toast.info(`📷 ${friendlyReason}`, {
         duration: 3000,
         description: payload.removedBy ? `By ${payload.removedBy}` : undefined
       });
 
-      // 🚀 FIX: Use the EXACT same query key as useInfiniteMediaQuery
+      // Rest of your existing guest media removal logic...
       const queryKey = ['guest-media', shareToken || eventIdOrShareToken];
 
-      console.log('🔍 DEBUG - Using query key:', queryKey);
-
-      // 🚀 FIX: Check if cache exists, if not just invalidate
       const currentData = queryClient.getQueryData(queryKey);
-      console.log('🔍 DEBUG - Current cache data:', currentData);
 
       if (!currentData) {
-        console.log('🔍 DEBUG - No cache data found, forcing invalidation and refetch');
-
-        // Force invalidate and refetch since cache is empty
-        queryClient.invalidateQueries({
-          queryKey,
-          exact: true
-        });
-
-        // Also try to refetch immediately
-        queryClient.refetchQueries({
-          queryKey,
-          exact: true
-        });
-
-        devLog.info(`✅ Forced cache invalidation and refetch for media ${payload.mediaId}`);
+        queryClient.invalidateQueries({ queryKey, exact: true });
+        queryClient.refetchQueries({ queryKey, exact: true });
         return;
       }
 
-      // 🚀 If cache exists, try to update it
       queryClient.setQueryData(queryKey, (oldData: any) => {
-        if (!oldData || !oldData.pages) {
-          console.log('🔍 DEBUG - Invalid cache structure, falling back to invalidation');
-          return oldData;
-        }
+        if (!oldData || !oldData.pages) return oldData;
 
-        console.log('🔍 DEBUG - Updating cache with pages:', oldData.pages.length);
-
-        const updatedPages = oldData.pages.map((page: any, pageIndex: number) => {
-          if (!page.photos || !Array.isArray(page.photos)) {
-            return page;
-          }
+        const updatedPages = oldData.pages.map((page: any) => {
+          if (!page.photos || !Array.isArray(page.photos)) return page;
 
           const originalLength = page.photos.length;
-
-          // Filter out the deleted photo
           const filteredPhotos = page.photos.filter((photo: any) => {
             const shouldRemove = (
               photo._id === payload.mediaId ||
@@ -429,20 +430,8 @@ export function useSimpleWebSocket(
               photo._id?.toString() === payload.mediaId ||
               photo.id?.toString() === payload.mediaId
             );
-
-            if (shouldRemove) {
-              console.log(`🔍 DEBUG - REMOVING photo:`, {
-                photo_id: photo.id,
-                photo_id_field: photo._id,
-                payload_mediaId: payload.mediaId,
-                filename: photo.original_filename
-              });
-            }
-
             return !shouldRemove;
           });
-
-          console.log(`🔍 DEBUG - Page ${pageIndex}: ${originalLength} -> ${filteredPhotos.length} photos`);
 
           return {
             ...page,
@@ -451,24 +440,12 @@ export function useSimpleWebSocket(
           };
         });
 
-        const result = {
-          ...oldData,
-          pages: updatedPages
-        };
-
-        console.log('🔍 DEBUG - Updated cache result:', result);
-        return result;
+        return { ...oldData, pages: updatedPages };
       });
 
-      // 🚀 ALSO invalidate as backup to ensure consistency
       setTimeout(() => {
-        queryClient.invalidateQueries({
-          queryKey,
-          exact: true
-        });
+        queryClient.invalidateQueries({ queryKey, exact: true });
       }, 100);
-
-      devLog.info(`✅ Updated cache and invalidated queries for media ${payload.mediaId}`);
     }
   }, [userType, queryClient, shareToken, eventIdOrShareToken]);
 
@@ -636,8 +613,8 @@ export function useSimpleWebSocket(
       return;
     }
 
-    if (userType === 'guest' && !shareToken && !eventIdOrShareToken.startsWith('evt_')) {
-      devLog.warn('⚠️ Guest needs share token or valid share token format');
+    if ((userType === 'guest' || userType === 'photowall') && !shareToken && !eventIdOrShareToken.startsWith('evt_')) {
+      devLog.warn(`⚠️ ${userType} needs share token or valid share token format`);
       return;
     }
 
@@ -679,8 +656,8 @@ export function useSimpleWebSocket(
           : {
             shareToken: shareToken || eventIdOrShareToken,
             eventId: shareToken || eventIdOrShareToken,
-            userType: 'guest' as const,
-            guestName: 'Guest User'
+            userType: userType === 'photowall' ? 'photowall' as const : 'guest' as const,
+            guestName: userType === 'photowall' ? 'Photo Wall Display' : 'Guest User'
           };
 
         socket.emit('authenticate', authData);

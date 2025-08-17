@@ -75,7 +75,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
 
   return (
     <div
-      className="group relative w-full bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer"
+      className="group relative w-full bg-white rounded overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer"
       onClick={onClick}
     >
       <div className="relative w-full">
@@ -143,7 +143,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
         {/* Loading spinner */}
         {!isLoaded && !hasError && (
           <div className="absolute top-4 left-4">
-            <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded animate-spin" />
           </div>
         )}
       </div>

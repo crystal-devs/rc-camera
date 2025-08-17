@@ -44,7 +44,7 @@ export const PinterestPhotoGrid: React.FC<{
     if (width < 480) return { columns: 2, gap: 4, padding: 8 };
     if (width < 768) return { columns: 3, gap: 8, padding: 12 };
     if (width < 1024) return { columns: 4, gap: 12, padding: 16 };
-    if (width < 1440) return { columns: 5, gap: 16, padding: 20 };
+    if (width < 1440) return { columns: 3, gap: 8, padding: 12 };
     return { columns: 6, gap: 20, padding: 24 };
   }, []);
 

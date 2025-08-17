@@ -40,9 +40,9 @@ export const SharingTab: React.FC<SharingTabProps> = ({
         return `${window.location.origin}/join/${formData.share_token}`;
     };
 
-    const getCoHostInviteUrl = () => {
+    const getWallUrl = () => {
         if (!formData.co_host_invite_token.token) return '';
-        return `${window.location.origin}/join-cohost/${formData.co_host_invite_token.token}`;
+        return `${window.location.origin}/wall/${formData.share_token}`;
     };
 
     return (
@@ -115,6 +115,35 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                                 />
                                 <Button
                                     onClick={() => copyToClipboard(getShareUrl(), 'guest')}
+                                    variant="outline"
+                                    size="sm"
+                                >
+                                    {copiedLink === 'guest' ? (
+                                        <Check className="h-4 w-4 text-green-600" />
+                                    ) : (
+                                        <Copy className="h-4 w-4" />
+                                    )}
+                                </Button>
+                            </div>
+                            <p className="text-xs text-gray-500">
+                                Send this link to guests so they can view and upload photos
+                            </p>
+                        </div>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <Label className="text-sm font-medium text-muted-foreground">Event link</Label>
+                                <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">
+                                    {formData.visibility === 'anyone_with_link' ? 'Public Link' : 'Invite Only'}
+                                </Badge>
+                            </div>
+                            <div className="flex gap-2">
+                                <Input
+                                    value={getWallUrl()}
+                                    readOnly
+                                    className="font-mono text-sm bg-gray-50"
+                                />
+                                <Button
+                                    onClick={() => copyToClipboard(getWallUrl(), 'guest')}
                                     variant="outline"
                                     size="sm"
                                 >
