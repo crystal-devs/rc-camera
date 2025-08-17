@@ -39,7 +39,7 @@ export const Controls: React.FC<ControlsProps> = ({
         <AnimatePresence>
             {showControls && (
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 0 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 20 }}
                     className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-50"

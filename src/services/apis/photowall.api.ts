@@ -11,7 +11,7 @@ export interface PhotoWallItem {
   timestamp: Date;
   position: number;
   isNew?: boolean;
-  insertedAt?: Date;
+  uploadedAt?: Date;
 }
 
 export interface PhotoWallSettings {

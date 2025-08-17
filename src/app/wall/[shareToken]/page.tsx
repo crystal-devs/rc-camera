@@ -323,7 +323,7 @@ export default function PhotoWallPage() {
 
                 // Update wall data if needed
                 setWallData(prevData => {
-                    if (!prevData || JSON.stringify(prevData.settings) !== JSON.stringify(response.data.settings)) {
+                    if (!prevData || JSON.stringify(prevData.settings) !== JSON.stringify(response?.data?.settings)) {
                         return response.data;
                     }
                     return prevData;
@@ -565,7 +565,7 @@ export default function PhotoWallPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 text-white overflow-hidden">
-            <Header
+            {/* <Header
                 wallData={wallData}
                 displayMode={displayMode}
                 isConnected={webSocket.isConnected}
@@ -575,7 +575,7 @@ export default function PhotoWallPage() {
                 showControls={showControls}
                 onToggleSettings={() => setShowSettings(true)}
                 onRefresh={handleManualRefresh}
-            />
+            /> */}
 
             {/* Real-time activity indicator */}
             {webSocket.isAuthenticated && (
@@ -633,9 +633,9 @@ export default function PhotoWallPage() {
                 onToggleSettings={() => setShowSettings(true)}
             />
 
-            {displayMode === 'slideshow' && isPlaying && wallData?.settings?.transitionDuration && (
+            {/* {displayMode === 'slideshow' && isPlaying && wallData?.settings?.transitionDuration && (
                 <ProgressBar duration={wallData.settings.transitionDuration} />
-            )}
+            )} */}
 
             <SettingsSheet
                 isOpen={showSettings}
