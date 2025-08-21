@@ -27,7 +27,7 @@ export const OptimizedPhotoGrid = ({
   onStatusUpdate,
   onDownload,
   onDelete,
-  className = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1 sm:gap-2 md:gap-3"
+  className = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1 sm:gap-1 md:gap-1"
 }: OptimizedPhotoGridProps) => {
   console.log('📊 OptimizedPhotoGrid rendering with', photos.length, 'photos');
   
@@ -35,7 +35,7 @@ export const OptimizedPhotoGrid = ({
   if (photos.length > 0 && process.env.NODE_ENV === 'development') {
     const originalSize = photos.length * 1.8; // MB if using original
     const optimizedSize = photos.length * 0.04; // MB using thumbnails
-    console.log(`🚀 Optimization: ${originalSize.toFixed(1)}MB → ${optimizedSize.toFixed(1)}MB (${Math.round((1 - optimizedSize/originalSize) * 100)}% smaller)`);
+    // console.log(`🚀 Optimization: ${originalSize.toFixed(1)}MB → ${optimizedSize.toFixed(1)}MB (${Math.round((1 - optimizedSize/originalSize) * 100)}% smaller)`);
   }
 
   return (

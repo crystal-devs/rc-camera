@@ -325,7 +325,7 @@ export default function EventsPage() {
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={(e) => {
                         e.stopPropagation();
-                        router.push(`/events/${event._id}/edit`);
+                        router.push(`/events/${event._id}/settings`);
                       }}>
                         Edit Event
                       </DropdownMenuItem>
@@ -406,7 +406,7 @@ export default function EventsPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => {
                           e.stopPropagation();
-                          router.push(`/events/${event._id}/edit`);
+                          router.push(`/events/${event._id}/settings`);
                         }}>
                           Edit Event
                         </DropdownMenuItem>

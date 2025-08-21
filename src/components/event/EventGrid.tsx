@@ -94,7 +94,7 @@ export const EventGrid = ({ events, onEventClick }: EventGridProps) => {
                 <DropdownMenuItem 
                   onClick={(e) => {
                     e.stopPropagation();
-                    router.push(`/events/${event.id}/edit`);
+                    router.push(`/events/${event.id}/settings`);
                   }}
                 >
                   Edit Event

@@ -27,7 +27,7 @@ export const StatusTabs = ({
   const tabs = [
     { key: 'approved', label: 'Published', icon: null, color: 'green' },
     { key: 'pending', label: 'Pending', icon: ClockIcon, color: 'yellow' },
-    { key: 'rejected', label: 'Rejected', icon: null, color: 'red' },
+    // { key: 'rejected', label: 'Rejected', icon: null, color: 'red' },
     { key: 'hidden', label: 'Hidden', icon: EyeOffIcon, color: 'gray' }
   ] as const;
 

@@ -51,12 +51,7 @@ export default function OptimizedPhotoGallery({
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
-  const [roomStats, setRoomStats] = useState<{
-    eventId?: string;
-    guestCount?: number;
-    adminCount?: number;
-    total?: number;
-  }>({});
+
 
   // Upload tracking
   const [uploadedMediaIds, setUploadedMediaIds] = useState<string[]>([]);
@@ -68,19 +63,6 @@ export default function OptimizedPhotoGallery({
   // WebSocket connection
   const webSocket = useSimpleWebSocket(eventId, shareToken, 'admin');
 
-  // Room stats handler
-  const handleRoomStats = useCallback((payload: any) => {
-    console.log('📊 Room stats update:', payload);
-    setRoomStats(payload);
-  }, []);
-
-  // WebSocket effects
-  useEffect(() => {
-    if (!webSocket.socket) return;
-    webSocket.socket.on('room_user_counts', handleRoomStats);
-    return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
-  }, [webSocket.socket, handleRoomStats]);
-
   const handleNavigateToPending = useCallback(() => {
     if (userPermissions.moderate) {
       setActiveTab('pending');
@@ -89,7 +71,6 @@ export default function OptimizedPhotoGallery({
 
   // 🚀 QUALITY MANAGEMENT: Use thumbnail for grid, full for viewer
   const gridQuality = 'thumbnail'; // Fast loading for grid
-  const viewerQuality = 'original'; // Full quality for viewer
 
   // Data fetching hooks with thumbnail quality for grid
   const {
@@ -194,56 +175,6 @@ export default function OptimizedPhotoGallery({
   const deleteMutation = useDeleteMedia(eventId);
   const { getCachedPhotoCount } = useGalleryUtils(eventId);
 
-  // Connection Status Component
-  const ConnectionStatus = memo(() => {
-    if (!webSocket.isConnected) {
-      return (
-        <Badge variant="destructive" className="flex items-center gap-1">
-          <WifiOffIcon className="h-3 w-3" />
-          Offline
-        </Badge>
-      );
-    }
-
-    if (!webSocket.isAuthenticated) {
-      return (
-        <Badge variant="secondary" className="flex items-center gap-1">
-          <WifiIcon className="h-3 w-3" />
-          Connecting...
-        </Badge>
-      );
-    }
-
-    return (
-      <Badge variant="default" className="flex items-center gap-1 bg-green-500">
-        <WifiIcon className="h-3 w-3" />
-        Live
-      </Badge>
-    );
-  });
-
-  // Room Stats Display
-  const RoomStatsDisplay = memo(({ roomStats }: { roomStats: any }) => {
-    if (!roomStats.adminCount && !roomStats.guestCount) return null;
-
-    return (
-      <Badge variant="secondary" className="text-xs">
-        {roomStats.guestCount > 0 && (
-          <span>👥 {roomStats.guestCount} guest{roomStats.guestCount !== 1 ? 's' : ''}</span>
-        )}
-        {roomStats.adminCount > 0 && (
-          <span className={roomStats.guestCount > 0 ? 'ml-2' : ''}>
-            🔧 {roomStats.adminCount} admin{roomStats.adminCount !== 1 ? 's' : ''}
-          </span>
-        )}
-        {roomStats.total && roomStats.total !== (roomStats.guestCount + roomStats.adminCount) && (
-          <span className="ml-1 text-gray-500">
-            ({roomStats.total} total)
-          </span>
-        )}
-      </Badge>
-    );
-  });
 
   // Upload Progress Indicator
   const UploadProgressIndicator = memo(() => {
@@ -465,22 +396,20 @@ export default function OptimizedPhotoGallery({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <RoomStatsDisplay roomStats={roomStats} />
           <StatusTabs
             activeTab={activeTab}
             onTabChange={handleTabChange}
             mediaCounts={displayCounts}
             userPermissions={userPermissions}
           />
-          <ConnectionStatus />
 
-          {userPermissions.moderate && (
+          {/* {userPermissions.moderate && (
             <AdminNotificationBadge
               eventId={eventId}
               onNavigateToPending={handleNavigateToPending}
               className="ml-2"
             />
-          )}
+          )} */}
           {useInfiniteScroll && (
             <div className="text-xs text-gray-500">
               Infinite scroll ({photos.length} loaded)
@@ -489,7 +418,7 @@ export default function OptimizedPhotoGallery({
         </div>
 
         <div className="flex items-center gap-2">
-          {process.env.NODE_ENV === 'development' && (
+          {/* {process.env.NODE_ENV === 'development' && (
             <>
               {webSocket.isAuthenticated && webSocket.user && (
                 <Badge variant="outline" className="text-xs">
@@ -505,7 +434,7 @@ export default function OptimizedPhotoGallery({
                 🔄 Refresh
               </Button>
             </>
-          )}
+          )} */}
 
           {canUserUpload && (
             <PhotoUploadDialog

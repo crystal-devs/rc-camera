@@ -102,7 +102,7 @@ const EventActions: React.FC<EventActionsProps> = ({
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => router.push(`/events/${eventId}/edit`)}>
+                    <DropdownMenuItem onClick={() => router.push(`/events/${eventId}/settings`)}>
                         Edit Event
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push(`/events/${eventId}/guests`)}>

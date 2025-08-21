@@ -1,10 +1,12 @@
-// components/navigation/ConditionalNavigation.tsx
+// components/navigation/ConditionalNavigation.tsx (Clean Minimal)
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { AppSidebar } from '@/components/app-sidebar';
 import { BottomNavigationWithFullscreenAwareness } from '@/components/navigation/FullscreenAwareBottomNav';
 import { ReactNode } from 'react';
+import { AppSidebar } from './AppSidebar';
+import { TopNavbar } from './TopNavbar';
+import { SidebarProvider } from '@/components/ui/sidebar';
 
 interface ConditionalNavigationProps {
   children: ReactNode;
@@ -37,23 +39,53 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
     isPrivateAccessDeniedRoute;
 
   if (shouldHideNavigation) {
-    // Render clean layout without sidebar and bottom navigation
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen">
         {children}
       </div>
     );
   }
 
-  // Render full app layout with navigation
-  return (
-    <>
-      {/* SidebarProvider is in AppSidebar component */}
-      <AppSidebar>
-        {children}
-      </AppSidebar>
+  // Get dynamic title based on route
+  const getPageTitle = () => {
+    if (pathname === '/') return 'Dashboard';
+    if (pathname.includes('/events') && !pathname.includes('/settings')) return 'Photos';
+    if (pathname.includes('/settings')) return 'Settings';
+    if (pathname.includes('/templates')) return 'Templates';
+    if (pathname.includes('/highlights')) return 'AI Highlights';
+    if (pathname.includes('/shop')) return 'Memory Shop';
+    if (pathname.includes('/profile')) return 'Profile';
+    return 'Rose Click';
+  };
 
-      <BottomNavigationWithFullscreenAwareness />
-    </>
+  return (
+    <div className="h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden">
+      <SidebarProvider>
+        {/* Sidebar - Fixed width */}
+        <div className="hidden md:flex flex-shrink-0">
+          <AppSidebar />
+        </div>
+        
+        {/* Main content area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Top Navigation Bar */}
+          <div className="flex-shrink-0">
+            <TopNavbar title={getPageTitle()} />
+          </div>
+          
+          {/* Content area */}
+          <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-800">
+            <div className="h-full">
+              {children}
+            </div>
+          </main>
+        </div>
+      </SidebarProvider>
+
+      {/* Mobile bottom navigation */}
+      <div className="md:hidden flex-shrink-0">
+        <BottomNavigationWithFullscreenAwareness />
+      </div>
+    </div>
   );
 }

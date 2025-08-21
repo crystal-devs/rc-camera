@@ -23,10 +23,10 @@ interface OptimizedProgressiveImageProps {
   onDelete?: (photoId: string) => void;
 }
 
-export const OptimizedProgressiveImage = ({ 
-  photo, 
-  index, 
-  onPhotoClick, 
+export const OptimizedProgressiveImage = ({
+  photo,
+  index,
+  onPhotoClick,
   userPermissions,
   currentTab,
   onStatusUpdate,
@@ -80,19 +80,19 @@ export const OptimizedProgressiveImage = ({
         );
         actions.push(
           <Button
-            key="reject"
+            key="hide"
             size="sm"
             variant="outline"
-            className="h-7 w-7 p-0 bg-red-500 hover:bg-red-600 border-none shadow-md"
+            className="h-7 w-7 p-0 bg-gray-500 hover:bg-gray-600 border-none shadow-md"
             onClick={(e) => {
               e.stopPropagation();
-              if (confirm('Reject this photo?')) {
-                onStatusUpdate(photo.id, 'rejected');
+              if (confirm('Hide this photo?')) {
+                onStatusUpdate(photo.id, 'hidden');
               }
             }}
-            title="Reject Photo"
+            title="Hide Photo"
           >
-            <XIcon className="h-3.5 w-3.5 text-white" />
+            <EyeOffIcon className="h-3.5 w-3.5 text-white" />
           </Button>
         );
         break;
@@ -115,23 +115,23 @@ export const OptimizedProgressiveImage = ({
             <EyeOffIcon className="h-3.5 w-3.5 text-white" />
           </Button>
         );
-        actions.push(
-          <Button
-            key="reject"
-            size="sm"
-            variant="outline"
-            className="h-7 w-7 p-0 bg-red-500 hover:bg-red-600 border-none shadow-md"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm('Reject this photo?')) {
-                onStatusUpdate(photo.id, 'rejected');
-              }
-            }}
-            title="Reject Photo"
-          >
-            <XIcon className="h-3.5 w-3.5 text-white" />
-          </Button>
-        );
+        // actions.push(
+        //   <Button
+        //     key="reject"
+        //     size="sm"
+        //     variant="outline"
+        //     className="h-7 w-7 p-0 bg-red-500 hover:bg-red-600 border-none shadow-md"
+        //     onClick={(e) => {
+        //       e.stopPropagation();
+        //       if (confirm('Reject this photo?')) {
+        //         onStatusUpdate(photo.id, 'rejected');
+        //       }
+        //     }}
+        //     title="Reject Photo"
+        //   >
+        //     <XIcon className="h-3.5 w-3.5 text-white" />
+        //   </Button>
+        // );
         break;
 
       case 'rejected':
@@ -220,11 +220,10 @@ export const OptimizedProgressiveImage = ({
   };
 
   return (
-    <div 
+    <div
       ref={imgRef}
-      className={`group relative aspect-square overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800 cursor-pointer transition-all duration-200 ${
-        !isUploading ? 'hover:scale-[1.02] hover:shadow-md' : ''
-      } ${isUploading ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}`}
+      className={`group relative aspect-square overflow-hidden rounded bg-gray-100 dark:bg-gray-800 cursor-pointer transition-all duration-200 ${!isUploading ? 'hover:scale-[1.02] hover:shadow-md' : ''
+        } ${isUploading ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}`}
       onClick={() => !isUploading && onPhotoClick(photo, index)}
     >
       {/* Only render image when in view */}
@@ -243,14 +242,14 @@ export const OptimizedProgressiveImage = ({
           )}
 
           {/* 🚀 PROCESSING STATE: Show processing indicator */}
-          {isProcessing && (
+          {/* {isProcessing && (
             <div className="absolute top-2 left-2 z-20">
               <Badge variant="secondary" className="text-xs bg-yellow-500 text-white">
                 <ClockIcon className="h-3 w-3 mr-1" />
                 Processing
               </Badge>
             </div>
-          )}
+          )} */}
 
           {/* Placeholder blur image - shows immediately */}
           {!imageLoaded && placeholder && !isUploading && (
@@ -261,28 +260,27 @@ export const OptimizedProgressiveImage = ({
               style={{ willChange: 'auto' }}
             />
           )}
-          
+
           {/* Main optimized image */}
           <img
             src={src}
             alt={`Photo ${index + 1}`}
-            className={`w-full h-full object-cover transition-opacity duration-300 ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            } ${isUploading ? 'opacity-75' : ''}`}
+            className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'
+              } ${isUploading ? 'opacity-75' : ''}`}
             onLoad={handleImageLoad}
             onError={handleImageError}
             loading="lazy"
             decoding="async"
             onContextMenu={(e) => e.preventDefault()}
           />
-          
+
           {/* Loading state */}
           {!imageLoaded && !error && !isUploading && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
               <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
             </div>
           )}
-          
+
           {/* Error state */}
           {error && !isUploading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-200 dark:bg-gray-700">
@@ -292,13 +290,13 @@ export const OptimizedProgressiveImage = ({
           )}
 
           {/* 🚀 OPTIMIZATION INDICATOR: Show when using optimized variants */}
-          {isOptimized && quality && process.env.NODE_ENV === 'development' && (
+          {/* {isOptimized && quality && process.env.NODE_ENV === 'development' && (
             <div className="absolute bottom-1 left-1 z-20">
               <Badge variant="secondary" className="text-xs bg-green-500 text-white">
                 {quality.toUpperCase()}
               </Badge>
             </div>
-          )}
+          )} */}
 
           {/* Status actions overlay - Only show when not uploading */}
           {!isUploading && (
