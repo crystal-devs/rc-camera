@@ -1,220 +1,464 @@
 // app/events/[eventId]/page.tsx
 'use client';
 
+import * as React from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import {
-    CalendarIcon,
-    CameraIcon,
-    FolderIcon,
-    MapPinIcon,
+    ImageIcon,
     ShareIcon,
+    SettingsIcon,
+    QrCodeIcon,
+    ExternalLinkIcon,
+    RefreshCwIcon,
+    CopyIcon,
+    InfoIcon,
+    LockIcon,
+    ClockIcon,
+    EyeIcon,
 } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { use, useEffect, useState, useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-
-import AlbumManagement from '@/components/album/AlbumManagement';
-import PhotoGallery from '@/components/album/PhotoGallery';
-import EventHeaderDetails from '@/components/event/EventDetailsHeader';
-import { format } from 'date-fns';
-
-// Import our optimized hook
-import { useEventData } from '@/hooks/useEventData';
 import useEventStore from '@/stores/useEventStore';
 
-export default function OptimizedEventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
-    const { eventId } = use(params);
+export default function EventDashboardPage() {
+    const params = useParams();
     const router = useRouter();
-    const searchParams = useSearchParams();
+    const eventId = params.eventId as string;
 
-    // Use our optimized hook - this handles all the caching and API calls
     const {
-        event,
-        albums,
+        selectedEvent,
+        getEventFromCacheOrFetch,
         isLoadingEvent,
-        isLoadingAlbums,
-        isLoading,
-        error,
-        refreshAlbums,
-        authToken
-    } = useEventData(eventId);
+        userRole
+    } = useEventStore();
 
-    // Local state
-    const [activeTab, setActiveTab] = useState('photos');
-    
-    // Store methods for cache management
-    const { invalidateAlbumsCache } = useEventStore();
+    const [authToken, setAuthToken] = React.useState('');
+    const [wallUrl, setWallUrl] = React.useState('');
 
-    // Handle URL parameters (keeping your existing logic)
-    const isSharedAccess = searchParams.get('via') === 'share';
-    const shareToken = searchParams.get('token');
+    // Initialize auth token
+    React.useEffect(() => {
+        const token = localStorage.getItem('authToken') || '';
+        setAuthToken(token);
+    }, []);
 
-    // Validation for shared access (keeping your existing logic)
-    useEffect(() => {
-        const validateShareAccess = async () => {
-            if (!isSharedAccess || !shareToken) return;
-
-            try {
-                // Your existing share validation logic
-                console.log('Validating share access for token:', shareToken);
-                // Add your validation logic here
-            } catch (error) {
-                console.error('Invalid share token:', error);
-                router.push(`/join/${shareToken}`);
-            }
-        };
-
-        validateShareAccess();
-    }, [isSharedAccess, shareToken, router]);
-
-    // Optimized album update function
-    const updateAlbumsList = useCallback((newAlbum: any) => {
-        console.log('📁 Updating albums list with new album:', newAlbum.id);
-        
-        // Invalidate cache to force fresh fetch
-        invalidateAlbumsCache(eventId);
-        
-        // Refresh albums from API
-        refreshAlbums();
-    }, [eventId, invalidateAlbumsCache, refreshAlbums]);
-
-    // Quick share function (keeping your existing logic)
-    const quickShare = useCallback(async () => {
-        if (!event || !authToken) {
-            toast.error('Event not available');
-            return;
+    // Fetch event data
+    React.useEffect(() => {
+        if (eventId && authToken && (!selectedEvent || selectedEvent._id !== eventId)) {
+            getEventFromCacheOrFetch(eventId, authToken);
         }
+    }, [eventId, authToken, selectedEvent, getEventFromCacheOrFetch]);
 
+    // Generate wall URL
+    React.useEffect(() => {
+        if (selectedEvent?.share_token) {
+            const baseUrl = window.location.origin;
+            setWallUrl(`${baseUrl}/wall/${selectedEvent.share_token}`);
+        }
+    }, [selectedEvent]);
+
+    const handleCopyLink = async (url: string) => {
         try {
-            const shareUrl = `${window.location.origin}/join/${event.share_token}`;
-            await navigator.clipboard.writeText(shareUrl);
-            toast.success('Share link copied to clipboard!');
+            await navigator.clipboard.writeText(url);
+            toast.success('Link copied to clipboard!');
         } catch (error) {
-            console.error('Error creating quick share:', error);
-            toast.error('Failed to create share link');
+            toast.error('Failed to copy link');
         }
-    }, [event, authToken]);
+    };
 
-    // Loading state
-    if (isLoading) {
+    const handleOpenAlbum = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}`);
+        }
+    };
+
+    const handleShare = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}/share`);
+        }
+    };
+
+    const handleManageUploads = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}/manage`);
+        }
+    };
+
+    const handleDownloadQR = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}/qr`);
+        }
+    };
+
+    const handleOpenWall = () => {
+        if (wallUrl) {
+            window.open(wallUrl, '_blank');
+        }
+    };
+
+    const handleShareWall = () => {
+        handleCopyLink(wallUrl);
+    };
+
+    const handleGoToSettings = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}/settings`);
+        }
+    };
+
+    const getPrivacyText = () => {
+        if (!selectedEvent) return '';
+
+        switch (selectedEvent.visibility) {
+            case 'public':
+                return 'Public - Anyone can find and access this event';
+            case 'anyone_with_link':
+                return 'Accessible to all with link/QR code. Guest can view and upload to the album.';
+            case 'private':
+                return 'Private - Only invited users can access';
+            default:
+                return 'Unknown privacy setting';
+        }
+    };
+
+    const getModerationText = () => {
+        // Based on your API, this might be determined by permissions or settings
+        // For now, showing a general message
+        return 'Uploads immediately visible in the album, no pre-publishing moderation.';
+    };
+
+    if (isLoadingEvent) {
         return (
-            <div className="w-full">
-                <Skeleton className="h-64 w-full" />
-                <div className="container mx-auto px-4">
-                    <Skeleton className="h-8 w-2/3 mt-6 mb-2" />
-                    <Skeleton className="h-6 w-1/2 mb-6" />
-                    <Skeleton className="h-10 w-full mb-6" />
-                    <div className="grid grid-cols-2 gap-4">
-                        <Skeleton className="h-32 rounded-lg" />
-                        <Skeleton className="h-32 rounded-lg" />
-                    </div>
+            <div className="container mx-auto py-8 px-6">
+                <div className="flex items-center justify-center h-64">
+                    <RefreshCwIcon className="h-8 w-8 animate-spin text-gray-400" />
                 </div>
             </div>
         );
     }
 
-    // Error state
-    if (error) {
+    if (!selectedEvent) {
         return (
-            <div className="container mx-auto px-2 py-8 sm:px-4 sm:py-16 text-center">
-                <h1 className="text-2xl font-bold mb-4">Error Loading Event</h1>
-                <p className="text-gray-500 mb-6">{error}</p>
-                <Button onClick={() => router.push('/events')}>Back to Events</Button>
-            </div>
-        );
-    }
-
-    // Event not found
-    if (!event) {
-        return (
-            <div className="container mx-auto px-2 py-8 sm:px-4 sm:py-16 text-center">
-                <h1 className="text-2xl font-bold mb-4">Event Not Found</h1>
-                <p className="text-gray-500 mb-6">
-                    The event you're looking for doesn't exist or has been removed.
-                </p>
-                <Button onClick={() => router.push('/events')}>Back to Events</Button>
+            <div className="container mx-auto py-8 px-6">
+                <div className="text-center">
+                    <h1 className="text-2xl font-semibold text-gray-900">Event not found</h1>
+                    <p className="text-gray-600 mt-2">The event you're looking for doesn't exist or you don't have access to it.</p>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="container mx-auto px-2 py-2 sm:px-4 sm:py-8">
-            {/* Event Header */}
-            {/* <EventHeaderDetails event={event} /> */}
+        <div className="container mx-auto py-8 px-6 max-w-6xl">
+            {/* Header */}
+            <div className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                    <div>
+                        <h1 className="text-2xl font-semibold text-gray-900 mb-2">
+                            Welcome, {selectedEvent.created_by}! 👋
+                        </h1>
+                        <p className="text-gray-600">
+                            This is your dashboard, where you can access your album and photo wall.
+                        </p>
+                    </div>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.location.reload()}
+                        className="text-gray-500 hover:text-gray-700"
+                    >
+                        <RefreshCwIcon className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
 
-            <div className="mx-auto px-0 py-0 sm:px-2 sm:py-2">
-                {/* Event Info Section */}
-                {/* <div className="flex flex-wrap gap-3 mb-4 sm:mb-6">
-                    <div className="flex items-center text-sm">
-                        <CalendarIcon className="h-4 w-4 mr-1.5" />
-                        {format(new Date(event.start_date), 'MMM d, yyyy')}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Main Content */}
+                <div className="lg:col-span-2 space-y-8">
+                    {/* Event Title */}
+                    <div>
+                        <h2 className="text-xl font-semibold text-gray-900 mb-6">{selectedEvent.title}</h2>
                     </div>
 
-                    {event.location?.address && (
-                        <div className="flex items-center text-sm text-gray-600">
-                            <MapPinIcon className="h-4 w-4 mr-1.5" />
-                            {event.location.name || event.location.address}
+                    {/* How it works section */}
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-medium text-gray-900">How it works?</h3>
                         </div>
-                    )}
+
+                        {/* Action Cards */}
+                        <div className="space-y-4">
+                            {/* Open Album */}
+                            <div className="flex items-center justify-between p-4 bg-green-50 border border-green-100 rounded-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-green-100 p-2 rounded-lg">
+                                        <ImageIcon className="h-5 w-5 text-green-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-gray-900 mb-1">Open your album</h4>
+                                        <p className="text-sm text-gray-600">
+                                            The album is where all added photos and videos will appear.
+                                        </p>
+                                    </div>
+                                </div>
+                                <Button
+                                    className="bg-gray-900 hover:bg-gray-800 text-white w-32"
+                                    onClick={handleOpenAlbum}
+                                >
+                                    Open
+                                </Button>
+                            </div>
+
+                            {/* Invite Others */}
+                            <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-blue-100 p-2 rounded-lg">
+                                        <ShareIcon className="h-5 w-5 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-gray-900 mb-1">Invite others to contribute</h4>
+                                        <p className="text-sm text-gray-600">
+                                            Share your album so others can add their uploads too!
+                                        </p>
+                                    </div>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    className='w-32'
+                                    onClick={handleShare}
+                                >
+                                    Share
+                                </Button>
+                            </div>
+
+                            {/* Manage Uploads */}
+                            <div className="flex items-center justify-between p-4 bg-orange-50 border border-orange-100 rounded-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-orange-100 p-2 rounded-lg">
+                                        <SettingsIcon className="h-5 w-5 text-orange-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-gray-900 mb-1">Manage uploads</h4>
+                                        <p className="text-sm text-gray-600">
+                                            Moderate uploads, hide, delete, and publish in bulk!
+                                        </p>
+                                    </div>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    className='w-32'
+
+                                    onClick={handleManageUploads}
+                                >
+                                    Manage
+                                </Button>
+                            </div>
+
+                            {/* Download QR */}
+                            <div className="flex items-center justify-between p-4 bg-purple-50 border border-purple-100 rounded-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-purple-100 p-2 rounded-lg">
+                                        <QrCodeIcon className="h-5 w-5 text-purple-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-gray-900 mb-1">Download QR code</h4>
+                                        <p className="text-sm text-gray-600">
+                                            Print it on invitations or display it at your event for easy guest uploads.
+                                        </p>
+                                    </div>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    className='w-32'
+
+                                    onClick={handleDownloadQR}
+                                >
+                                    Download
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Photo Wall Section */}
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-medium text-gray-900">Your photo wall (slideshow)</h3>
+                            <h4 className="text-sm font-medium text-gray-600">How it works?</h4>
+                        </div>
+
+                        <p className="text-sm text-gray-600">
+                            Watch it on any screen or connect to a TV or projector for a live stream of uploads.
+                        </p>
+
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                            <div className="text-center mb-6">
+                                <div className="bg-gray-100 rounded-lg p-12 mb-4">
+                                    <p className="text-gray-500 text-sm">
+                                        Your photo wall preview will appear<br />
+                                        once photos and videos are added in<br />
+                                        your album. ❤️
+                                    </p>
+                                </div>
+
+                                <div className="bg-white border rounded-lg p-3 mb-4">
+                                    <Input
+                                        value={wallUrl}
+                                        readOnly
+                                        className="text-center text-sm border-0 focus-visible:ring-0"
+                                    />
+                                </div>
+
+                                <div className="flex justify-center gap-3">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleOpenWall}
+                                    >
+                                        Open
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleShareWall}
+                                    >
+                                        Share
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                {event.description && (
-                    <p className="text-gray-700 mb-4 sm:mb-6">{event.description}</p>
-                )} */}
-
-                {/* Quick Actions */}
-                {/* <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
-                    <Button onClick={quickShare} variant="outline" size="sm">
-                        <ShareIcon className="h-4 w-4 mr-2" />
-                        Share Event
-                    </Button>
-                </div> */}
-
-                {/* Tabs Section */}
-                <Tabs
-                    value={activeTab}
-                    onValueChange={setActiveTab}
-                    className="w-full"
-                >
-                    <TabsList className="w-full mb-6">
-                        <TabsTrigger value="photos" className="flex-1">
-                            <CameraIcon className="h-4 w-4 mr-2" />
-                            Photos
-                        </TabsTrigger>
-                        <TabsTrigger value="albums" className="flex-1">
-                            <FolderIcon className="h-4 w-4 mr-2" />
-                            Albums ({albums.length})
-                        </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="photos">
-                        <PhotoGallery
-                            eventId={eventId}
-                            albumId={null}
-                            canUpload={true}
-                        />
-                    </TabsContent>
-
-                    <TabsContent value="albums">
-                        {isLoadingAlbums ? (
-                            <div className="space-y-4">
-                                {[1, 2, 3].map(i => (
-                                    <Skeleton key={i} className="h-24 w-full" />
-                                ))}
+                {/* Sidebar */}
+                <div className="space-y-6">
+                    {/* Statistics */}
+                    <Card className="shadow-none">
+                        <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-base font-medium flex items-center gap-2">
+                                    📊 Statistics
+                                </CardTitle>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <RefreshCwIcon className="h-4 w-4" />
+                                </Button>
                             </div>
-                        ) : (
-                            <AlbumManagement
-                                eventId={eventId}
-                                initialAlbums={albums}
-                                onAlbumCreated={updateAlbumsList}
-                                onRefresh={refreshAlbums}
-                            />
-                        )}
-                    </TabsContent>
-                </Tabs>
+                            <CardDescription className="text-sm">
+                                See your uploads by status and check remaining storage.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="text-sm">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-gray-600">
+                                        {selectedEvent.stats.total_size_mb.toFixed(2)} GB of 0.0 GB used (0%)
+                                    </span>
+                                    <Button variant="link" size="sm" className="h-auto p-0 text-xs">
+                                        Upgrade
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600 flex items-center gap-1">
+                                        Published <ExternalLinkIcon className="h-3 w-3" />
+                                    </span>
+                                    <span className="text-sm font-medium">{selectedEvent.stats.photos + selectedEvent.stats.videos}</span>
+                                </div>
+
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600 flex items-center gap-1">
+                                        Needs approval <ExternalLinkIcon className="h-3 w-3" />
+                                    </span>
+                                    <span className="text-sm font-medium">{selectedEvent.stats.pending_approval}</span>
+                                </div>
+
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600 flex items-center gap-1">
+                                        Unpublished <ExternalLinkIcon className="h-3 w-3" />
+                                    </span>
+                                    <span className="text-sm font-medium">0</span>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Album Status */}
+                    <Card className="shadow-none">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-base font-medium flex items-center gap-2">
+                                🔒 Album status
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="h-auto p-0 text-sm ml-auto"
+                                    onClick={handleGoToSettings}
+                                >
+                                    Go to Settings
+                                </Button>
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {/* Privacy */}
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-sm font-medium">Privacy</span>
+                                    <InfoIcon className="h-4 w-4 text-gray-400" />
+                                </div>
+                                <p className="text-xs text-gray-600">
+                                    {getPrivacyText()}
+                                </p>
+                            </div>
+
+                            <Separator />
+
+                            {/* Moderation */}
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-sm font-medium">Moderation</span>
+                                </div>
+                                <p className="text-xs text-gray-600">
+                                    {getModerationText()}
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Event Details */}
+                    <Card className="shadow-none">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-base font-medium">Event Details</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="flex items-center gap-2 text-sm">
+                                <EyeIcon className="h-4 w-4 text-gray-400" />
+                                <span className="text-gray-600">Visibility:</span>
+                                <Badge variant="secondary" className="text-xs">
+                                    {selectedEvent.visibility}
+                                </Badge>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-sm">
+                                <ClockIcon className="h-4 w-4 text-gray-400" />
+                                <span className="text-gray-600">Created:</span>
+                                <span className="text-gray-900">
+                                    {new Date(selectedEvent.created_at).toLocaleDateString()}
+                                </span>
+                            </div>
+
+                            {selectedEvent.location?.name && (
+                                <div className="text-sm">
+                                    <span className="text-gray-600">Location:</span>
+                                    <span className="text-gray-900 ml-1">{selectedEvent.location.name}</span>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
         </div>
     );

@@ -38,13 +38,13 @@ const getNavItems = (selectedEventId: string | null) => {
     {
       icon: <HomeIcon size={20} />,
       label: 'Home',
-      href: '/',
+      href: `${baseRoute}`,
       requiresEvent: false,
     },
     {
       icon: <ImageIcon size={20} />,
       label: 'Photos',
-      href: `${baseRoute}`,
+      href: `${baseRoute}/photos`,
       requiresEvent: true,
     },
     {
