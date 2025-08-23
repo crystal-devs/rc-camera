@@ -26,6 +26,7 @@ import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
 import { OptimizedPhotoGrid } from './PhotoGrid';
 import { useSimpleWebSocket } from '@/hooks/useWebSocket';
 import { AdminNotificationBadge } from './AdminNotificationBadge';
+import { useUploadProgress } from '@/hooks/useUploadProgress';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
@@ -62,12 +63,6 @@ export default function OptimizedPhotoGallery({
 
   // WebSocket connection
   const webSocket = useSimpleWebSocket(eventId, shareToken, 'admin');
-
-  const handleNavigateToPending = useCallback(() => {
-    if (userPermissions.moderate) {
-      setActiveTab('pending');
-    }
-  }, [userPermissions.moderate]);
 
   // 🚀 QUALITY MANAGEMENT: Use thumbnail for grid, full for viewer
   const gridQuality = 'thumbnail'; // Fast loading for grid
@@ -141,6 +136,19 @@ export default function OptimizedPhotoGallery({
     enabled: uploadedMediaIds.length > 0
   });
 
+  const uploadProgress = useUploadProgress(webSocket, eventId, {
+    onComplete: (mediaId) => {
+      console.log('✅ Upload completed:', mediaId);
+      refetchPhotos();
+      refetchCounts();
+    },
+    onFailed: (mediaId, error) => {
+      console.log('❌ Upload failed:', mediaId, error);
+      refetchPhotos();
+    },
+    showToasts: true
+  });
+
   // Mutations
   const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
     onSuccess: (result) => {
@@ -151,15 +159,19 @@ export default function OptimizedPhotoGallery({
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
 
-      // Start monitoring uploads
+      // Start monitoring uploads with the new system
       if (data?.uploads && Array.isArray(data.uploads)) {
-        const newMediaIds = data.uploads
-          .filter((upload: any) => upload.id && upload.status !== 'failed')
-          .map((upload: any) => upload.id);
+        const validUploads = data.uploads.filter((upload: any) =>
+          upload.id && upload.status !== 'failed'
+        );
 
-        if (newMediaIds.length > 0) {
-          setUploadedMediaIds(prev => [...prev, ...newMediaIds]);
-          console.log('📊 Started monitoring uploads:', newMediaIds);
+        if (validUploads.length > 0) {
+          const mediaIds = validUploads.map((upload: any) => upload.id);
+          const filenames = validUploads.map((upload: any) => upload.filename || 'Unknown');
+
+          // Start monitoring with the new progress system
+          uploadProgress.startMonitoring(mediaIds, filenames);
+          console.log('📊 Started monitoring uploads:', mediaIds);
         }
       }
 
@@ -171,6 +183,8 @@ export default function OptimizedPhotoGallery({
     }
   });
 
+
+
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
   const { getCachedPhotoCount } = useGalleryUtils(eventId);
@@ -178,35 +192,82 @@ export default function OptimizedPhotoGallery({
 
   // Upload Progress Indicator
   const UploadProgressIndicator = memo(() => {
-    if (!isMonitoring || !uploadSummary) return null;
+    // Use the new progress hook instead of the old monitoring system
+    const uploadProgress = useUploadProgress(webSocket, eventId, {
+      onComplete: (mediaId) => {
+        console.log('✅ Upload completed:', mediaId);
+        refetchPhotos();
+        refetchCounts();
+      },
+      onFailed: (mediaId, error) => {
+        console.log('❌ Upload failed:', mediaId, error);
+        refetchPhotos();
+      },
+      showToasts: true
+    });
 
-    const { total, completed, processing, failed } = uploadSummary;
-    const progress = total > 0 ? ((completed + failed) / total) * 100 : 0;
+    if (!uploadProgress.isMonitoring || uploadProgress.summary.total === 0) {
+      return null;
+    }
+
+    const { total, completed, processing, failed, overallProgress } = uploadProgress.summary;
+    const hasActiveUploads = processing > 0;
 
     return (
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <UploadIcon className="h-4 w-4 text-blue-600" />
+            {hasActiveUploads ? (
+              <div className="animate-spin">
+                <UploadIcon className="h-4 w-4 text-blue-600" />
+              </div>
+            ) : (
+              <UploadIcon className="h-4 w-4 text-blue-600" />
+            )}
             <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-              Processing uploads
+              {hasActiveUploads ? 'Processing uploads' : 'Uploads processed'}
             </span>
           </div>
-          <span className="text-xs text-blue-600 dark:text-blue-400">
-            {completed + failed}/{total}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-blue-600 dark:text-blue-400">
+              {completed + failed}/{total}
+            </span>
+            {!hasActiveUploads && (
+              <button
+                onClick={() => uploadProgress.clearAll()}
+                className="text-xs text-blue-500 hover:text-blue-700"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
-        <Progress value={progress} className="h-2" />
+        <Progress value={overallProgress} className="h-2" />
 
         <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
           <span>{processing} processing</span>
           <span>{completed} completed</span>
           {failed > 0 && <span className="text-red-600">{failed} failed</span>}
         </div>
+
+        {/* Show individual file progress if there are active uploads */}
+        {hasActiveUploads && Object.values(uploadProgress.uploadProgress).length > 0 && (
+          <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+            {Object.values(uploadProgress.uploadProgress)
+              .filter(progress => progress.status === 'processing' || progress.status === 'uploading')
+              .map(progress => (
+                <div key={progress.mediaId} className="flex items-center gap-2 text-xs">
+                  <span className="flex-1 truncate">{progress.filename}</span>
+                  <span className="text-blue-600">{progress.percentage}%</span>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
     );
   });
+
 
   // Memoized computed values
   const canUserUpload = useMemo(() =>
@@ -274,6 +335,10 @@ export default function OptimizedPhotoGallery({
       toast.error("No valid image files to upload.");
       return;
     }
+
+    // Show immediate feedback
+    const filenames = validFiles.map(f => f.name);
+    toast.success(`Starting upload of ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}...`);
 
     uploadMutation.mutate(validFiles);
   }, [canUserUpload, uploadMutation]);
@@ -457,7 +522,7 @@ export default function OptimizedPhotoGallery({
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-blue-700 dark:text-blue-300">
-            {uploadMutation.isPending ? 'Uploading photos...' : 'Updating status...'}
+            {uploadMutation.isPending ? 'Starting upload...' : 'Updating status...'}
           </span>
         </div>
       )}
