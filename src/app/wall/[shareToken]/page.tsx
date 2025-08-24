@@ -19,7 +19,7 @@ import { ErrorScreen } from '@/components/photo-wall/ErrorScreen';
 import { GridDisplay } from '@/components/photo-wall/DisplayModes/GridDisplay';
 import { Controls } from '@/components/photo-wall/Controls';
 import { ProgressBar } from '@/components/photo-wall/ProgressBar';
-import { SettingsSheet } from '@/components/photo-wall/SettingsSheet';
+// import { SettingsSheet } from '@/components/photo-wall/SettingsSheet';
 import { Button } from '@/components/ui/button';
 
 export default function PhotoWallPage() {
@@ -637,13 +637,13 @@ export default function PhotoWallPage() {
                 <ProgressBar duration={wallData.settings.transitionDuration} />
             )} */}
 
-            <SettingsSheet
+            {/* <SettingsSheet
                 isOpen={showSettings}
                 onClose={() => setShowSettings(false)}
                 settings={wallData.settings}
                 shareToken={shareToken}
                 onSettingsChange={handleLocalSettingsChange}
-            />
+            /> */}
         </div>
     );
 }

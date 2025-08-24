@@ -34,6 +34,14 @@ interface EventFormData {
     expires_at: string
     is_active: boolean
   }
+  photowall_settings: {
+    isEnabled: boolean
+    displayMode: 'slideshow' | 'grid' | 'mosaic'
+    transitionDuration: number
+    showUploaderNames: boolean
+    autoAdvance: boolean
+    newImageInsertion: 'immediate' | 'after_current' | 'end_of_queue' | 'smart_priority'
+  }
 }
 
 // Helper function to convert Event to FormData
@@ -64,6 +72,14 @@ const convertEventToFormData = (event: Event): EventFormData => {
       token: event.co_host_invite_token?.token || '',
       expires_at: event.co_host_invite_token?.expires_at || '',
       is_active: event.co_host_invite_token?.is_active ?? true
+    },
+    photowall_settings: {
+      isEnabled: event.photowall_settings?.isEnabled ?? true,
+      displayMode: event.photowall_settings?.displayMode || 'slideshow',
+      transitionDuration: event.photowall_settings?.transitionDuration || 5000,
+      showUploaderNames: event.photowall_settings?.showUploaderNames ?? false,
+      autoAdvance: event.photowall_settings?.autoAdvance ?? true,
+      newImageInsertion: event.photowall_settings?.newImageInsertion || 'after_current'
     }
   }
 }
@@ -83,13 +99,15 @@ const prepareSubmitData = (formData: EventFormData) => {
     cover_image: formData.cover_image,
     visibility: formData.visibility,
     permissions: formData.permissions,
-    share_settings: formData.share_settings
+    share_settings: formData.share_settings,
+    photowall_settings: formData.photowall_settings
+
   }
 }
 
 export const useEventSettings = (eventId: string) => {
   const router = useRouter()
-  
+
   // Store hooks
   const {
     selectedEvent,
@@ -100,7 +118,7 @@ export const useEventSettings = (eventId: string) => {
     deleteEventFromStore,
     invalidateEventCache
   } = useEventStore()
-  
+
   // Local state
   const [authToken, setAuthToken] = useState<string>('')
   const [formData, setFormData] = useState<EventFormData | null>(null)
@@ -109,134 +127,134 @@ export const useEventSettings = (eventId: string) => {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
-  
+
   // Initialize auth token
   useEffect(() => {
     const token = localStorage.getItem('authToken') || ''
     setAuthToken(token)
   }, [])
-  
+
   // Load event data and convert to form data
   useEffect(() => {
     if (!authToken || !eventId) return
-    
+
     const loadEventData = async () => {
       console.log(`⚙️ Loading event settings for ${eventId}`)
-      
+
       let event = selectedEvent
-      
+
       // If we don't have the event or it's different, fetch it
       if (!event || event._id !== eventId) {
         event = await getEventFromCacheOrFetch(eventId, authToken)
       }
-      
+
       if (!event) {
         toast.error("Event not found")
         router.push('/events')
         return
       }
-      
+
       // Convert to form data
       const convertedData = convertEventToFormData(event)
-      
+
       setFormData(convertedData)
       setOriginalData(convertedData)
       setPreviewUrl(event.cover_image?.url || null)
       setIsInitialized(true)
-      
+
       console.log(`✅ Event settings loaded for ${event.title}`)
     }
-    
+
     loadEventData()
   }, [eventId, authToken, selectedEvent, getEventFromCacheOrFetch, router])
-  
+
   // Memoized change detection
   const hasChanges = useMemo(() => {
     if (!originalData || !formData) return false
     return JSON.stringify(formData) !== JSON.stringify(originalData)
   }, [formData, originalData])
-  
+
   // Handle input changes
   const handleInputChange = useCallback((field: string, value: any) => {
     if (!formData) return
-    
+
     const fieldParts = field.split('.')
     setFormData(prev => {
       if (!prev) return prev
-      
+
       let newData = { ...prev }
       let current: any = newData
-      
+
       for (let i = 0; i < fieldParts.length - 1; i++) {
         current[fieldParts[i]] = { ...current[fieldParts[i]] }
         current = current[fieldParts[i]]
       }
-      
+
       current[fieldParts[fieldParts.length - 1]] = value
       return newData
     })
   }, [formData])
-  
+
   // Handle cover image changes
   const handleCoverImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) {
       setCoverImageFile(null)
       return
     }
-    
+
     const selectedFile = e.target.files[0]
     const maxSize = 10 * 1024 * 1024 // 10MB
-    
+
     if (selectedFile.size > maxSize) {
       toast.error("Image size should be less than 10MB")
       e.target.value = ''
       return
     }
-    
+
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
     if (!allowedTypes.includes(selectedFile.type)) {
       toast.error("Please select a valid image file (JPEG, PNG, WebP)")
       e.target.value = ''
       return
     }
-    
+
     setCoverImageFile(selectedFile)
-    
+
     // Clean up previous preview URL
     if (previewUrl && previewUrl.startsWith('blob:')) {
       URL.revokeObjectURL(previewUrl)
     }
-    
+
     const objectUrl = URL.createObjectURL(selectedFile)
     setPreviewUrl(objectUrl)
   }, [previewUrl])
-  
+
   // Clear cover image
   const handleClearImage = useCallback(() => {
     setCoverImageFile(null)
     setPreviewUrl(null)
     handleInputChange('cover_image.url', '')
   }, [handleInputChange])
-  
+
   // Submit form
   const handleSubmit = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    
+
     if (!formData?.title.trim()) {
       toast.error("Event name is required")
       return
     }
-    
+
     if (!authToken) {
       toast.error("Authentication required")
       return
     }
-    
+
     setIsSubmitting(true)
-    
+
     try {
       let updatedFormData = { ...formData }
-      
+
       // Upload cover image if changed
       if (coverImageFile) {
         toast.info("Uploading cover image...")
@@ -251,12 +269,12 @@ export const useEventSettings = (eventId: string) => {
               maxHeight: 1080
             }
           )
-          
+
           updatedFormData.cover_image = {
             url: imageUrl,
             public_id: '',
           }
-          
+
           toast.success("Cover image uploaded successfully!")
         } catch (uploadError: any) {
           console.error('Cover image upload failed:', uploadError)
@@ -264,47 +282,47 @@ export const useEventSettings = (eventId: string) => {
           return
         }
       }
-      
+
       // Prepare and submit data
       const submitData = prepareSubmitData(updatedFormData)
-      
+
       await updateEvent(eventId, submitData, authToken)
-      
+
       // Update store cache
       updateEventInStore(eventId, submitData as any)
-      
+
       // Update local state
       setFormData(updatedFormData)
       setOriginalData(updatedFormData)
       setCoverImageFile(null)
-      
+
       if (updatedFormData.cover_image.url) {
         setPreviewUrl(updatedFormData.cover_image.url)
       }
-      
+
       toast.success("Event updated successfully!")
-      
+
     } catch (error: any) {
       console.error('Error updating event:', error)
       toast.error(error.message || "Failed to update event")
-      
+
       // Invalidate cache on error to ensure fresh data on next load
       invalidateEventCache(eventId)
     } finally {
       setIsSubmitting(false)
     }
   }, [formData, authToken, eventId, coverImageFile, updateEventInStore, invalidateEventCache])
-  
+
   // Delete event
   const handleDeleteEvent = useCallback(async () => {
     if (!authToken) return
-    
+
     try {
       await deleteEvent(eventId, authToken)
-      
+
       // Remove from store
       deleteEventFromStore(eventId)
-      
+
       toast.success("Event deleted successfully!")
       router.push('/events')
     } catch (error) {
@@ -312,38 +330,38 @@ export const useEventSettings = (eventId: string) => {
       toast.error("Failed to delete event")
     }
   }, [eventId, authToken, deleteEventFromStore, router])
-  
+
   // Get user info
   const currentUserId = selectedEvent?.created_by
   const isEventCreator = currentUserId && selectedEvent?.created_by && currentUserId === selectedEvent.created_by
-  
+
   return {
     // Form data
     formData,
     originalData,
-    
+
     // Loading states
     isLoading: isLoadingEvent || !isInitialized,
     isSubmitting,
     hasChanges,
-    
+
     // Error state
     error,
-    
+
     // User info
     currentUserId,
     isEventCreator,
-    
+
     // Form handlers
     handleInputChange,
     handleCoverImageChange,
     handleClearImage,
     handleSubmit,
     handleDeleteEvent,
-    
+
     // Image preview
     previewUrl,
-    
+
     // Auth token for child components
     authToken
   }

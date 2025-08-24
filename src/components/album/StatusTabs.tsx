@@ -1,5 +1,5 @@
 // components/StatusTabs.tsx
-import { ClockIcon, EyeOffIcon } from 'lucide-react';
+import { CircleCheckBig, ClockIcon, EyeOffIcon } from 'lucide-react';
 
 interface StatusTabsProps {
   activeTab: 'approved' | 'pending' | 'rejected' | 'hidden';
@@ -25,7 +25,7 @@ export const StatusTabs = ({
   if (!userPermissions.moderate) return null;
 
   const tabs = [
-    { key: 'approved', label: 'Published', icon: null, color: 'green' },
+    { key: 'approved', label: 'Published', icon: CircleCheckBig, color: 'green' },
     { key: 'pending', label: 'Pending', icon: ClockIcon, color: 'yellow' },
     // { key: 'rejected', label: 'Rejected', icon: null, color: 'red' },
     { key: 'hidden', label: 'Hidden', icon: EyeOffIcon, color: 'gray' }
@@ -37,21 +37,21 @@ export const StatusTabs = ({
         <button
           key={key}
           onClick={() => onTabChange(key)}
-          className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1 ${
-            activeTab === key
-              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-          }`}
+          className={`px-3 py-1.5 text-sm font-medium rounded transition-colors flex items-center gap-1 ${activeTab === key
+            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
         >
-          {Icon && <Icon className="h-3 w-3" />}
+          {Icon && <Icon className={`px-1.5 py-0.5 text-xs rounded-full ${color === 'green' ? 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400' :
+            color === 'yellow' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-400' :
+                'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+            }`} />}
           {label}
           {mediaCounts[key] > 0 && (
-            <span className={`ml-1 px-1.5 py-0.5 text-xs rounded-full ${
-              color === 'green' ? 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400' :
+            <span className={`ml-1 px-1.5 py-0.5 text-xs rounded-full ${color === 'green' ? 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400' :
               color === 'yellow' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-400' :
-              color === 'red' ? 'bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400' :
-              'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-            }`}>
+                'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+              }`}>
               {mediaCounts[key]}
             </span>
           )}

@@ -53,9 +53,9 @@ const PhotoUploadDialog: React.FC<PhotoUploadDialogProps> = ({
               <UploadIcon className="h-4 w-4" />
             </div>
           ) : (
-            <CameraIcon className="h-4 w-4 sm:mr-2" />
+            <CameraIcon className="sm:mr-2" size={'15px'}/>
           )}
-          <span className="hidden sm:inline">
+          <span className="hidden sm:inline text-sm">
             {isUploading ? 'Uploading...' : 'Add Photos'}
           </span>
         </Button>

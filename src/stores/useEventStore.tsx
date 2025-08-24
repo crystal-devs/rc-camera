@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 import { getEventById, updateEvent, deleteEvent } from '@/services/apis/events.api'
 import { fetchEventAlbums } from '@/services/apis/albums.api'
 
-// Event interface based on your API response
+// 🚀 UPDATED: Event interface with PhotoWall settings
 interface Event {
   _id: string
   title: string
@@ -62,6 +62,15 @@ interface Event {
     uploaded_by: string | null
     thumbnail_url: string
   }
+  // 🚀 NEW: PhotoWall settings
+  photowall_settings: {
+    isEnabled: boolean
+    displayMode: 'slideshow' | 'grid' | 'mosaic'
+    transitionDuration: number
+    showUploaderNames: boolean
+    autoAdvance: boolean
+    newImageInsertion: 'immediate' | 'after_current' | 'end_of_queue' | 'smart_priority'
+  }
   created_at: string
   updated_at: string
   share_token: string
@@ -69,10 +78,10 @@ interface Event {
   user_role: 'creator' | 'co_host' | 'participant'
   participant_count: number
   active_participants: number
-  last_activity: string | null,
-
+  last_activity: string | null
 }
 
+// Rest of your store remains exactly the same...
 interface CacheEntry<T> {
   data: T
   timestamp: number
@@ -376,7 +385,7 @@ const useEventStore = create<EventStore>()(
     }),
     {
       name: 'event-app-storage',
-      version: 1,
+      version: 1, // 🚀 INCREMENT VERSION for interface change
       // Only persist essential data - not cache or transient state
       partialize: (state) => ({
         selectedEvent: state.selectedEvent,

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,7 +29,8 @@ import {
   Shield,
   Loader2,
   Check,
-  Copy
+  Copy,
+  UserPlus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -148,12 +148,12 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
 
   const getRoleBadge = (isCreator: boolean, status?: string) => {
     if (isCreator) {
-      return <Badge className="bg-blue-100 text-blue-800"><Crown className="w-3 h-3 mr-1" />Creator</Badge>;
+      return <Badge variant="secondary" className="text-xs"><Crown className="w-3 h-3 mr-1" />Creator</Badge>;
     }
     if (status === 'blocked') {
-      return <Badge className="bg-red-100 text-red-800"><UserX className="w-3 h-3 mr-1" />Blocked</Badge>;
+      return <Badge variant="outline" className="text-xs text-red-600 border-red-200"><UserX className="w-3 h-3 mr-1" />Blocked</Badge>;
     }
-    return <Badge className="bg-green-100 text-green-800"><UserCheck className="w-3 h-3 mr-1" />Co-host</Badge>;
+    return <Badge variant="outline" className="text-xs"><UserCheck className="w-3 h-3 mr-1" />Co-host</Badge>;
   };
 
   // Get all team members (creator + approved co-hosts + blocked co-hosts for creator to manage)
@@ -218,18 +218,29 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
     }
   };
 
-
   const teamMembers = getAllTeamMembers();
 
   return (
-    <div className="space-y-6">
-      {/* Team Members Table */}
-      <Card>
-        <CardContent>
+    <div className="space-y-12">
+      {/* Co-host Invitation Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column - Info */}
+        <div className="space-y-2">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-blue-600" />
+            Invite Co-hosts
+          </h3>
+          <p className="text-sm text-gray-600">
+            Share this link to invite trusted friends to help manage your event and approve photos.
+          </p>
+        </div>
+
+        {/* Right Column - Invite Link */}
+        <div className="lg:col-span-2">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium text-muted-foreground">Co-host invitation</Label>
-              <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs">
+              <Label className="text-sm font-medium text-gray-700">Co-host invitation link</Label>
+              <Badge variant="secondary" className="text-xs">
                 Team Access
               </Badge>
             </div>
@@ -237,12 +248,13 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
               <Input
                 value={getCoHostInviteUrl()}
                 readOnly
-                className="font-mono text-sm bg-gray-50"
+                className="font-mono text-sm bg-gray-50 h-11"
               />
               <Button
                 onClick={() => copyToClipboard(getCoHostInviteUrl(), 'cohost')}
                 variant="outline"
                 size="sm"
+                className="px-3 h-11"
               >
                 {copiedLink === 'cohost' ? (
                   <Check className="h-4 w-4 text-green-600" />
@@ -252,45 +264,58 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
               </Button>
             </div>
             <p className="text-xs text-gray-500">
-              Invite people to help you manage the event and approve photos
+              Co-hosts can help manage the event, approve photos, and invite other team members
             </p>
           </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Team Members
-            </div>
-            <Badge variant="secondary">
-              {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-gray-200"></div>
+
+      {/* Team Members Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-1 gap-8">
+        {/* Left Column - Info */}
+        <div className="space-y-2">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Users className="h-5 w-5 text-purple-600" />
+            Team Members
+          </h3>
+          <p className="text-sm text-gray-600">
+            Manage your event team. Remove or block members as needed to keep your event secure.
+          </p>
+        </div>
+
+        {/* Right Column - Team Table */}
+        <div className="lg:col-span-2">
           {isLoadingCoHosts ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                <span className="ml-2 text-gray-600">Loading team members...</span>
-              </div>
+            <div className="flex items-center justify-center py-12 border rounded-lg bg-gray-50">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <span className="ml-2 text-gray-600">Loading team members...</span>
             </div>
           ) : teamMembers.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No team members found</p>
-              <p className="text-xs">
-                {coHostData ? 'No co-hosts have been added yet' : 'Failed to load team data'}
+            <div className="text-center py-12 border rounded-lg bg-gray-50">
+              <Users className="h-8 w-8 mx-auto mb-3 text-gray-400" />
+              <p className="text-base font-medium text-gray-600">No team members yet</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Share the invitation link above to add co-hosts
               </p>
             </div>
           ) : (
-            <div className="border rounded-lg">
+            <div className="border rounded-lg bg-white">
+              <div className="p-4 border-b bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Team Members</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
+                  </Badge>
+                </div>
+              </div>
+              
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Email / Username</TableHead>
+                    <TableHead>Member</TableHead>
                     <TableHead>Role</TableHead>
                     {isEventCreator && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
@@ -300,12 +325,12 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                     <TableRow key={member.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                          <div className="w-9 h-9 bg-gray-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
                             {member.name.charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <div className="font-medium text-sm">{member.name}</div>
-                            <div className="text-xs text-muted-foreground">{member.email}</div>
+                            <div className="font-medium text-sm text-gray-900">{member.name}</div>
+                            <div className="text-xs text-gray-500">{member.email}</div>
                           </div>
                         </div>
                       </TableCell>
@@ -317,7 +342,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                       {isEventCreator && (
                         <TableCell className="text-right">
                           {member.isCreator ? (
-                            <span className="text-xs text-muted-foreground">Event Owner</span>
+                            <span className="text-xs text-gray-500">Event Owner</span>
                           ) : member.status === 'blocked' ? (
                             // Blocked co-host - show unblock option
                             <AlertDialog>
@@ -325,7 +350,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="text-green-600 hover:text-green-700"
+                                  className="text-sm"
                                   disabled={removingUserId === member.id}
                                 >
                                   {removingUserId === member.id ? (
@@ -348,7 +373,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction
                                     onClick={() => handleUnblockCoHost(member.id, member.name)}
-                                    className="bg-green-600 hover:bg-green-700"
+                                    className="bg-blue-600 hover:bg-blue-700"
                                   >
                                     Unblock Co-host
                                   </AlertDialogAction>
@@ -363,7 +388,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="text-orange-600 hover:text-orange-700"
+                                    className="text-sm"
                                     disabled={removingUserId === member.id}
                                   >
                                     {removingUserId === member.id ? (
@@ -386,7 +411,6 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
                                       onClick={() => handleRemoveCoHost(member.id, member.name)}
-                                      className="bg-orange-600 hover:bg-orange-700"
                                     >
                                       Remove Co-host
                                     </AlertDialogAction>
@@ -399,7 +423,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="text-red-600 hover:text-red-700"
+                                    className="text-sm text-red-600 hover:text-red-700"
                                     disabled={removingUserId === member.id}
                                   >
                                     <UserX className="w-4 h-4 mr-1" />
@@ -437,8 +461,8 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
               </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 };
