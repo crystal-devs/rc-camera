@@ -81,7 +81,6 @@ interface Event {
   last_activity: string | null
 }
 
-// Rest of your store remains exactly the same...
 interface CacheEntry<T> {
   data: T
   timestamp: number
@@ -131,6 +130,72 @@ interface EventStore {
   setError: (error: string | null) => void
 }
 
+// 🚀 Default PhotoWall settings factory
+const createDefaultPhotowallSettings = () => ({
+  isEnabled: false,
+  displayMode: 'slideshow' as const,
+  transitionDuration: 5000,
+  showUploaderNames: true,
+  autoAdvance: true,
+  newImageInsertion: 'after_current' as const
+})
+
+// 🚀 Helper function to ensure event has complete photowall_settings
+const ensurePhotowallSettings = (event: any): Event => {
+  if (!event) return event
+  
+  // If photowall_settings is completely missing, add it
+  if (!event.photowall_settings) {
+    console.log('Adding missing photowall_settings to event:', event._id)
+    return {
+      ...event,
+      photowall_settings: createDefaultPhotowallSettings()
+    }
+  }
+
+  // If photowall_settings exists but is incomplete, merge with defaults
+  const defaults = createDefaultPhotowallSettings()
+  const currentSettings = event.photowall_settings
+  
+  let needsUpdate = false
+  const mergedSettings = { ...defaults }
+  
+  // Check each property and preserve existing values
+  Object.keys(defaults).forEach(key => {
+    if (currentSettings.hasOwnProperty(key)) {
+      mergedSettings[key] = currentSettings[key]
+    } else {
+      needsUpdate = true
+    }
+  })
+
+  if (needsUpdate) {
+    console.log('Merging incomplete photowall_settings for event:', event._id)
+    return {
+      ...event,
+      photowall_settings: mergedSettings
+    }
+  }
+
+  return event
+}
+
+// 🚀 Migration function to handle version changes
+const migrateEventStore = (persistedState: any, version: number) => {
+  console.log(`Migrating event store from version ${version} to version 2`)
+  
+  // Handle migration from any version to version 2
+  if (version < 2) {
+    // Ensure selectedEvent has proper photowall_settings
+    if (persistedState.selectedEvent) {
+      persistedState.selectedEvent = ensurePhotowallSettings(persistedState.selectedEvent)
+      console.log('Migrated selectedEvent photowall_settings')
+    }
+  }
+  
+  return persistedState
+}
+
 const useEventStore = create<EventStore>()(
   persist(
     (set, get) => ({
@@ -154,8 +219,12 @@ const useEventStore = create<EventStore>()(
       // Basic setters
       setSelectedEvent: (event: Event, role = 'participant') => {
         console.log('Setting selected event:', event.title, 'Role:', role)
+        
+        // Ensure complete photowall_settings
+        const eventWithSettings = ensurePhotowallSettings(event)
+        
         set({
-          selectedEvent: event,
+          selectedEvent: eventWithSettings,
           lastEventId: event._id,
           userRole: role,
           error: null
@@ -163,7 +232,7 @@ const useEventStore = create<EventStore>()(
 
         // Update cache
         const cache = get().eventsCache
-        cache.set(event._id, { data: event, timestamp: Date.now() })
+        cache.set(event._id, { data: eventWithSettings, timestamp: Date.now() })
         set({ eventsCache: cache })
       },
 
@@ -178,97 +247,132 @@ const useEventStore = create<EventStore>()(
       },
 
       setEvents: (events: Event[]) => {
-        set({ events, error: null })
+        // Ensure all events have complete photowall_settings
+        const eventsWithSettings = events.map(ensurePhotowallSettings)
+        set({ events: eventsWithSettings, error: null })
       },
 
-      // Cache-first event fetching
+      // 🚀 FIXED: Cache-first event fetching with proper error handling
       getEventFromCacheOrFetch: async (eventId: string, authToken: string): Promise<Event | null> => {
         const { eventsCache, CACHE_DURATION } = get()
+        
+        // Validate inputs
+        if (!eventId || !authToken) {
+          console.error('Invalid parameters: eventId or authToken missing')
+          set({ error: 'Invalid request parameters', isLoadingEvent: false })
+          return null
+        }
+
         const cached = eventsCache.get(eventId)
 
         // Check if cache is valid
         if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-          console.log(`✅ Using cached event data for ${eventId}`)
+          console.log(`Using cached event data for ${eventId}`)
           return cached.data
         }
 
         // Fetch from API
-        console.log(`🔄 Fetching fresh event data for ${eventId}`)
+        console.log(`Fetching fresh event data for ${eventId}`)
         set({ isLoadingEvent: true, error: null })
 
         try {
           const event = await getEventById(eventId, authToken)
+          
+          // CRITICAL: Always set loading to false
+          set({ isLoadingEvent: false })
 
           if (event) {
+            // Ensure complete photowall_settings
+            const eventWithSettings = ensurePhotowallSettings(event)
+
             // Update cache
             const newCache = new Map(eventsCache)
-            newCache.set(eventId, { data: event, timestamp: Date.now() })
+            newCache.set(eventId, { data: eventWithSettings, timestamp: Date.now() })
             set({ eventsCache: newCache })
 
             // Update selected event if it's the current one
             const currentSelected = get().selectedEvent
             if (currentSelected?._id === eventId) {
-              set({ selectedEvent: event })
+              set({ selectedEvent: eventWithSettings })
             }
 
-            console.log(`✅ Event ${eventId} fetched and cached`)
+            console.log(`Event ${eventId} fetched and cached successfully`)
+            return eventWithSettings
+          } else {
+            console.warn(`No event data returned for ${eventId}`)
+            set({ error: 'Event not found' })
+            return null
           }
-
-          set({ isLoadingEvent: false })
-          return event
         } catch (error) {
-          console.error('❌ Error fetching event:', error)
+          console.error('Error fetching event:', error)
           set({
             error: error instanceof Error ? error.message : 'Failed to fetch event',
-            isLoadingEvent: false
+            isLoadingEvent: false // CRITICAL: Always set loading to false
           })
           return null
         }
       },
 
-      // Cache-first albums fetching
+      // 🚀 FIXED: Cache-first albums fetching with proper error handling
       getAlbumsFromCacheOrFetch: async (eventId: string, authToken: string): Promise<any[]> => {
         const { albumsCache, CACHE_DURATION } = get()
+        
+        // Validate inputs
+        if (!eventId || !authToken) {
+          console.error('Invalid parameters: eventId or authToken missing for albums')
+          set({ error: 'Invalid request parameters', isLoadingAlbums: false })
+          return []
+        }
+
         const cached = albumsCache.get(eventId)
 
         // Check if cache is valid
         if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-          console.log(`✅ Using cached albums data for ${eventId}`)
+          console.log(`Using cached albums data for ${eventId}`)
           set({ currentEventAlbums: cached.data })
           return cached.data
         }
 
         // Fetch from API
-        console.log(`🔄 Fetching fresh albums data for ${eventId}`)
+        console.log(`Fetching fresh albums data for ${eventId}`)
         set({ isLoadingAlbums: true, error: null })
 
         try {
           const albums = await fetchEventAlbums(eventId, authToken)
+          
+          // CRITICAL: Always set loading to false
+          set({ isLoadingAlbums: false })
 
-          // Sort albums - default album first, then by creation date
-          albums.sort((a, b) => {
-            if (a.isDefault && !b.isDefault) return -1
-            if (!a.isDefault && b.isDefault) return 1
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          })
+          if (albums && Array.isArray(albums)) {
+            // Sort albums - default album first, then by creation date
+            albums.sort((a, b) => {
+              if (a.isDefault && !b.isDefault) return -1
+              if (!a.isDefault && b.isDefault) return 1
+              return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            })
 
-          // Update cache
-          const newCache = new Map(albumsCache)
-          newCache.set(eventId, { data: albums, timestamp: Date.now() })
+            // Update cache
+            const newCache = new Map(albumsCache)
+            newCache.set(eventId, { data: albums, timestamp: Date.now() })
 
-          set({
-            albumsCache: newCache,
-            currentEventAlbums: albums,
-            isLoadingAlbums: false
-          })
+            set({
+              albumsCache: newCache,
+              currentEventAlbums: albums
+            })
 
-          console.log(`✅ Albums for ${eventId} fetched and cached (${albums.length} albums)`)
-          return albums
+            console.log(`Albums for ${eventId} fetched and cached (${albums.length} albums)`)
+            return albums
+          } else {
+            console.warn(`No albums data returned for ${eventId}`)
+            set({ currentEventAlbums: [] })
+            return []
+          }
         } catch (error) {
-          console.error('❌ Error fetching albums:', error)
+          console.error('Error fetching albums:', error)
           set({
             error: error instanceof Error ? error.message : 'Failed to fetch albums',
-            isLoadingAlbums: false
+            isLoadingAlbums: false, // CRITICAL: Always set loading to false
+            currentEventAlbums: []
           })
           return []
         }
@@ -276,29 +380,32 @@ const useEventStore = create<EventStore>()(
 
       // Update event in store and cache
       updateEventInStore: (eventId: string, updates: Partial<Event>) => {
-        console.log(`🔄 Updating event ${eventId} in store`)
+        console.log(`Updating event ${eventId} in store`)
         const { eventsCache, selectedEvent } = get()
 
         // Update cache
         const cached = eventsCache.get(eventId)
         if (cached) {
           const updatedEvent = { ...cached.data, ...updates } as Event
+          // Ensure complete photowall_settings after update
+          const eventWithSettings = ensurePhotowallSettings(updatedEvent)
+          
           const newCache = new Map(eventsCache)
-          newCache.set(eventId, { data: updatedEvent, timestamp: Date.now() })
+          newCache.set(eventId, { data: eventWithSettings, timestamp: Date.now() })
           set({ eventsCache: newCache })
 
           // Update selected event if it's the current one
           if (selectedEvent?._id === eventId) {
-            set({ selectedEvent: updatedEvent })
+            set({ selectedEvent: eventWithSettings })
           }
 
-          console.log(`✅ Event ${eventId} updated in store`)
+          console.log(`Event ${eventId} updated in store`)
         }
       },
 
       // Delete event from store and cache
       deleteEventFromStore: (eventId: string) => {
-        console.log(`🗑️ Deleting event ${eventId} from store`)
+        console.log(`Deleting event ${eventId} from store`)
         const { eventsCache, albumsCache, selectedEvent } = get()
 
         // Remove from caches
@@ -322,10 +429,10 @@ const useEventStore = create<EventStore>()(
           })
         }
 
-        console.log(`✅ Event ${eventId} deleted from store`)
+        console.log(`Event ${eventId} deleted from store`)
       },
 
-      // Cache management utilities
+      // 🚀 OPTIMIZED: Cache management utilities
       clearExpiredCache: () => {
         const { eventsCache, albumsCache, CACHE_DURATION } = get()
         const now = Date.now()
@@ -334,23 +441,23 @@ const useEventStore = create<EventStore>()(
 
         // Clear expired event cache
         const newEventsCache = new Map()
-        eventsCache.forEach((value, key) => {
+        for (const [key, value] of eventsCache) {
           if ((now - value.timestamp) < CACHE_DURATION) {
             newEventsCache.set(key, value)
           } else {
             eventsCleared++
           }
-        })
+        }
 
         // Clear expired albums cache
         const newAlbumsCache = new Map()
-        albumsCache.forEach((value, key) => {
+        for (const [key, value] of albumsCache) {
           if ((now - value.timestamp) < CACHE_DURATION) {
             newAlbumsCache.set(key, value)
           } else {
             albumsCleared++
           }
-        })
+        }
 
         set({
           eventsCache: newEventsCache,
@@ -358,12 +465,12 @@ const useEventStore = create<EventStore>()(
         })
 
         if (eventsCleared > 0 || albumsCleared > 0) {
-          console.log(`🧹 Cache cleanup: ${eventsCleared} events, ${albumsCleared} albums expired`)
+          console.log(`Cache cleanup: ${eventsCleared} events, ${albumsCleared} albums expired`)
         }
       },
 
       invalidateEventCache: (eventId: string) => {
-        console.log(`🔄 Invalidating event cache for ${eventId}`)
+        console.log(`Invalidating event cache for ${eventId}`)
         const { eventsCache } = get()
         const newCache = new Map(eventsCache)
         newCache.delete(eventId)
@@ -371,7 +478,7 @@ const useEventStore = create<EventStore>()(
       },
 
       invalidateAlbumsCache: (eventId: string) => {
-        console.log(`🔄 Invalidating albums cache for ${eventId}`)
+        console.log(`Invalidating albums cache for ${eventId}`)
         const { albumsCache } = get()
         const newCache = new Map(albumsCache)
         newCache.delete(eventId)
@@ -385,7 +492,9 @@ const useEventStore = create<EventStore>()(
     }),
     {
       name: 'event-app-storage',
-      version: 1, // 🚀 INCREMENT VERSION for interface change
+      version: 2,
+      // Migration function to handle schema changes
+      migrate: migrateEventStore,
       // Only persist essential data - not cache or transient state
       partialize: (state) => ({
         selectedEvent: state.selectedEvent,
@@ -394,7 +503,13 @@ const useEventStore = create<EventStore>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.selectedEvent) {
-          console.log('🔄 Rehydrated event data:', state.selectedEvent.title)
+          console.log('Rehydrated event data:', state.selectedEvent.title)
+          
+          // Double-check photowall_settings after rehydration
+          if (state.selectedEvent) {
+            state.selectedEvent = ensurePhotowallSettings(state.selectedEvent)
+            console.log('Verified photowall_settings during rehydration')
+          }
         }
       }
     }

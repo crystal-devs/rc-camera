@@ -1,30 +1,32 @@
-// Simple and effective FullscreenPhotoViewer - Google Photos approach with smart caching
+// components/photo/FullscreenPhotoViewer.tsx - Updated with full screen and info sheet
 import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, InfoIcon, TrashIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Photo } from './PhotoGallery.types';
 import { useFullscreen } from '@/lib/FullscreenContext';
+import { PhotoInfoSheet } from './PhotoInfoSheet';
 
-// 💾 Global image cache to prevent re-downloading
+// Global image cache to prevent re-downloading
 const imageCache = new Map<string, {
   lowRes: string;
   highRes: string;
+  originalRes: string;
   isHighResLoaded: boolean;
+  isOriginalResLoaded: boolean;
   imageElement?: HTMLImageElement;
 }>();
 
 // Cache cleanup - optimized for live event photo sharing
-const MAX_CACHE_SIZE = 25; // Reduced from 50 for event context
+const MAX_CACHE_SIZE = 25;
 const cleanupCache = () => {
   if (imageCache.size > MAX_CACHE_SIZE) {
     const entries = Array.from(imageCache.entries());
-    // Remove oldest 40% of entries for more aggressive cleanup
     const removeCount = Math.floor(MAX_CACHE_SIZE * 0.4);
     for (let i = 0; i < removeCount; i++) {
       imageCache.delete(entries[i][0]);
     }
-    console.log(`🧹 Event cache cleaned up, size: ${imageCache.size}`);
+    console.log(`Cache cleaned up, size: ${imageCache.size}`);
   }
 };
 
@@ -32,27 +34,25 @@ interface FullscreenPhotoViewerProps {
   selectedPhoto: Photo;
   selectedPhotoIndex: number | null;
   photos: Photo[];
-  userPermissions: {
+  userPermissions?: {
     download: boolean;
     delete: boolean;
   };
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
-  setPhotoInfoOpen: (open: boolean) => void;
-  deletePhoto: (photoId: string) => void;
-  downloadPhoto: (photo: Photo) => void;
+  deletePhoto?: (photoId: string) => void;
+  downloadPhoto?: (photo: Photo) => void;
 }
 
 const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   selectedPhoto,
   selectedPhotoIndex,
   photos,
-  userPermissions,
+  userPermissions = { download: true, delete: false },
   onClose,
   onPrev,
   onNext,
-  setPhotoInfoOpen,
   deletePhoto,
   downloadPhoto
 }) => {
@@ -60,36 +60,105 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isHighResLoading, setIsHighResLoading] = useState(false);
+  const [photoInfoOpen, setPhotoInfoOpen] = useState(false);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout>();
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // 🎯 Google Photos approach with smart caching: Start with low-res, upgrade to high-res
+  // Smart URL resolution with support for original quality
   const photoId = selectedPhoto.id;
   const lowResUrl = selectedPhoto?.progressiveUrls?.thumbnail || selectedPhoto?.thumbnail || selectedPhoto?.imageUrl;
   const highResUrl = selectedPhoto?.progressiveUrls?.original || selectedPhoto?.progressiveUrls?.full || selectedPhoto?.imageUrl;
+  const originalUrl = selectedPhoto?.progressiveUrls?.original || selectedPhoto?.imageUrl || highResUrl;
+
+  // Calculate display dimensions based on original metadata and viewport
+  const calculateDisplayDimensions = useMemo(() => {
+    const metadata = selectedPhoto.metadata;
+    if (!metadata?.width || !metadata?.height) {
+      // Fallback if no metadata
+      return {
+        width: 'auto',
+        height: 'auto',
+        maxWidth: '100vw',
+        maxHeight: '100vh'
+      };
+    }
+
+    const { width: originalWidth, height: originalHeight } = metadata;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Calculate scale factor to fit within viewport while maintaining aspect ratio
+    const scaleX = viewportWidth / originalWidth;
+    const scaleY = viewportHeight / originalHeight;
+    const scale = Math.min(scaleX, scaleY, 1); // Never scale up beyond original size
+
+    const displayWidth = originalWidth * scale;
+    const displayHeight = originalHeight * scale;
+
+    return {
+      width: `${displayWidth}px`,
+      height: `${displayHeight}px`,
+      maxWidth: '100vw',
+      maxHeight: '100vh'
+    };
+  }, [selectedPhoto.metadata]);
+
+  // Smart URL resolution with proper progressive loading
+  const getImageUrls = useMemo(() => {
+    const progressiveUrls = selectedPhoto.progressiveUrls;
+
+    if (progressiveUrls) {
+      return {
+        placeholder: progressiveUrls.placeholder || progressiveUrls.thumbnail,
+        thumbnail: progressiveUrls.thumbnail || progressiveUrls.display,
+        display: progressiveUrls.display || progressiveUrls.full,
+        high: progressiveUrls.full || progressiveUrls.original,
+        original: progressiveUrls.original
+      };
+    }
+
+    // Fallback for backward compatibility
+    return {
+      placeholder: selectedPhoto.thumbnail,
+      thumbnail: selectedPhoto.thumbnail,
+      display: selectedPhoto.imageUrl,
+      high: selectedPhoto.imageUrl,
+      original: selectedPhoto.imageUrl
+    };
+  }, [selectedPhoto]);
 
   // Initialize cache entry for current photo
   useEffect(() => {
+    const photoId = selectedPhoto.id;
+    const urls = getImageUrls;
+
     if (!imageCache.has(photoId)) {
       imageCache.set(photoId, {
-        lowRes: lowResUrl,
-        highRes: highResUrl,
-        isHighResLoaded: false
+        lowRes: urls.thumbnail || '',
+        highRes: urls.high || urls.display || '',
+        originalRes: urls.original || urls.high || '',
+        isHighResLoaded: false,
+        isOriginalResLoaded: false
       });
       cleanupCache();
     }
-  }, [photoId, lowResUrl, highResUrl]);
+  }, [selectedPhoto.id, getImageUrls]);
 
   // Load high-res image after low-res is displayed (with caching)
   useEffect(() => {
+    const photoId = selectedPhoto.id;
+    const urls = getImageUrls;
+    const highResUrl = urls.high || urls.display;
+    const lowResUrl = urls.thumbnail;
+
     if (!highResUrl || lowResUrl === highResUrl) return;
 
     const cacheEntry = imageCache.get(photoId);
 
-    // ✅ Check if high-res is already cached
+    // Check if high-res is already cached
     if (cacheEntry?.isHighResLoaded) {
-      console.log('💾 Using cached high-res image for:', photoId);
+      console.log('Using cached high-res image for:', photoId);
       if (imageRef.current) {
         imageRef.current.src = highResUrl;
         setIsHighResLoading(false);
@@ -97,15 +166,15 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
       return;
     }
 
-    console.log('🔍 Loading high-res image for:', photoId);
+    console.log('Loading high-res image for:', photoId);
     setIsHighResLoading(true);
 
     const highResImage = new Image();
 
     highResImage.onload = () => {
-      console.log('✅ High-res image loaded and cached:', photoId);
+      console.log('High-res image loaded and cached:', photoId);
 
-      // 💾 Update cache with loaded state
+      // Update cache with loaded state
       if (cacheEntry) {
         cacheEntry.isHighResLoaded = true;
         cacheEntry.imageElement = highResImage;
@@ -118,7 +187,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     };
 
     highResImage.onerror = () => {
-      console.warn('❌ High-res image failed to load:', photoId);
+      console.warn('High-res image failed to load:', photoId);
       setIsHighResLoading(false);
     };
 
@@ -132,7 +201,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
       highResImage.onload = null;
       highResImage.onerror = null;
     };
-  }, [photoId, lowResUrl, highResUrl, selectedPhoto.id]);
+  }, [selectedPhoto.id, getImageUrls]);
 
   // Preload adjacent images (with smart caching)
   useEffect(() => {
@@ -154,13 +223,15 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
             imageCache.set(photoId, {
               lowRes,
               highRes: highRes || lowRes,
-              isHighResLoaded: false
+              originalRes: highRes || lowRes,
+              isHighResLoaded: false,
+              isOriginalResLoaded: false
             });
 
             // Preload low-res for instant display
             const preloadImg = new Image();
             preloadImg.onload = () => {
-              console.log(`🔄 Cached low-res for photo ${index + 1}`);
+              console.log(`Cached low-res for photo ${index + 1}`);
             };
             preloadImg.src = lowRes;
 
@@ -174,13 +245,13 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                     cacheEntry.isHighResLoaded = true;
                     cacheEntry.imageElement = highResImg;
                   }
-                  console.log(`🚀 Preloaded high-res for photo ${index + 1}`);
+                  console.log(`Preloaded high-res for photo ${index + 1}`);
                 };
                 highResImg.src = highRes;
-              }, 500); // Delay high-res preload to not interfere with current image
+              }, 500);
             }
           } else {
-            console.log(`💾 Photo ${index + 1} already cached`);
+            console.log(`Photo ${index + 1} already cached`);
           }
         }
       });
@@ -194,19 +265,20 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   // Reset states when photo changes and check cache
   useEffect(() => {
+    const photoId = selectedPhoto.id;
     const cacheEntry = imageCache.get(photoId);
 
     if (cacheEntry?.isHighResLoaded) {
       // Image is already in cache - no need to load again
       setImageLoaded(true);
       setIsHighResLoading(false);
-      console.log('💾 Photo loaded from cache:', photoId);
+      console.log('Photo loaded from cache:', photoId);
     } else {
       // New photo - reset loading states
       setImageLoaded(false);
       setIsHighResLoading(false);
     }
-  }, [photoId]);
+  }, [selectedPhoto.id]);
 
   // Touch handling
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -224,15 +296,15 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     }
     setShowControls(true);
     controlsTimeoutRef.current = setTimeout(() => {
-      if (!isDraggingRef.current) {
+      if (!isDraggingRef.current && !photoInfoOpen) {
         setShowControls(false);
       }
     }, 3000);
-  }, []);
+  }, [photoInfoOpen]);
 
   // Navigation
   const handleNavigation = useCallback((direction: 'prev' | 'next') => {
-    console.log(`📸 Navigation: ${direction}`);
+    console.log(`Navigation: ${direction}`);
 
     if (direction === 'prev' && selectedPhotoIndex !== null && selectedPhotoIndex > 0) {
       onPrev();
@@ -320,7 +392,11 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     switch (e.key) {
       case 'Escape':
         e.preventDefault();
-        onClose();
+        if (photoInfoOpen) {
+          setPhotoInfoOpen(false);
+        } else {
+          onClose();
+        }
         break;
       case 'ArrowLeft':
         e.preventDefault();
@@ -334,8 +410,13 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         e.preventDefault();
         setShowControls(prev => !prev);
         break;
+      case 'i':
+      case 'I':
+        e.preventDefault();
+        setPhotoInfoOpen(prev => !prev);
+        break;
     }
-  }, [onClose, handleNavigation, resetControlsTimeout]);
+  }, [onClose, handleNavigation, resetControlsTimeout, photoInfoOpen]);
 
   // Button handlers
   const handlePrevClick = useCallback((e: React.MouseEvent) => {
@@ -357,12 +438,20 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   // Action handlers
   const handleDownload = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    downloadPhoto({ ...selectedPhoto, imageUrl: highResUrl });
-  }, [downloadPhoto, selectedPhoto, highResUrl]);
+    if (downloadPhoto) {
+      // Download original quality image
+      const originalUrl = getImageUrls.original || getImageUrls.high;
+      const photoToDownload = {
+        ...selectedPhoto,
+        imageUrl: originalUrl
+      };
+      downloadPhoto(photoToDownload);
+    }
+  }, [downloadPhoto, selectedPhoto, getImageUrls]);
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this photo?')) {
+    if (deletePhoto && confirm('Are you sure you want to delete this photo?')) {
       deletePhoto(selectedPhoto.id);
     }
   }, [deletePhoto, selectedPhoto.id]);
@@ -370,11 +459,11 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const handleInfo = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setPhotoInfoOpen(true);
-  }, [setPhotoInfoOpen]);
+  }, []);
 
   // Image load handler
   const handleImageLoad = useCallback(() => {
-    console.log('📸 Image rendered successfully');
+    console.log('Image rendered successfully');
     setImageLoaded(true);
   }, []);
 
@@ -420,62 +509,22 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const canGoPrev = selectedPhotoIndex !== null && selectedPhotoIndex > 0;
   const canGoNext = selectedPhotoIndex !== null && selectedPhotoIndex < photos.length - 1;
 
-  // Calculate image container dimensions to fit screen while maintaining aspect ratio
-  const imageContainerStyle = useMemo(() => {
-    // Screen dimensions with padding
-    const maxWidth = window.innerWidth - 32; // 2rem padding
-    const maxHeight = window.innerHeight - 32; // 2rem padding
-
-    if (!selectedPhoto.metadata?.width || !selectedPhoto.metadata?.height) {
-      return {
-        maxHeight: `${maxHeight}px`,
-        maxWidth: `${maxWidth}px`,
-        width: '100%',
-        height: `${Math.min(maxHeight, maxWidth * 0.75)}px` // 4:3 aspect ratio fallback
-      };
-    }
-
-    const { width: imageWidth, height: imageHeight } = selectedPhoto.metadata;
-    const imageAspectRatio = imageWidth / imageHeight;
-    const screenAspectRatio = maxWidth / maxHeight;
-
-    let containerWidth: number;
-    let containerHeight: number;
-
-    if (imageAspectRatio > screenAspectRatio) {
-      // Image is wider than screen - constrain by width
-      containerWidth = maxWidth;
-      containerHeight = maxWidth / imageAspectRatio;
-    } else {
-      // Image is taller than screen - constrain by height
-      containerHeight = maxHeight;
-      containerWidth = maxHeight * imageAspectRatio;
-    }
-
-    return {
-      width: `${containerWidth}px`,
-      height: `${containerHeight}px`,
-      maxWidth: `${maxWidth}px`,
-      maxHeight: `${maxHeight}px`
-    };
-  }, [selectedPhoto.metadata]);
-
   // Quality indicator
   const getQualityText = () => {
     const cacheEntry = imageCache.get(photoId);
     const isHighResCached = cacheEntry?.isHighResLoaded;
 
-    if (imageLoaded && !isHighResLoading && isHighResCached) return '🎯 High Quality';
-    if (isHighResLoading) return '⏳ Enhancing...';
-    if (imageLoaded) return '📱 Standard Quality';
-    return '⏳ Loading...';
+    if (imageLoaded && !isHighResLoading && isHighResCached) return 'High Quality';
+    if (isHighResLoading) return 'Enhancing...';
+    if (imageLoaded) return 'Standard Quality';
+    return 'Loading...';
   };
 
-  console.log(photos, 'photosphotosphotos')
   return (
     <div
-      className="fixed inset-0 z-50 bg-black m-0"
+      className="fixed inset-0 z-50 bg-black m-0 p-0"
       data-photo-viewer
+      style={{ margin: 0, padding: 0, width: '100vw', height: '100vh' }}
     >
       {/* Header controls */}
       <div className={`absolute top-0 left-0 right-0 z-10 transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full'
@@ -525,7 +574,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                   size="icon"
                   className="text-white hover:bg-white/20"
                   onClick={handleDownload}
-                  title="Download high quality"
+                  title="Download original quality"
                 >
                   <DownloadIcon className="h-5 w-5" />
                 </Button>
@@ -536,11 +585,12 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                 size="icon"
                 className="text-white hover:bg-white/20"
                 onClick={handleInfo}
+                title="Photo information"
               >
                 <InfoIcon className="h-5 w-5" />
               </Button>
 
-              {userPermissions?.delete && (
+              {userPermissions?.delete && deletePhoto && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -555,8 +605,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         </div>
       </div>
 
-      {/* Main photo area */}
-      <div className="h-full flex items-center justify-center relative" onClick={handleBackgroundClick}>
+      {/* Main photo area - Full screen with no padding */}
+      <div className="absolute inset-0 flex items-center justify-center" onClick={handleBackgroundClick}>
         {/* Navigation arrows */}
         {photos.length > 1 && (
           <>
@@ -586,38 +636,61 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           </>
         )}
 
-        {/* 📸 SIMPLE & EFFECTIVE: Single image element - Google Photos style */}
+        {/* Progressive Image Container - Full screen with proper sizing */}
         <div
-          className="w-full h-full flex items-center justify-center p-4 transition-transform duration-200 ease-out"
+          className="w-full h-full flex items-center justify-center transition-transform duration-200 ease-out"
           style={{
             transform: `translateX(${dragOffset}px)`,
             opacity: Math.abs(dragOffset) > 0 ? Math.max(0.8, 1 - Math.abs(dragOffset) / 150) : 1
           }}
         >
           <div className="relative w-full h-full flex items-center justify-center">
-            {/* 🎯 SINGLE IMG ELEMENT: Start with low-res, upgrade to high-res with caching */}
-            <div className="relative" style={imageContainerStyle}>
+            {/* Progressive Image Display with Metadata-based Sizing */}
+            <div
+              className="relative flex items-center justify-center"
+              style={{
+                width: '100vw',
+                height: '100vh'
+              }}
+            >
+              {/* Background thumbnail at original dimensions (blurred) */}
+              {getImageUrls.thumbnail && getImageUrls.thumbnail !== getImageUrls.high && (
+                <img
+                  src={getImageUrls.thumbnail}
+                  alt=""
+                  className="absolute blur-sm opacity-60"
+                  style={{
+                    filter: imageLoaded ? 'blur(0px)' : 'blur(4px)',
+                    transition: 'filter 0.3s ease-out, opacity 0.3s ease-out',
+                    ...calculateDisplayDimensions
+                  }}
+                  draggable={false}
+                />
+              )}
 
+              {/* Main high-quality image at original dimensions */}
               <img
                 ref={imageRef}
-                key={photoId} // Force re-render on photo change
+                key={selectedPhoto.id}
                 src={(() => {
-                  // 💾 Smart URL selection based on cache
+                  // Smart URL selection based on cache
+                  const photoId = selectedPhoto.id;
                   const cacheEntry = imageCache.get(photoId);
                   if (cacheEntry?.isHighResLoaded) {
-                    return highResUrl; // Use high-res if cached
+                    return getImageUrls.high || getImageUrls.display;
                   }
-                  return lowResUrl; // Start with low-res
+                  return getImageUrls.thumbnail || getImageUrls.display;
                 })()}
                 alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
-                className="w-full h-full object-contain transition-opacity duration-300 ease-out"
+                className="relative transition-opacity duration-500 ease-out"
                 style={{
-                  opacity: imageLoaded ? 1 : 0.3,
+                  opacity: imageLoaded ? 1 : 0,
+                  ...calculateDisplayDimensions
                 }}
                 onLoad={handleImageLoad}
                 onError={() => {
-                  console.warn('❌ Image failed to load');
-                  setImageLoaded(true); // Still show something
+                  console.warn('Image failed to load');
+                  setImageLoaded(true);
                 }}
                 draggable={false}
                 onClick={(e) => e.stopPropagation()}
@@ -627,7 +700,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
               {/* Loading indicator */}
               {(!imageLoaded || isHighResLoading) && (
-                <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm z-10">
+                <div className="absolute top-4 right-4 bg-black/50 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm z-10">
                   <div className="flex items-center gap-1">
                     <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
                     {isHighResLoading ? 'Enhancing...' : 'Loading...'}
@@ -635,10 +708,10 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                 </div>
               )}
 
-              {/* Success indicator */}
-              {imageLoaded && !isHighResLoading && (
-                <div className="absolute top-2 right-2 bg-green-500/80 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm z-10 opacity-0 animate-[fadeInOut_2s_ease-in-out]">
-                  ✨ Ready
+              {/* Success indicator with dimensions */}
+              {imageLoaded && !isHighResLoading && selectedPhoto.metadata && (
+                <div className="absolute top-4 right-4 bg-green-500/80 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm z-10 opacity-0 animate-[fadeInOut_2s_ease-in-out]">
+                  {selectedPhoto.metadata.width}×{selectedPhoto.metadata.height}
                 </div>
               )}
             </div>
@@ -646,12 +719,31 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         </div>
       </div>
 
-      {/* Mobile instructions */}
-      <div className={`md:hidden absolute bottom-6 left-1/2 -translate-x-1/2 text-white text-xs text-center transition-all duration-300 pointer-events-none ${showControls ? 'opacity-60' : 'opacity-0'
-        }`}>
-        <div>Tap to show/hide controls</div>
-        <div className="mt-1">Swipe left/right to navigate</div>
-      </div>
+      {/* Photo Info Sheet */}
+      <PhotoInfoSheet
+        isOpen={photoInfoOpen}
+        onClose={() => setPhotoInfoOpen(false)}
+        photo={{
+          id: selectedPhoto.id,
+          imageUrl: originalUrl,
+          src: originalUrl,
+          title: selectedPhoto.title,
+          takenBy: selectedPhoto.takenBy || selectedPhoto.uploadedBy,
+          uploadedBy: selectedPhoto.uploadedBy,
+          uploadedAt: selectedPhoto.uploadedAt || selectedPhoto.createdAt,
+          takenAt: selectedPhoto.takenAt,
+          location: selectedPhoto.location,
+          metadata: selectedPhoto.metadata,
+          stats: selectedPhoto.stats,
+          approval: selectedPhoto.approval
+        }}
+        canDownload={userPermissions?.download}
+        onDownload={userPermissions?.download ? () => {
+          if (downloadPhoto) {
+            downloadPhoto({ ...selectedPhoto, imageUrl: originalUrl });
+          }
+        } : undefined}
+      />
 
       <style jsx>{`
         @keyframes fadeInOut {
