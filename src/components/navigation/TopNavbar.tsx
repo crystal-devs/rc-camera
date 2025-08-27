@@ -69,7 +69,7 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
     };
 
     return (
-        <div className="w-full border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div className="w-full border-b border-border bg-sidebar">
             {/* Desktop navigation bar */}
             <div className="hidden md:flex h-16 items-center px-6">
                 {/* Left side - Event Selector */}

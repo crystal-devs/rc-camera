@@ -129,7 +129,7 @@ const PhotoUploadDialog: React.FC<PhotoUploadDialogProps> = ({
               onChange={onFileUpload}
               disabled={isUploading}
             />
-            <div className="bg-gray-100 dark:bg-gray-700 p-3 rounded-full mb-2">
+            <div className="bg-card p-3 rounded-full mb-2">
               <UploadIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
             </div>
             <h3 className="font-medium text-sm">Upload Files</h3>

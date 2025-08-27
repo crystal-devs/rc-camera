@@ -52,13 +52,13 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
             {/* Basic Information Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column - Info */}
-                <div className="space-y-2">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-blue-600" />
+                <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
                         Basic Information
                     </h3>
-                    <p className="text-sm text-gray-600">
-                        Set up the essential details for your event. This information will be visible to all guests and helps them understand what to expect.
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                        Essential details that help guests understand your event.
                     </p>
                 </div>
 
@@ -67,7 +67,7 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                     {/* Event Name & Type */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
-                            <Label htmlFor="title" className="text-sm font-medium text-gray-700">
+                            <Label htmlFor="title" className="text-sm font-medium text-foreground">
                                 Event name *
                             </Label>
                             <Input
@@ -81,11 +81,11 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="template" className="text-sm font-medium text-gray-700">
+                            <Label htmlFor="template" className="text-sm font-medium text-foreground">
                                 Event type
                             </Label>
                             <Select value={formData.template} onValueChange={(value) => onInputChange('template', value)}>
-                                <SelectTrigger className="h-24 w-full shadow-none">
+                                <SelectTrigger className="h-11 w-full shadow-none">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -101,7 +101,7 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
 
                     {/* Description */}
                     <div className="space-y-2">
-                        <Label htmlFor="description" className="text-sm font-medium text-gray-700">
+                        <Label htmlFor="description" className="text-sm font-medium text-foreground">
                             Description
                         </Label>
                         <Textarea
@@ -113,7 +113,7 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                             maxLength={500}
                             className="resize-none shadow-none"
                         />
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted-foreground">
                             {formData.description.length}/500 characters
                         </p>
                     </div>
@@ -121,18 +121,18 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
             </div>
 
             {/* Divider */}
-            <div className="border-t border-gray-200"></div>
+            <div className="border-t border-border"></div>
 
             {/* Location Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column - Info */}
-                <div className="space-y-2">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <MapPin className="h-5 w-5 text-green-600" />
+                <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
+                        <MapPin className="h-5 w-5 text-muted-foreground" />
                         Location Details
                     </h3>
-                    <p className="text-sm text-gray-600">
-                        Help your guests find the event location easily. Include both venue name and full address for clarity.
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                        Help guests find your event with clear venue and address information.
                     </p>
                 </div>
 
@@ -140,7 +140,7 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                 <div className="lg:col-span-2 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
-                            <Label htmlFor="location_name" className="text-sm font-medium text-gray-700">
+                            <Label htmlFor="location_name" className="text-sm font-medium text-foreground">
                                 Venue name
                             </Label>
                             <Input
@@ -153,7 +153,7 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="location_address" className="text-sm font-medium text-gray-700">
+                            <Label htmlFor="location_address" className="text-sm font-medium text-foreground">
                                 Full address
                             </Label>
                             <Input
@@ -169,18 +169,18 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
             </div>
 
             {/* Divider */}
-            <div className="border-t border-gray-200"></div>
+            <div className="border-t border-border"></div>
 
             {/* Date & Time Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column - Info */}
-                <div className="space-y-2">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <Clock className="h-5 w-5 text-purple-600" />
+                <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
+                        <Clock className="h-5 w-5 text-muted-foreground" />
                         Date & Time
                     </h3>
-                    <p className="text-sm text-gray-600">
-                        Set when your event starts and ends. The end date cannot be earlier than the start date.
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                        Set your event start and end dates.
                     </p>
                 </div>
 
@@ -189,18 +189,18 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Start Date Picker */}
                         <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-700">Start date *</Label>
+                            <Label className="text-sm font-medium text-foreground">Start date *</Label>
                             <Popover>
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
                                         className="w-full justify-start text-left font-normal h-11 shadow-none"
                                     >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
                                         {formData.start_date ? (
                                             format(new Date(formData.start_date), "PPP")
                                         ) : (
-                                            <span className="text-gray-500">Select start date</span>
+                                            <span className="text-muted-foreground">Select start date</span>
                                         )}
                                     </Button>
                                 </PopoverTrigger>
@@ -217,18 +217,18 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
 
                         {/* End Date Picker */}
                         <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-700">End date *</Label>
+                            <Label className="text-sm font-medium text-foreground">End date *</Label>
                             <Popover>
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
                                         className="w-full justify-start text-left font-normal h-11 shadow-none"
                                     >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
                                         {formData.end_date ? (
                                             format(new Date(formData.end_date), "PPP")
                                         ) : (
-                                            <span className="text-gray-500">Select end date</span>
+                                            <span className="text-muted-foreground">Select end date</span>
                                         )}
                                     </Button>
                                 </PopoverTrigger>
@@ -252,18 +252,18 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
             </div>
 
             {/* Divider */}
-            <div className="border-t border-gray-200"></div>
+            <div className="border-t border-border"></div>
 
             {/* Cover Photo Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column - Info */}
-                <div className="space-y-2">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <Camera className="h-5 w-5 text-orange-600" />
+                <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
+                        <Camera className="h-5 w-5 text-muted-foreground" />
                         Cover Photo
                     </h3>
-                    <p className="text-sm text-gray-600">
-                        Add a cover photo to make your event more attractive and help guests recognize it easily.
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                        Add a cover photo to make your event more recognizable.
                     </p>
                 </div>
 
@@ -275,23 +275,23 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                                 <img
                                     src={previewUrl}
                                     alt="Cover preview"
-                                    className="w-full h-56 object-cover rounded-lg border-2 border-gray-200"
+                                    className="w-full h-56 object-cover rounded-lg border"
                                 />
                                 <Button
                                     type="button"
                                     variant="secondary"
                                     size="sm"
-                                    className="absolute top-3 right-3 bg-white/90 hover:bg-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="absolute top-3 right-3 bg-background/90 hover:bg-background shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
                                     onClick={onClearImage}
                                 >
                                     <X className="h-4 w-4" />
                                 </Button>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center h-56 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                                <Camera className="h-12 w-12 text-gray-400 mb-3" />
-                                <p className="text-base font-medium text-gray-600">Add a cover photo</p>
-                                <p className="text-sm text-gray-500 mt-1">Help guests recognize your event</p>
+                            <div className="flex flex-col items-center justify-center h-56 border-2 border-dashed border-border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                                <Camera className="h-12 w-12 text-muted-foreground mb-3" />
+                                <p className="text-base font-medium text-foreground">Add a cover photo</p>
+                                <p className="text-sm text-muted-foreground mt-1">Help guests recognize your event</p>
                             </div>
                         )}
 
@@ -308,12 +308,12 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                             onClick={() => document.getElementById('cover_image')?.click()}
                             className="w-full h-11"
                         >
-                            <Upload className="h-4 w-4 mr-2" />
+                            <Upload className="h-4 w-4 mr-2 text-muted-foreground" />
                             {previewUrl ? 'Change Photo' : 'Upload Photo'}
                         </Button>
 
                         {previewUrl && (
-                            <p className="text-xs text-gray-500 text-center">
+                            <p className="text-xs text-muted-foreground text-center">
                                 Recommended: 1200x600px, max 5MB (JPG, PNG)
                             </p>
                         )}
@@ -321,6 +321,5 @@ export const EventDetailsTab: React.FC<EventDetailsTabProps> = ({
                 </div>
             </div>
         </div>
-    )
-
+    );
 };

@@ -222,7 +222,7 @@ export const OptimizedProgressiveImage = ({
   return (
     <div
       ref={imgRef}
-      className={`group relative aspect-square overflow-hidden rounded bg-gray-100 dark:bg-gray-800 cursor-pointer transition-all duration-200 ${!isUploading ? 'hover:scale-[1.02] hover:shadow-md' : ''
+      className={`group relative aspect-square overflow-hidden rounded bg-card cursor-pointer transition-all duration-200 ${!isUploading ? 'hover:scale-[1.02] hover:shadow-md' : ''
         } ${isUploading ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}`}
       onClick={() => !isUploading && onPhotoClick(photo, index)}
     >
@@ -276,14 +276,14 @@ export const OptimizedProgressiveImage = ({
 
           {/* Loading state */}
           {!imageLoaded && !error && !isUploading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+            <div className="absolute inset-0 flex items-center justify-center bg-card">
               <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
             </div>
           )}
 
           {/* Error state */}
           {error && !isUploading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-200 dark:bg-gray-700">
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-card">
               <CameraIcon className="h-8 w-8 text-gray-400 mb-1" />
               <span className="text-xs text-gray-500 text-center px-2">Failed to load</span>
             </div>
@@ -325,7 +325,7 @@ export const OptimizedProgressiveImage = ({
           {/* 🚀 UPLOAD PROGRESS: Show file info during upload */}
           {isUploading && photo.size && (
             <div className="absolute bottom-2 left-2 right-2 z-20">
-              <div className="bg-white dark:bg-gray-800 rounded-md p-2 text-xs">
+              <div className="bg-card rounded-md p-2 text-xs">
                 <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
                   {photo.filename}
                 </p>
@@ -340,7 +340,7 @@ export const OptimizedProgressiveImage = ({
 
       {/* Placeholder when not in view */}
       {!isInView && (
-        <div className="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+        <div className="w-full h-full bg-card flex items-center justify-center">
           <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
         </div>
       )}

@@ -1,5 +1,4 @@
-// app/guest/[token]/page.tsx - Enhanced with visual real-time feedback and upload functionality
-
+// app/guest/[token]/page.tsx - Updated with Bulk Download Button
 'use client';
 
 import React, { useState, useCallback, use, useEffect, memo } from 'react';
@@ -18,6 +17,7 @@ import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
 import { FullscreenPhotoViewer } from '@/components/album/FullscreenPhotoViewer';
+import { BulkDownloadButton } from './BulkDownloadButton';
 
 // Create a query client
 const queryClient = new QueryClient({
@@ -509,7 +509,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Event Header */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
+      {/* <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -558,7 +558,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               <ConnectionStatus />
               <RoomStatsDisplay roomStats={roomStats} />
 
-              {/* Upload Button */}
               {eventDetails?.permissions?.can_upload && (
                 <Button
                   onClick={() => setShowUploadDialog(true)}
@@ -570,14 +569,16 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               )}
 
               {eventDetails?.permissions?.can_download && (
-                <Button
-                  variant="outline"
+                <BulkDownloadButton
+                  shareToken={shareToken}
+                  eventTitle={eventDetails?.title}
+                  totalPhotos={totalPhotos}
+                  authToken={auth}
+                  guestId={`guest_${Date.now()}`}
+                  guestName={guestInfo.name}
+                  guestEmail={guestInfo.email}
                   disabled={isInitialLoading || photos.length === 0}
-                  className="flex items-center gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Download All
-                </Button>
+                />
               )}
 
               <button
@@ -596,7 +597,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             </div>
           </div>
         </div>
-      </div>
+      </div> */}
 
       <div className="max-w-7xl mx-auto px-4 py-8">{renderContent()}</div>
 
@@ -765,8 +766,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
 export default function EventPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params); // Resolve the token from params
-
-  console.log('🎯 Guest page received token:', token);
 
   return (
     <QueryClientProvider client={queryClient}>

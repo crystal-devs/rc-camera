@@ -43,8 +43,8 @@ const getNavItems = (selectedEventId: string | null) => {
     },
     {
       icon: <ImageIcon size={20} />,
-      label: 'Photos',
-      href: `${baseRoute}/photos`,
+      label: 'Media',
+      href: `${baseRoute}/media`,
       requiresEvent: true,
     },
     {
@@ -62,13 +62,13 @@ const getNavItems = (selectedEventId: string | null) => {
     {
       icon: <LayoutTemplate size={20} />,
       label: 'Templates',
-      href: `${baseRoute}/templates`,
+      href: `/templates`,
       requiresEvent: true,
     },
     {
       icon: <ShoppingCart size={20} />,
       label: 'Memory Shop',
-      href: `${baseRoute}/shop`,
+      href: `/shop`,
       requiresEvent: true,
     },
     {
@@ -93,9 +93,9 @@ export function AppSidebar() {
   const disabledItems = navItems.filter(item => item.requiresEvent && !selectedEvent);
 
   return (
-    <Sidebar className="w-64 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 h-full flex flex-col">
+    <Sidebar className="w-64 border-r bg-sidebar h-full flex flex-col">
       {/* Logo Header */}
-      <SidebarHeader className="border-b border-gray-200 dark:border-gray-700 p-4 py-3">
+      <SidebarHeader className="bg-sidebar border-b border-border p-4 py-3">
         <div className="flex items-center gap-3">
           <div className="bg-primary/10 p-2">
             <CameraIcon size={24} className="text-primary" />
@@ -104,7 +104,7 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="flex-1 overflow-y-auto py-4">
+      <SidebarContent className="flex-1 bg-sidebar overflow-y-auto py-4">
         {/* Main Navigation */}
         <SidebarGroup className="px-3">
           <SidebarMenu className="space-y-1">
@@ -119,7 +119,7 @@ export function AppSidebar() {
                       transition-colors duration-200 w-full h-10
                       ${isActive 
                         ? 'bg-primary text-primary-foreground' 
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        : 'hover:bg-accent text-accent-foreground'
                       }
                     `}
                   >
@@ -127,7 +127,7 @@ export function AppSidebar() {
                       <div className={`transition-colors ${
                         isActive 
                           ? 'text-primary' 
-                          : 'text-gray-500 dark:text-gray-400'
+                          : 'text-foreground'
                       }`}>
                         {item.icon}
                       </div>
@@ -142,7 +142,7 @@ export function AppSidebar() {
 
         {/* Collections Section */}
         <SidebarGroup className="px-3 mt-6">
-          <SidebarGroupLabel className="text-xs font-semibold text-gray-500 dark:text-gray-400 px-3 py-2 mb-2 uppercase tracking-wide">
+          <SidebarGroupLabel className="text-xs font-semibold text-card-foreground px-3 py-2 mb-2 uppercase tracking-wide">
             Collections
           </SidebarGroupLabel>
           <SidebarMenu className="space-y-1">
@@ -158,7 +158,7 @@ export function AppSidebar() {
                       transition-colors duration-200 w-full h-10
                       ${isActive 
                         ? 'bg-primary text-primary' 
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        : 'hover:bg-accent text-accent-foreground'
                       }
                     `}
                   >
@@ -166,7 +166,7 @@ export function AppSidebar() {
                       <div className={`transition-colors ${
                         isActive 
                           ? 'text-primary' 
-                          : 'text-gray-500 dark:text-gray-400'
+                          : 'text-accent-foreground'
                       }`}>
                         {item.icon}
                       </div>
@@ -194,12 +194,12 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="flex-shrink-0 p-3 border-t border-gray-200 dark:border-gray-700">
+      <SidebarFooter className="flex-shrink-0 bg-sidebar p-3 border-t border-border">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton 
               asChild 
-              className="hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 w-full h-10"
+              className="hover:bg-accent transition-colors duration-200 w-full h-10"
             >
               <Link href="/profile" className="flex items-center gap-3 px-3 py-2 w-full h-full">
                 <UserIcon size={20} className="text-gray-500 dark:text-gray-400" />

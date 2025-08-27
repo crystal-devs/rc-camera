@@ -59,22 +59,22 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
   };
 
   return (
-    <div className="h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden">
+    <div className="h-screen flex overflow-hidden">
       <SidebarProvider>
         {/* Sidebar - Fixed width */}
         <div className="hidden md:flex flex-shrink-0">
           <AppSidebar />
         </div>
-        
+
         {/* Main content area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Top Navigation Bar */}
           <div className="flex-shrink-0">
             <TopNavbar title={getPageTitle()} />
           </div>
-          
+
           {/* Content area */}
-          <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-800">
+          <main className="flex-1 overflow-y-auto bg-background">
             <div className="h-full">
               {children}
             </div>

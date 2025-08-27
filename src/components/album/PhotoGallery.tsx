@@ -31,7 +31,6 @@ import { useUploadProgress } from '@/hooks/useUploadProgress';
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
 }
-
 export default function OptimizedPhotoGallery({
   eventId,
   albumId,

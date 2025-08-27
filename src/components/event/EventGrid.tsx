@@ -104,7 +104,7 @@ export const EventGrid = ({ events, onEventClick }: EventGridProps) => {
           </div>
 
           {/* Past Event Indicator */}
-          {!event.isActive && (
+          {!event?.isActive && (
             <div className="absolute top-2 left-2 bg-gray-900/70 text-white text-xs py-1 px-2 rounded-full">
               Past Event
             </div>

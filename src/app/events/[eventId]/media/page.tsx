@@ -44,7 +44,7 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
 
     // Local state
     const [activeTab, setActiveTab] = useState('photos');
-    
+
     // Store methods for cache management
     const { invalidateAlbumsCache } = useEventStore();
 
@@ -73,10 +73,10 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
     // Optimized album update function
     const updateAlbumsList = useCallback((newAlbum: any) => {
         console.log('📁 Updating albums list with new album:', newAlbum.id);
-        
+
         // Invalidate cache to force fresh fetch
         invalidateAlbumsCache(eventId);
-        
+
         // Refresh albums from API
         refreshAlbums();
     }, [eventId, invalidateAlbumsCache, refreshAlbums]);
@@ -141,7 +141,7 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
     }
 
     return (
-        <div className="container mx-auto px-2 py-2 sm:px-4 sm:py-8">
+        <div className="container mx-auto px-2 py-2 sm:px-4 sm:py-8 bg-background">
             {/* Event Header */}
             {/* <EventHeaderDetails event={event} /> */}
 
@@ -174,7 +174,7 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
                 </div> */}
 
                 {/* Tabs Section */}
-                <Tabs
+                {/* <Tabs
                     value={activeTab}
                     onValueChange={setActiveTab}
                     className="w-full"
@@ -214,7 +214,13 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
                             />
                         )}
                     </TabsContent>
-                </Tabs>
+                </Tabs> */}
+
+                <PhotoGallery
+                    eventId={eventId}
+                    albumId={null}
+                    canUpload={true}
+                />
             </div>
         </div>
     );

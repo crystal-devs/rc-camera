@@ -48,13 +48,13 @@ export const SharingTab: React.FC<SharingTabProps> = ({
             {/* Visibility Settings Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column - Info */}
-                <div className="space-y-2">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <Globe className="h-5 w-5 text-blue-600" />
+                <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
+                        <Globe className="h-5 w-5 text-muted-foreground" />
                         Privacy Settings
                     </h3>
-                    <p className="text-sm text-gray-600">
-                        Choose who can access your event and view photos. This setting affects how people can join and what they can see.
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                        Choose who can access your event and view photos.
                     </p>
                 </div>
 
@@ -63,42 +63,42 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                     <RadioGroup
                         value={formData.visibility}
                         onValueChange={(value) => onInputChange('visibility', value)}
-                        className="space-y-4"
+                        className="space-y-3"
                     >
-                        <div className="flex items-start space-x-3 p-4 rounded-lg border hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start space-x-3 p-4 rounded-lg border hover:bg-accent/30 transition-colors">
                             <RadioGroupItem value="anyone_with_link" id="anyone_with_link" className="mt-1" />
-                            <div className="space-y-2 flex-1">
+                            <div className="space-y-1 flex-1">
                                 <Label htmlFor="anyone_with_link" className="text-base font-medium cursor-pointer flex items-center gap-2">
-                                    <Globe className="h-4 w-4 text-gray-600" />
+                                    <Globe className="h-4 w-4 text-muted-foreground" />
                                     Anyone with the link
                                 </Label>
-                                <p className="text-sm text-gray-600">
-                                    Great for parties and public events. Share one link and anyone can join.
+                                <p className="text-sm text-muted-foreground">
+                                    Great for parties and public events.
                                 </p>
                             </div>
                         </div>
 
-                        <div className="flex items-start space-x-3 p-4 rounded-lg border hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start space-x-3 p-4 rounded-lg border hover:bg-accent/30 transition-colors">
                             <RadioGroupItem value="invited_only" id="invited_only" className="mt-1" />
-                            <div className="space-y-2 flex-1">
+                            <div className="space-y-1 flex-1">
                                 <Label htmlFor="invited_only" className="text-base font-medium cursor-pointer flex items-center gap-2">
-                                    <Users className="h-4 w-4 text-gray-600" />
+                                    <Users className="h-4 w-4 text-muted-foreground" />
                                     Only people I invite
                                 </Label>
-                                <p className="text-sm text-gray-600">
-                                    Perfect for weddings and private gatherings. You control who gets access.
+                                <p className="text-sm text-muted-foreground">
+                                    Perfect for weddings and private gatherings.
                                 </p>
                             </div>
                         </div>
 
-                        <div className="flex items-start space-x-3 p-4 rounded-lg border hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start space-x-3 p-4 rounded-lg border hover:bg-accent/30 transition-colors">
                             <RadioGroupItem value="private" id="private" className="mt-1" />
-                            <div className="space-y-2 flex-1">
+                            <div className="space-y-1 flex-1">
                                 <Label htmlFor="private" className="text-base font-medium cursor-pointer flex items-center gap-2">
-                                    <Lock className="h-4 w-4 text-gray-600" />
+                                    <Lock className="h-4 w-4 text-muted-foreground" />
                                     Just me and my team
                                 </Label>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-sm text-muted-foreground">
                                     Completely private. Only you and co-hosts can see everything.
                                 </p>
                             </div>
@@ -111,17 +111,17 @@ export const SharingTab: React.FC<SharingTabProps> = ({
             {(formData.visibility === 'anyone_with_link' || formData.visibility === 'invited_only') && (
                 <>
                     {/* Divider */}
-                    <div className="border-t border-gray-200"></div>
+                    <div className="border-t border-border"></div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         {/* Left Column - Info */}
-                        <div className="space-y-2">
-                            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                                <Share2 className="h-5 w-5 text-purple-600" />
+                        <div className="space-y-3">
+                            <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
+                                <Share2 className="h-5 w-5 text-muted-foreground" />
                                 Share Links
                             </h3>
-                            <p className="text-sm text-gray-600">
-                                Copy these links to share your event with guests. The event link allows joining, while the wall link is for viewing only.
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                                Copy these links to invite guests or share your photo wall.
                             </p>
                         </div>
 
@@ -130,16 +130,16 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                             {/* Event Join Link */}
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between">
-                                    <Label className="text-sm font-medium text-gray-700">Event join link</Label>
+                                    <Label className="text-sm font-medium text-foreground">Event join link</Label>
                                     <Badge variant="secondary" className="text-xs">
-                                        {formData.visibility === 'anyone_with_link' ? 'Public Link' : 'Invite Only'}
+                                        {formData.visibility === 'anyone_with_link' ? 'Public' : 'Private'}
                                     </Badge>
                                 </div>
                                 <div className="flex gap-2">
                                     <Input
                                         value={getShareUrl()}
                                         readOnly
-                                        className="font-mono text-sm bg-gray-50 h-11"
+                                        className="font-mono text-sm bg-muted/50 h-11"
                                     />
                                     <Button
                                         onClick={() => copyToClipboard(getShareUrl(), 'join')}
@@ -148,13 +148,13 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                                         className="px-3 h-11"
                                     >
                                         {copiedLink === 'join' ? (
-                                            <Check className="h-4 w-4 text-green-600" />
+                                            <Check className="h-4 w-4 text-primary" />
                                         ) : (
                                             <Copy className="h-4 w-4" />
                                         )}
                                     </Button>
                                 </div>
-                                <p className="text-xs text-gray-500">
+                                <p className="text-xs text-muted-foreground">
                                     Send this link to guests so they can join and upload photos
                                 </p>
                             </div>
@@ -162,8 +162,8 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                             {/* Wall View Link */}
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between">
-                                    <Label className="text-sm font-medium text-gray-700">Photo wall link</Label>
-                                    <Badge variant="secondary" className="text-xs">
+                                    <Label className="text-sm font-medium text-foreground">Photo wall link</Label>
+                                    <Badge variant="outline" className="text-xs">
                                         View Only
                                     </Badge>
                                 </div>
@@ -171,7 +171,7 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                                     <Input
                                         value={getWallUrl()}
                                         readOnly
-                                        className="font-mono text-sm bg-gray-50 h-11"
+                                        className="font-mono text-sm bg-muted/50 h-11"
                                     />
                                     <Button
                                         onClick={() => copyToClipboard(getWallUrl(), 'wall')}
@@ -180,14 +180,14 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                                         className="px-3 h-11"
                                     >
                                         {copiedLink === 'wall' ? (
-                                            <Check className="h-4 w-4 text-green-600" />
+                                            <Check className="h-4 w-4 text-primary" />
                                         ) : (
                                             <Copy className="h-4 w-4" />
                                         )}
                                     </Button>
                                 </div>
-                                <p className="text-xs text-gray-500">
-                                    Share this link for viewing photos without joining the event
+                                <p className="text-xs text-muted-foreground">
+                                    Share this for viewing photos without joining
                                 </p>
                             </div>
                         </div>
@@ -199,28 +199,28 @@ export const SharingTab: React.FC<SharingTabProps> = ({
             {formData.visibility !== 'private' && (
                 <>
                     {/* Divider */}
-                    <div className="border-t border-gray-200"></div>
+                    <div className="border-t border-border"></div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         {/* Left Column - Info */}
-                        <div className="space-y-2">
-                            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                                <Shield className="h-5 w-5 text-orange-600" />
+                        <div className="space-y-3">
+                            <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
+                                <Shield className="h-5 w-5 text-muted-foreground" />
                                 Additional Security
                             </h3>
-                            <p className="text-sm text-gray-600">
-                                Add password protection to your event for an extra layer of security. Guests will need this password to access your event.
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                                Add password protection for extra security.
                             </p>
                         </div>
 
                         {/* Right Column - Password Settings */}
                         <div className="lg:col-span-2 space-y-6">
-                            <div className="flex items-center justify-between p-4 border rounded-lg bg-white">
-                                <div className="space-y-1">
-                                    <Label className="text-base font-medium text-gray-700">
+                            <div className="flex items-center justify-between p-4 border rounded-lg bg-card">
+                                <div className="space-y-0.5">
+                                    <Label className="text-base font-medium text-foreground">
                                         Password protect this event
                                     </Label>
-                                    <p className="text-sm text-gray-500">
+                                    <p className="text-sm text-muted-foreground">
                                         Require a password for guests to join
                                     </p>
                                 </div>
@@ -238,7 +238,7 @@ export const SharingTab: React.FC<SharingTabProps> = ({
 
                             {formData.share_settings?.password && (
                                 <div className="space-y-2">
-                                    <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+                                    <Label htmlFor="password" className="text-sm font-medium text-foreground">
                                         Event password
                                     </Label>
                                     <Input
@@ -249,8 +249,8 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                                         placeholder="Enter a secure password"
                                         className="h-11"
                                     />
-                                    <p className="text-xs text-gray-500">
-                                        Choose a password that's easy for your guests to remember but secure
+                                    <p className="text-xs text-muted-foreground">
+                                        Choose a password that's easy for guests to remember
                                     </p>
                                 </div>
                             )}

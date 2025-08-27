@@ -19,7 +19,7 @@ import { PermissionsTab } from '@/components/event-settings/PermissionsTab';
 import { useEventSettings } from '@/hooks/useEventSettings';
 import { PhotoWallTab } from '@/components/event-settings/PhotoWallTab';
 
-const OptimizedEventSettingsPage = () => {
+const EventSettingsPage = () => {
   const params = useParams();
   const { eventId } = params;
   const router = useRouter();
@@ -48,7 +48,7 @@ const OptimizedEventSettingsPage = () => {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50/50">
+      <div className="min-h-screen bg-background">
         <div className="max-w-6xl px-4 py-8">
           <div className="space-y-8">
             <div className="flex items-center justify-between">
@@ -97,14 +97,14 @@ const OptimizedEventSettingsPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50">
-      <div className="max-w-6xl px-4 py-8 lg:px-24">
+    <div className="min-h-screen bg-background">
+      <div className="max-w-7xl px-4 py-8 lg:px-24">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">Event Settings</h1>
-              <p className="text-gray-600 mt-1">
+              <h1 className="text-2xl font-semibold text-forground">Event Settings</h1>
+              <p className="text-muted-foreground mt-1">
                 Manage your event details and preferences
               </p>
             </div>
@@ -127,7 +127,7 @@ const OptimizedEventSettingsPage = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 mb-8 bg-white border h-12">
+          <TabsList className="grid w-full grid-cols-5 mb-8 bg-card border h-12">
             <TabsTrigger
               value="basics"
               className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"
@@ -214,4 +214,4 @@ const OptimizedEventSettingsPage = () => {
   );
 };
 
-export default OptimizedEventSettingsPage;
+export default EventSettingsPage;
