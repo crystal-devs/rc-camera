@@ -48,7 +48,7 @@ const EventSettingsPage = () => {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen">
         <div className="max-w-6xl px-4 py-8">
           <div className="space-y-8">
             <div className="flex items-center justify-between">
@@ -97,7 +97,7 @@ const EventSettingsPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen">
       <div className="max-w-7xl px-4 py-8 lg:px-24">
         {/* Header */}
         <div className="mb-8">
@@ -127,7 +127,7 @@ const EventSettingsPage = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 mb-8 bg-card border h-12">
+          <TabsList className="grid w-full grid-cols-5 mb-8 bg-muted border h-12">
             <TabsTrigger
               value="basics"
               className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"

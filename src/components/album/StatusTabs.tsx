@@ -32,13 +32,13 @@ export const StatusTabs = ({
   ] as const;
 
   return (
-    <div className="flex items-center gap-1 bg-card p-1 rounded-lg">
+    <div className="flex items-center gap-1 bg-card p-1 rounded-lg border-1 border-border">
       {tabs.map(({ key, label, icon: Icon, color }) => (
         <button
           key={key}
           onClick={() => onTabChange(key)}
-          className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1 ${activeTab === key
-            ? 'bg-accent text-accent-foreground shadow-sm'
+          className={`px-3 py-1.5 text-sm font-medium rounded-sm transition-colors flex items-center gap-1 ${activeTab === key
+            ? 'bg-accent text-accent-foreground border-1 border-border'
             : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
             }`}
         >

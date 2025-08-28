@@ -49,9 +49,9 @@
   --radius: 0.75rem;
   
   /* Light Theme - Clean neutrals as requested */
-  --background: #f7f7f7;
+  --background: #ffffff;
   --foreground: #1c1c1c;
-  --card: #ffffff;
+  --card: #f7f7f7;
   --card-foreground: #1c1c1c;
   --popover: #ffffff;
   --popover-foreground: #1c1c1c;
@@ -89,11 +89,11 @@
   --chart-5: #ef4444; /* Red */
   
   /* Sidebar - Consistent with main theme */
-  --sidebar: #ffffff;
+  --sidebar: #f7f7f7;
   --sidebar-foreground: #1c1c1c;
   --sidebar-primary: oklch(0.645 0.246 16.439);
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f4f4f5;
+  --sidebar-accent: #fdfdfd;
   --sidebar-accent-foreground: #1c1c1c;
   --sidebar-border: #e4e4e7;
   --sidebar-ring: oklch(0.645 0.246 16.439);

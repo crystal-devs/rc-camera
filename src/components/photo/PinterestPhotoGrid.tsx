@@ -21,12 +21,16 @@ export const PinterestPhotoGrid: React.FC<{
   hasNextPage?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
+  gridSize?: 'small' | 'medium' | 'large';
+  spacing?: 'xs' | 'sm' | 'md' | 'lg';
 }> = ({
   photos,
   onPhotoClick,
   hasNextPage = false,
   isLoadingMore = false,
-  onLoadMore
+  onLoadMore,
+  gridSize = 'medium',
+  spacing = 'sm'
 }) => {
   const [likedPhotos, setLikedPhotos] = useState<Set<string>>(new Set());
   const [containerWidth, setContainerWidth] = useState(0);
@@ -39,20 +43,63 @@ export const PinterestPhotoGrid: React.FC<{
   const loadingTriggerRef = useRef<HTMLDivElement | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  // Responsive column configuration
-  const getColumnConfig = useCallback((width: number) => {
-    if (width < 480) return { columns: 2, gap: 4, padding: 8 };
-    if (width < 768) return { columns: 3, gap: 8, padding: 12 };
-    if (width < 1024) return { columns: 4, gap: 12, padding: 16 };
-    if (width < 1440) return { columns: 3, gap: 8, padding: 12 };
-    return { columns: 6, gap: 20, padding: 24 };
-  }, []);
+  // Responsive grid configuration based on gridSize and spacing
+  const getGridConfig = useCallback((width: number) => {
+    let columns: number;
+
+    switch (gridSize) {
+      case 'large':
+        if (width < 640) columns = 1;
+        else if (width < 768) columns = 2;
+        else columns = 3;
+        break;
+      case 'medium':
+        if (width < 640) columns = 2;
+        else if (width < 768) columns = 3;
+        else columns = 4;
+        break;
+      case 'small':
+        if (width < 640) columns = 3;
+        else if (width < 768) columns = 4;
+        else if (width < 1024) columns = 5;
+        else columns = 6;
+        break;
+      default:
+        columns = 3;
+    }
+
+    let gap: number, padding: number;
+
+    switch (spacing) {
+      case 'xs':
+        gap = 4;
+        padding = 4;
+        break;
+      case 'sm':
+        gap = 8;
+        padding = 8;
+        break;
+      case 'md':
+        gap = 12;
+        padding = 12;
+        break;
+      case 'lg':
+        gap = 16;
+        padding = 16;
+        break;
+      default:
+        gap = 8;
+        padding = 8;
+    }
+
+    return { columns, gap, padding };
+  }, [gridSize, spacing]);
 
   // Pre-calculate expected image heights based on aspect ratios
   const gridItems = useMemo<GridItem[]>(() => {
     if (!containerWidth) return [];
 
-    const config = getColumnConfig(containerWidth);
+    const config = getGridConfig(containerWidth);
     const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
     const columnWidth = Math.floor(availableWidth / config.columns);
 
@@ -77,18 +124,18 @@ export const PinterestPhotoGrid: React.FC<{
         aspectRatio
       };
     });
-  }, [photos, containerWidth, getColumnConfig]);
+  }, [photos, containerWidth, getGridConfig]);
 
   // Handle actual image load and get real dimensions
   const handleImageLoad = useCallback((photoId: string, actualHeight: number) => {
-    setImageHeights(prev => new Map(prev.set(photoId, actualHeight)));
+    setImageHeights(prev => new Map(prev).set(photoId, actualHeight));
   }, []);
 
   // Calculate positions - let images determine their own height
   useEffect(() => {
     if (!containerWidth || gridItems.length === 0) return;
 
-    const config = getColumnConfig(containerWidth);
+    const config = getGridConfig(containerWidth);
     const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
     const columnWidth = Math.floor(availableWidth / config.columns);
     
@@ -115,7 +162,7 @@ export const PinterestPhotoGrid: React.FC<{
 
     setColumnHeights([...heights]);
     setItemPositions(positions);
-  }, [gridItems, containerWidth, getColumnConfig, imageHeights]);
+  }, [gridItems, containerWidth, getGridConfig, imageHeights]);
 
   // Container resize handler
   useEffect(() => {

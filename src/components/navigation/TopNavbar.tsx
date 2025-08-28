@@ -69,9 +69,19 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
     };
 
     return (
-        <div className="w-full border-b border-border bg-sidebar">
+        <div className="w-full bg-sidebar">
             {/* Desktop navigation bar */}
             <div className="hidden md:flex h-16 items-center px-6">
+                {/* Logo Header */}
+                <div className="bg-sidebar w-60">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-primary/10 p-2 rounded-lg">
+                            <CameraIcon size={24} className="text-primary" />
+                        </div>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Rose Click</h2>
+                    </div>
+                </div>
+
                 {/* Left side - Event Selector */}
                 <div className="flex items-center gap-4 flex-1">
                     <EventSelector />
@@ -135,7 +145,7 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
             {/* Mobile navigation - Two rows */}
             <div className="md:hidden">
                 {/* Top row - Logo */}
-                <div className="flex h-14 items-center justify-between px-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex h-14 items-center justify-between px-4 border-b border-border">
                     <div className="flex items-center gap-3">
                         <div className="bg-primary/10 p-2">
                             <CameraIcon size={20} className="text-primary" />

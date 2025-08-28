@@ -129,7 +129,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     limit: 10,
   });
 
-  console.log(photos, 'photosphotosphotosphotos')
   useEffect(() => {
     if (!webSocket.socket) return;
 
@@ -509,7 +508,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Event Header */}
-      {/* <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -597,9 +596,9 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             </div>
           </div>
         </div>
-      </div> */}
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">{renderContent()}</div>
+      <div className="max-w-full mx-auto px-0 py-8">{renderContent()}</div>
 
       {/* Guest Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>

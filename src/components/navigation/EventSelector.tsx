@@ -40,7 +40,8 @@ const getCurrentPageType = (pathname: string): string => {
     if (pathname.includes('/shop')) return 'shop';
     if (pathname.includes('/upload')) return 'upload';
     if (pathname.includes('/wall')) return 'wall';
-    if (pathname.includes('/events/')) return 'photos';
+    if (pathname.includes('/media')) return 'media';
+    if (pathname.includes('/events/')) return 'dashboard';
     return 'dashboard';
 };
 
@@ -111,7 +112,9 @@ export function EventSelector() {
             case 'shop':
                 targetRoute = `/events/${event._id}/shop`;
                 break;
-            case 'photos':
+            case 'media':
+                targetRoute = `/events/${event._id}/media`;
+                break;
             default:
                 targetRoute = `/events/${event._id}`;
                 break;
