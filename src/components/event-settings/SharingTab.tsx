@@ -63,7 +63,6 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                     <RadioGroup
                         value={formData.visibility}
                         onValueChange={(value) => onInputChange('visibility', value)}
-                        className="space-y-3"
                     >
                         <div className="flex items-start space-x-3 p-4 rounded-lg border hover:bg-accent/30 transition-colors">
                             <RadioGroupItem value="anyone_with_link" id="anyone_with_link" className="mt-1" />

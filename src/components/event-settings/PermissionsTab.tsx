@@ -40,7 +40,6 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
                     <RadioGroup
                         value={formData.permissions?.require_approval ? "review_first" : "publish_directly"}
                         onValueChange={(value) => onInputChange('permissions.require_approval', value === "review_first")}
-                        className="space-y-3"
                     >
                         <div className="group relative">
                             <div className="flex items-start space-x-4 p-5 rounded-lg border hover:border-primary/30 hover:bg-accent/50 transition-all duration-200 cursor-pointer">
@@ -217,42 +216,6 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
                             <span className="font-medium text-foreground">💡 Tip:</span> Videos capture emotions beautifully but use more storage. 
                             Choose based on your event type and needs.
                         </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Clean Settings Summary */}
-            <div className="bg-accent/30 rounded-lg p-5 border">
-                <h4 className="text-sm font-medium text-foreground mb-3">
-                    Current Configuration
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                        <span className="text-muted-foreground">Review:</span>
-                        <div className="font-medium text-foreground">
-                            {formData.permissions?.require_approval ? 'Manual' : 'Auto'}
-                        </div>
-                    </div>
-                    <div>
-                        <span className="text-muted-foreground">Upload:</span>
-                        <div className="font-medium text-foreground">
-                            {formData.permissions?.can_upload ? 'Yes' : 'No'}
-                        </div>
-                    </div>
-                    <div>
-                        <span className="text-muted-foreground">Media:</span>
-                        <div className="font-medium text-foreground">
-                            {[
-                                formData.permissions?.allowed_media_types?.images && 'Photos',
-                                formData.permissions?.allowed_media_types?.videos && 'Videos'
-                            ].filter(Boolean).join(' + ') || 'None'}
-                        </div>
-                    </div>
-                    <div>
-                        <span className="text-muted-foreground">Download:</span>
-                        <div className="font-medium text-foreground">
-                            {formData.permissions?.can_download ? 'Yes' : 'No'}
-                        </div>
                     </div>
                 </div>
             </div>

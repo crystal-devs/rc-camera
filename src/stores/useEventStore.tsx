@@ -70,6 +70,24 @@ interface Event {
     showUploaderNames: boolean
     autoAdvance: boolean
     newImageInsertion: 'immediate' | 'after_current' | 'end_of_queue' | 'smart_priority'
+  },
+  styling_config: {
+    cover: {
+      template_id: number
+      type: number
+    }
+    gallery: {
+      layout_id: number
+      grid_spacing: number
+      thumbnail_size: number
+    }
+    theme: {
+      theme_id: number
+      fontset_id: number
+    }
+    navigation: {
+      style_id: number
+    }
   }
   created_at: string
   updated_at: string
@@ -143,7 +161,7 @@ const createDefaultPhotowallSettings = () => ({
 // 🚀 Helper function to ensure event has complete photowall_settings
 const ensurePhotowallSettings = (event: any): Event => {
   if (!event) return event
-  
+
   // If photowall_settings is completely missing, add it
   if (!event.photowall_settings) {
     console.log('Adding missing photowall_settings to event:', event._id)
@@ -156,10 +174,10 @@ const ensurePhotowallSettings = (event: any): Event => {
   // If photowall_settings exists but is incomplete, merge with defaults
   const defaults = createDefaultPhotowallSettings()
   const currentSettings = event.photowall_settings
-  
+
   let needsUpdate = false
   const mergedSettings = { ...defaults }
-  
+
   // Check each property and preserve existing values
   Object.keys(defaults).forEach(key => {
     if (currentSettings.hasOwnProperty(key)) {
@@ -183,7 +201,7 @@ const ensurePhotowallSettings = (event: any): Event => {
 // 🚀 Migration function to handle version changes
 const migrateEventStore = (persistedState: any, version: number) => {
   console.log(`Migrating event store from version ${version} to version 2`)
-  
+
   // Handle migration from any version to version 2
   if (version < 2) {
     // Ensure selectedEvent has proper photowall_settings
@@ -192,7 +210,7 @@ const migrateEventStore = (persistedState: any, version: number) => {
       console.log('Migrated selectedEvent photowall_settings')
     }
   }
-  
+
   return persistedState
 }
 
@@ -219,10 +237,10 @@ const useEventStore = create<EventStore>()(
       // Basic setters
       setSelectedEvent: (event: Event, role = 'participant') => {
         console.log('Setting selected event:', event.title, 'Role:', role)
-        
+
         // Ensure complete photowall_settings
         const eventWithSettings = ensurePhotowallSettings(event)
-        
+
         set({
           selectedEvent: eventWithSettings,
           lastEventId: event._id,
@@ -255,7 +273,7 @@ const useEventStore = create<EventStore>()(
       // 🚀 FIXED: Cache-first event fetching with proper error handling
       getEventFromCacheOrFetch: async (eventId: string, authToken: string): Promise<Event | null> => {
         const { eventsCache, CACHE_DURATION } = get()
-        
+
         // Validate inputs
         if (!eventId || !authToken) {
           console.error('Invalid parameters: eventId or authToken missing')
@@ -277,7 +295,7 @@ const useEventStore = create<EventStore>()(
 
         try {
           const event = await getEventById(eventId, authToken)
-          
+
           // CRITICAL: Always set loading to false
           set({ isLoadingEvent: false })
 
@@ -316,7 +334,7 @@ const useEventStore = create<EventStore>()(
       // 🚀 FIXED: Cache-first albums fetching with proper error handling
       getAlbumsFromCacheOrFetch: async (eventId: string, authToken: string): Promise<any[]> => {
         const { albumsCache, CACHE_DURATION } = get()
-        
+
         // Validate inputs
         if (!eventId || !authToken) {
           console.error('Invalid parameters: eventId or authToken missing for albums')
@@ -339,7 +357,7 @@ const useEventStore = create<EventStore>()(
 
         try {
           const albums = await fetchEventAlbums(eventId, authToken)
-          
+
           // CRITICAL: Always set loading to false
           set({ isLoadingAlbums: false })
 
@@ -389,7 +407,7 @@ const useEventStore = create<EventStore>()(
           const updatedEvent = { ...cached.data, ...updates } as Event
           // Ensure complete photowall_settings after update
           const eventWithSettings = ensurePhotowallSettings(updatedEvent)
-          
+
           const newCache = new Map(eventsCache)
           newCache.set(eventId, { data: eventWithSettings, timestamp: Date.now() })
           set({ eventsCache: newCache })
@@ -504,7 +522,7 @@ const useEventStore = create<EventStore>()(
       onRehydrateStorage: () => (state) => {
         if (state?.selectedEvent) {
           console.log('Rehydrated event data:', state.selectedEvent.title)
-          
+
           // Double-check photowall_settings after rehydration
           if (state.selectedEvent) {
             state.selectedEvent = ensurePhotowallSettings(state.selectedEvent)

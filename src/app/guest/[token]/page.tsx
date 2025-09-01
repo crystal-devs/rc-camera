@@ -1,4 +1,4 @@
-// app/guest/[token]/page.tsx - Updated with Bulk Download Button
+// app/guest/[token]/page.tsx - Updated with Dynamic Styling
 'use client';
 
 import React, { useState, useCallback, use, useEffect, memo } from 'react';
@@ -18,6 +18,9 @@ import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
 import { FullscreenPhotoViewer } from '@/components/album/FullscreenPhotoViewer';
 import { BulkDownloadButton } from './BulkDownloadButton';
+
+import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
+import { generateEventCSS } from '@/constants/styling.constant';
 
 // Create a query client
 const queryClient = new QueryClient({
@@ -110,8 +113,20 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     }
   }, [shareToken]);
 
+  // Apply dynamic styling to the document when eventDetails change
+  useEffect(() => {
+    if (eventDetails && document.documentElement) {
+      const cssVars = generateEventCSS(eventDetails);
+      
+      Object.entries(cssVars).forEach(([key, value]) => {
+        document.documentElement.style.setProperty(key, value);
+      });
+    }
+  }, [eventDetails]);
+
   // WebSocket connection - Guest mode
-  const webSocket = useSimpleWebSocket(shareToken, shareToken, 'guest');
+  const webSocket = {};
+  // const webSocket = useSimpleWebSocket(shareToken, shareToken, 'guest');
 
   const {
     photos,
@@ -143,7 +158,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         lastActivityTime: Date.now()
       }));
 
-      // Reset the uploading state after a delay
       setTimeout(() => {
         setRealtimeActivity(prev => ({
           ...prev,
@@ -152,7 +166,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       }, 3000);
     };
 
-    // Handle processing completion (better quality available)
     const handleProcessingComplete = (payload: any) => {
       console.log('✨ Processing completed in guest page:', payload);
 
@@ -162,7 +175,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         lastActivityTime: Date.now()
       }));
 
-      // Reset the processing complete state after a delay
       setTimeout(() => {
         setRealtimeActivity(prev => ({
           ...prev,
@@ -171,13 +183,10 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       }, 2000);
     };
 
-    // Handle event stats update
     const handleEventStatsUpdate = (payload: any) => {
       console.log('📊 Event stats updated in guest page:', payload);
-      // Could be used to update photo count display
     };
 
-    // Handle guest media removed (UI state only - WebSocket hook handles data)
     const handleGuestMediaRemovedUI = (payload: any) => {
       console.log('🗑️ Media removed in guest page (UI update):', payload);
 
@@ -188,7 +197,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         lastActivityTime: Date.now()
       }));
 
-      // Reset the removal state after a delay
       setTimeout(() => {
         setRealtimeActivity(prev => ({
           ...prev,
@@ -197,14 +205,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       }, 3000);
     };
 
-    // Add event listeners
     webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
     webSocket.socket.on('media_processing_complete', handleProcessingComplete);
     webSocket.socket.on('event_stats_update', handleEventStatsUpdate);
     webSocket.socket.on('guest_media_removed', handleGuestMediaRemovedUI);
     webSocket.socket.on('media_removed', handleGuestMediaRemovedUI);
 
-    // Cleanup
     return () => {
       webSocket.socket?.off('new_media_uploaded', handleNewMediaUploaded);
       webSocket.socket?.off('media_processing_complete', handleProcessingComplete);
@@ -214,13 +220,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     };
   }, [webSocket.socket]);
 
-  // Optimize room stats handler with useCallback
   const handleRoomStats = useCallback((payload: any) => {
     console.log('📊 Room stats update:', payload);
     setRoomStats(payload);
   }, []);
 
-  // Clean up the WebSocket effect
   useEffect(() => {
     if (!webSocket.socket) return;
 
@@ -270,12 +274,9 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               : `${summary.success} photo(s) uploaded, ${summary.failed} failed`
           );
 
-          // Clear form and refresh media
           setSelectedFiles([]);
           setGuestInfo({ name: '', email: '' });
           setShowUploadDialog(false);
-
-          // Refresh the photo gallery
           refresh();
         } else {
           toast.error('All uploads failed. Please try again.');
@@ -399,7 +400,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     [selectedPhotoIndex, photos],
   );
 
-  // Create a separate component for room stats
   const RoomStatsDisplay = memo(({ roomStats }: { roomStats: any }) => {
     if (!roomStats.guestCount) return null;
 
@@ -489,12 +489,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             </div>
           )}
 
+        {/* Use the integrated pinterest grid */}
         <PinterestPhotoGrid
           photos={photos}
           onPhotoClick={handlePhotoClick}
           hasNextPage={hasNextPage}
           isLoadingMore={isLoadingMore}
           onLoadMore={loadMore}
+          eventStyling={eventDetails?.styling_config}
         />
       </div>
     );
@@ -505,100 +507,59 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     notFound();
   }
 
+  console.log(eventDetails, 'eventDetailseventDetails')
+  
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Event Header */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {eventDetails?.title || 'Event Photos'}
-              </h1>
-              <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
-                {eventDetails?.start_date && (
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    {new Date(eventDetails.start_date).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
-                  </span>
-                )}
-                {eventDetails?.location?.name && (
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-4 h-4" />
-                    {eventDetails.location.name}
-                  </span>
-                )}
-                <span className="flex items-center gap-1">
-                  <Users className="w-4 h-4" />
-                  {photos.length} of {totalPhotos || '?'} photos
-                  {realtimeActivity.newMediaCount > 0 && (
-                    <span className="ml-1 text-green-600">
-                      (+{realtimeActivity.newMediaCount} new)
-                    </span>
-                  )}
-                </span>
-                {isLoadingMore && (
-                  <span className="flex items-center gap-1 text-blue-600">
-                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600" />
-                    Loading more...
-                  </span>
-                )}
-                {hasNextPage && !isLoadingMore && <span className="text-green-600">• More available</span>}
-                {!hasNextPage && photos.length > 0 && <span className="text-gray-400">• All loaded</span>}
-              </div>
-              <RealtimeActivityIndicator />
-            </div>
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
+      {/* Dynamic Event Cover */}
+      <DynamicEventCover
+        eventDetails={eventDetails}
+        photoCount={photos.length}
+        totalPhotos={totalPhotos}
+      >
+        {/* Action buttons in the cover */}
+        <div className="flex items-center gap-4 mt-6">
+          <ConnectionStatus />
+          <RoomStatsDisplay roomStats={roomStats} />
 
-            <div className="flex items-center gap-3">
-              <ConnectionStatus />
-              <RoomStatsDisplay roomStats={roomStats} />
+          {eventDetails?.permissions?.can_upload && (
+            <Button
+              onClick={() => setShowUploadDialog(true)}
+              className="text-white flex items-center gap-2"
+              style={{ backgroundColor: 'var(--color-accent, #007bff)' }}
+            >
+              <Upload className="w-4 h-4" />
+              Upload Photos
+            </Button>
+          )}
 
-              {eventDetails?.permissions?.can_upload && (
-                <Button
-                  onClick={() => setShowUploadDialog(true)}
-                  className="text-white flex items-center gap-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload Photos
-                </Button>
-              )}
+          {eventDetails?.permissions?.can_download && (
+            <BulkDownloadButton
+              shareToken={shareToken}
+              eventTitle={eventDetails?.title}
+              totalPhotos={totalPhotos}
+              authToken={auth}
+              guestId={`guest_${Date.now()}`}
+              guestName={guestInfo.name}
+              guestEmail={guestInfo.email}
+              disabled={isInitialLoading || photos.length === 0}
+            />
+          )}
 
-              {eventDetails?.permissions?.can_download && (
-                <BulkDownloadButton
-                  shareToken={shareToken}
-                  eventTitle={eventDetails?.title}
-                  totalPhotos={totalPhotos}
-                  authToken={auth}
-                  guestId={`guest_${Date.now()}`}
-                  guestName={guestInfo.name}
-                  guestEmail={guestInfo.email}
-                  disabled={isInitialLoading || photos.length === 0}
-                />
-              )}
-
-              <button
-                onClick={refresh}
-                disabled={isInitialLoading || isLoadingMore}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Refresh
-              </button>
-
-              {process.env.NODE_ENV === 'development' && webSocket.isAuthenticated && webSocket.user && (
-                <Badge variant="outline" className="text-xs">
-                  {webSocket.user.type}: {webSocket.user.name}
-                </Badge>
-              )}
-            </div>
-          </div>
+          <button
+            onClick={refresh}
+            disabled={isInitialLoading || isLoadingMore}
+            className="px-4 py-2 bg-white/20 text-white rounded hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors backdrop-blur-sm"
+          >
+            Refresh
+          </button>
         </div>
-      </div>
+      </DynamicEventCover>
 
-      <div className="max-w-full mx-auto px-0 py-8">{renderContent()}</div>
+      {/* Photo Gallery Section */}
+      <div className="max-w-full mx-auto px-0 py-8">
+        {renderContent()}
+      </div>
 
       {/* Guest Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
@@ -725,6 +686,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           <Button
             onClick={() => setShowUploadDialog(true)}
             className="text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
+            style={{ backgroundColor: 'var(--color-accent, #007bff)' }}
             title="Upload Photos"
           >
             <Plus className="w-6 h-6" />
@@ -745,15 +707,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             takenBy: (photo as any).takenBy ?? '',
             imageUrl: (photo as any).imageUrl ?? photo.src ?? '',
           }))}
-          // userPermissions={userPermissions}
           onClose={() => setPhotoViewerOpen(false)}
           onPrev={() => navigatePhoto('prev')}
           onNext={() => navigatePhoto('next')}
           setPhotoInfoOpen={(open) => {
-            // Handle photo info dialog
             console.log('Photo info:', open);
           }}
-          // deletePhoto={handleDelete}
           downloadPhoto={() => {
             console.log('Downloading photo:', selectedPhoto);
           }}
@@ -764,7 +723,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 }
 
 export default function EventPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = use(params); // Resolve the token from params
+  const { token } = use(params);
 
   return (
     <QueryClientProvider client={queryClient}>

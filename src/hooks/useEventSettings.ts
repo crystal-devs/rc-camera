@@ -42,6 +42,24 @@ interface EventFormData {
     autoAdvance: boolean
     newImageInsertion: 'immediate' | 'after_current' | 'end_of_queue' | 'smart_priority'
   }
+  styling_config: {
+    cover: {
+      template_id: number
+      type: number
+    }
+    gallery: {
+      layout_id: number
+      grid_spacing: number
+      thumbnail_size: number
+    }
+    theme: {
+      theme_id: number
+      fontset_id: number
+    }
+    navigation: {
+      style_id: number
+    }
+  }
 }
 
 // Helper function to convert Event to FormData
@@ -80,6 +98,24 @@ const convertEventToFormData = (event: Event): EventFormData => {
       showUploaderNames: event.photowall_settings?.showUploaderNames ?? false,
       autoAdvance: event.photowall_settings?.autoAdvance ?? true,
       newImageInsertion: event.photowall_settings?.newImageInsertion || 'after_current'
+    },
+    styling_config: {
+      cover: {
+        template_id: event.styling_config?.cover?.template_id ?? 0,
+        type: event.styling_config?.cover?.type ?? 0
+      },
+      gallery: {
+        layout_id: event.styling_config?.gallery?.layout_id ?? 1,
+        grid_spacing: event.styling_config?.gallery?.grid_spacing ?? 0,
+        thumbnail_size: event.styling_config?.gallery?.thumbnail_size ?? 1
+      },
+      theme: {
+        theme_id: event.styling_config?.theme?.theme_id ?? 8,
+        fontset_id: event.styling_config?.theme?.fontset_id ?? 0
+      },
+      navigation: {
+        style_id: event.styling_config?.navigation?.style_id ?? 0
+      }
     }
   }
 }
@@ -100,8 +136,8 @@ const prepareSubmitData = (formData: EventFormData) => {
     visibility: formData.visibility,
     permissions: formData.permissions,
     share_settings: formData.share_settings,
-    photowall_settings: formData.photowall_settings
-
+    photowall_settings: formData.photowall_settings,
+    styling_config: formData.styling_config
   }
 }
 
@@ -174,7 +210,7 @@ export const useEventSettings = (eventId: string) => {
     return JSON.stringify(formData) !== JSON.stringify(originalData)
   }, [formData, originalData])
 
-  // Handle input changes
+  // Handle input changes with deep nested support
   const handleInputChange = useCallback((field: string, value: any) => {
     if (!formData) return
 

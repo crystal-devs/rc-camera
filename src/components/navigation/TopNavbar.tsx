@@ -25,6 +25,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { EventSelector } from './EventSelector';
+import { useStore } from '@/lib/store';
+import { toast } from 'sonner';
 
 interface TopNavbarProps {
     title?: string;
@@ -46,11 +48,9 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
     }, []);
 
     const handleLogout = () => {
-        // Clear auth tokens and user data
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('user');
-
-        // Redirect to login
+        const { logout } = useStore.getState();
+        logout();
+        toast.success('Logged out successfully');
         router.push('/login');
     };
 

@@ -1,8 +1,9 @@
-// components/photo/PinterestPhotoGrid.tsx - Fixed Aspect Ratio Version
+// components/photo/PinterestPhotoGrid.tsx - Integrated with Styling Constants
 import { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { PinterestPhotoCard } from "./PinterestPhotoCard";
 import { TransformedPhoto } from "@/types/events";
 import Skeleton from "./skeleton/skeleton";
+import { STYLING_CONSTANTS, getStylingConfig } from '@/constants/styling.constant';
 
 interface GridItem extends TransformedPhoto {
   calculatedHeight: number;
@@ -21,16 +22,30 @@ export const PinterestPhotoGrid: React.FC<{
   hasNextPage?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
+  // Legacy props - will be converted from styling config
   gridSize?: 'small' | 'medium' | 'large';
   spacing?: 'xs' | 'sm' | 'md' | 'lg';
+  // New styling config prop
+  eventStyling?: {
+    gallery?: {
+      layout_id: number;
+      grid_spacing: number;
+      thumbnail_size: number;
+    };
+    theme?: {
+      theme_id: number;
+      fontset_id: number;
+    };
+  };
 }> = ({
   photos,
   onPhotoClick,
   hasNextPage = false,
   isLoadingMore = false,
   onLoadMore,
-  gridSize = 'medium',
-  spacing = 'sm'
+  gridSize = 'medium', // fallback for legacy usage
+  spacing = 'sm', // fallback for legacy usage
+  eventStyling
 }) => {
   const [likedPhotos, setLikedPhotos] = useState<Set<string>>(new Set());
   const [containerWidth, setContainerWidth] = useState(0);
@@ -43,8 +58,52 @@ export const PinterestPhotoGrid: React.FC<{
   const loadingTriggerRef = useRef<HTMLDivElement | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  // Responsive grid configuration based on gridSize and spacing
-  const getGridConfig = useCallback((width: number) => {
+  // Get styling configuration from constants
+  const stylingConfig = useMemo(() => {
+    if (eventStyling) {
+      return getStylingConfig({ styling_config: eventStyling });
+    }
+    return null;
+  }, [eventStyling]);
+
+  // Convert styling config to grid parameters
+  const getGridConfigFromStyling = useCallback((width: number) => {
+    if (!stylingConfig) {
+      // Fallback to legacy gridSize/spacing logic
+      return getLegacyGridConfig(width);
+    }
+
+    // Get values from styling constants
+    const thumbnailSizeConfig = stylingConfig.thumbnailSize;
+    const spacingConfig = stylingConfig.gridSpacing;
+    const layoutConfig = stylingConfig.galleryLayout;
+
+    // Calculate columns based on thumbnail size and container width
+    const thumbnailWidth = thumbnailSizeConfig.width;
+    const gap = parseInt(spacingConfig.value.replace('px', ''));
+    const padding = gap;
+
+    // Calculate optimal columns based on available width
+    const availableWidth = width - (padding * 2);
+    let columns = Math.floor((availableWidth + gap) / (thumbnailWidth + gap));
+    
+    // Ensure minimum 1 column and reasonable maximums
+    columns = Math.max(1, Math.min(columns, 6));
+
+    // Responsive adjustments based on layout
+    if (layoutConfig.responsive) {
+      if (width < 640) { // mobile
+        columns = Math.min(columns, layoutConfig.responsive.mobile?.columnCount || 2);
+      } else if (width < 768) { // tablet
+        columns = Math.min(columns, layoutConfig.responsive.tablet?.columnCount || 3);
+      }
+    }
+
+    return { columns, gap, padding };
+  }, [stylingConfig]);
+
+  // Legacy grid configuration (fallback)
+  const getLegacyGridConfig = useCallback((width: number) => {
     let columns: number;
 
     switch (gridSize) {
@@ -94,6 +153,11 @@ export const PinterestPhotoGrid: React.FC<{
 
     return { columns, gap, padding };
   }, [gridSize, spacing]);
+
+  // Main grid configuration selector
+  const getGridConfig = useCallback((width: number) => {
+    return getGridConfigFromStyling(width);
+  }, [getGridConfigFromStyling]);
 
   // Pre-calculate expected image heights based on aspect ratios
   const gridItems = useMemo<GridItem[]>(() => {
@@ -223,6 +287,18 @@ export const PinterestPhotoGrid: React.FC<{
     });
   }, []);
 
+  // Get container styles based on theme
+  const getContainerStyles = useMemo(() => {
+    if (stylingConfig?.theme) {
+      return {
+        backgroundColor: stylingConfig.theme.colors.background,
+        color: stylingConfig.theme.colors.text,
+        fontFamily: stylingConfig.fontset.fonts.primary
+      };
+    }
+    return {};
+  }, [stylingConfig]);
+
   const containerHeight = Math.max(...columnHeights, 300);
 
   if (photos.length === 0 && (isLoadingMore || hasNextPage)) {
@@ -230,7 +306,7 @@ export const PinterestPhotoGrid: React.FC<{
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={getContainerStyles}>
       <div 
         ref={containerRef}
         className="relative w-full"
@@ -248,7 +324,6 @@ export const PinterestPhotoGrid: React.FC<{
                 left: position.x,
                 top: position.y,
                 width: position.width,
-                // No height set - let image determine natural height!
               }}
             >
               <PinterestPhotoCard
@@ -278,11 +353,34 @@ export const PinterestPhotoGrid: React.FC<{
 
       {!hasNextPage && photos.length > 0 && (
         <div className="text-center py-8">
-          <div className="text-gray-400 text-sm">
+          <div 
+            className="text-sm"
+            style={{ 
+              color: stylingConfig?.theme?.colors?.textSecondary || '#6c757d' 
+            }}
+          >
             • All {photos.length} photos loaded •
           </div>
         </div>
       )}
+
+      {/* Apply CSS variables from styling config */}
+      <style jsx>{`
+        .space-y-4 {
+          ${stylingConfig?.gridSpacing?.css ? 
+            Object.entries(stylingConfig.gridSpacing.css)
+              .map(([key, value]) => `${key}: ${value};`)
+              .join(' ') 
+            : ''
+          }
+          ${stylingConfig?.thumbnailSize?.css ? 
+            Object.entries(stylingConfig.thumbnailSize.css)
+              .map(([key, value]) => `${key}: ${value};`)
+              .join(' ') 
+            : ''
+          }
+        }
+      `}</style>
     </div>
   );
 };

@@ -36,6 +36,12 @@ const getNavItems = (selectedEventId: string | null) => {
             requiresEvent: true,
         },
         {
+            icon: <ImageIcon size={20} />,
+            label: 'Guests',
+            href: `${baseRoute}/guests`,
+            requiresEvent: true,
+        },
+        {
             icon: <Settings2Icon size={20} />,
             label: 'Event Settings',
             href: `${baseRoute}/settings`,

@@ -24,11 +24,14 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import useEventStore from '@/stores/useEventStore';
+import { useStore } from '@/lib/store';
 
 export default function EventDashboardPage() {
     const params = useParams();
     const router = useRouter();
     const eventId = params.eventId as string;
+    const userData = useStore(state => state.userData);
+      
 
     const {
         selectedEvent,
@@ -159,7 +162,7 @@ export default function EventDashboardPage() {
                 <div className="flex items-center justify-between mb-4">
                     <div>
                         <h1 className="text-2xl font-semibold text-gray-900 mb-2">
-                            Welcome, {selectedEvent.created_by}! 👋
+                            Welcome, {userData?.name}! 👋
                         </h1>
                         <p className="text-gray-600">
                             This is your dashboard, where you can access your album and photo wall.
