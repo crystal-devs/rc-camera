@@ -1,8 +1,11 @@
-// constants/styling.ts - Fixed with proper TypeScript types
+// constants/styling.ts - Consolidated styling constants
 interface CoverTemplate {
   name: string;
   description: string;
   layout: string;
+  hasImage: boolean;
+  height: string;
+  textPosition?: string;
   style: {
     objectFit: string;
     objectPosition: string;
@@ -27,6 +30,7 @@ interface CoverType {
 interface GalleryLayout {
   name: string;
   description: string;
+  icon: string;
   css: Record<string, string>;
   itemStyle: Record<string, string>;
   responsive?: {
@@ -48,6 +52,7 @@ interface ThumbnailSize {
   description: string;
   width: number;
   height: number;
+  size: string;
   css: {
     "--thumbnail-size": string;
     "--thumbnail-width": string;
@@ -89,6 +94,18 @@ interface FontSet {
   };
 }
 
+interface CornerRadius {
+  name: string;
+  value: string;
+  css: { "--border-radius": string };
+}
+
+interface Animation {
+  name: string;
+  description: string;
+  css: Record<string, string>;
+}
+
 interface NavigationStyle {
   name: string;
   description: string;
@@ -109,53 +126,36 @@ interface StylingConstants {
   thumbnailSizes: Record<number, ThumbnailSize>;
   themes: Record<number, Theme>;
   fontsets: Record<number, FontSet>;
+  cornerRadius: Record<number, CornerRadius>;
+  animations: Record<number, Animation>;
   navigationStyles: Record<number, NavigationStyle>;
   languages: Record<string, Language>;
 }
 
 export const STYLING_CONSTANTS: StylingConstants = {
-  // Cover Templates
+  // Cover Templates - Consolidated with heights and layouts
   coverTemplates: {
     0: {
-      name: "Classic Full",
-      description: "Full-width cover with centered overlay text",
-      layout: "full-center",
+      name: "None",
+      description: "No cover section, start directly with gallery",
+      layout: "none",
+      hasImage: false,
+      height: "0px",
       style: {
         objectFit: "cover",
         objectPosition: "center",
-        overlay: { opacity: 0.4, color: "rgba(0, 0, 0, 0.4)" },
+        overlay: { opacity: 0, color: "transparent" },
         textAlign: "center",
         contentPosition: "center"
       }
     },
     1: {
-      name: "Split Left",
-      description: "Image on left, content on right",
-      layout: "split-left",
-      style: {
-        objectFit: "cover",
-        objectPosition: "center",
-        overlay: { opacity: 0, color: "transparent" },
-        textAlign: "left",
-        contentPosition: "right"
-      }
-    },
-    2: {
-      name: "Split Right",
-      description: "Content on left, image on right",
-      layout: "split-right",
-      style: {
-        objectFit: "cover",
-        objectPosition: "center",
-        overlay: { opacity: 0, color: "transparent" },
-        textAlign: "left",
-        contentPosition: "left"
-      }
-    },
-    3: {
-      name: "Overlay Dark",
-      description: "Full image with dark text overlay",
-      layout: "overlay-dark",
+      name: "Center Full Screen",
+      description: "Centered overlay text (full viewport height)",
+      layout: "fullscreen-center",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "center",
       style: {
         objectFit: "cover",
         objectPosition: "center",
@@ -164,33 +164,69 @@ export const STYLING_CONSTANTS: StylingConstants = {
         contentPosition: "center"
       }
     },
-    4: {
-      name: "Overlay Light",
-      description: "Full image with light text overlay",
-      layout: "overlay-light",
+    2: {
+      name: "Left Full Screen",
+      description: "Left-aligned text (full viewport height)",
+      layout: "fullscreen-left",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "left",
       style: {
         objectFit: "cover",
         objectPosition: "center",
-        overlay: { opacity: 0.3, color: "rgba(255, 255, 255, 0.3)" },
+        overlay: { opacity: 0.5, color: "rgba(0, 0, 0, 0.5)" },
+        textAlign: "left",
+        contentPosition: "left"
+      }
+    },
+    3: {
+      name: "Right Full Screen",
+      description: "Right-aligned text (full viewport height)",
+      layout: "fullscreen-right",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "right",
+      style: {
+        objectFit: "cover",
+        objectPosition: "center",
+        overlay: { opacity: 0.5, color: "rgba(0, 0, 0, 0.5)" },
+        textAlign: "right",
+        contentPosition: "right"
+      }
+    },
+    4: {
+      name: "Center Hero",
+      description: "Centered text with hero height (60vh)",
+      layout: "fullscreen-center",
+      hasImage: true,
+      height: "60vh",
+      textPosition: "center",
+      style: {
+        objectFit: "cover",
+        objectPosition: "center",
+        overlay: { opacity: 0.4, color: "rgba(0, 0, 0, 0.4)" },
         textAlign: "center",
         contentPosition: "center"
       }
     },
     5: {
-      name: "Card Style",
-      description: "Contained card with image and text",
-      layout: "card",
+      name: "Split Hero Left",
+      description: "Split layout with hero height (60vh)",
+      layout: "split-left",
+      hasImage: true,
+      height: "60vh",
+      textPosition: "right",
       style: {
         objectFit: "cover",
         objectPosition: "center",
-        overlay: { opacity: 0, color: "transparent" },
-        textAlign: "center",
-        contentPosition: "center"
+        overlay: { opacity: 0.3, color: "rgba(0, 0, 0, 0.3)" },
+        textAlign: "left",
+        contentPosition: "right"
       }
     }
   },
 
-  // Cover Types
+  // Cover Types (keeping for backward compatibility)
   coverTypes: {
     0: {
       name: "Standard",
@@ -246,6 +282,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
     0: {
       name: "Grid",
       description: "Equal sized grid layout",
+      icon: "⬜",
       css: {
         display: "grid",
         gridTemplateColumns: "repeat(auto-fill, minmax(var(--thumbnail-size), 1fr))",
@@ -254,7 +291,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
       },
       itemStyle: {
         aspectRatio: "1/1",
-        borderRadius: "8px",
+        borderRadius: "var(--border-radius)",
         overflow: "hidden"
       },
       responsive: {
@@ -266,6 +303,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
     1: {
       name: "Masonry",
       description: "Pinterest-style varying heights",
+      icon: "🧱",
       css: {
         columnCount: "auto",
         columnWidth: "var(--thumbnail-size)",
@@ -274,7 +312,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
       },
       itemStyle: {
         marginBottom: "var(--grid-spacing)",
-        borderRadius: "8px",
+        borderRadius: "var(--border-radius)",
         overflow: "hidden",
         breakInside: "avoid",
         display: "inline-block",
@@ -285,54 +323,6 @@ export const STYLING_CONSTANTS: StylingConstants = {
         tablet: { columnCount: 3 },
         desktop: { columnCount: "auto" }
       }
-    },
-    2: {
-      name: "Justified",
-      description: "Justified rows maintaining aspect ratios",
-      css: {
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "var(--grid-spacing)",
-        padding: "var(--grid-spacing)",
-        justifyContent: "space-between"
-      },
-      itemStyle: {
-        height: "200px",
-        flexGrow: "1",
-        borderRadius: "6px",
-        overflow: "hidden",
-        minWidth: "100px",
-        maxWidth: "400px"
-      },
-      responsive: {
-        mobile: { height: "150px" },
-        tablet: { height: "180px" },
-        desktop: { height: "200px" }
-      }
-    },
-    3: {
-      name: "Horizontal",
-      description: "Single row horizontal scrolling",
-      css: {
-        display: "flex",
-        gap: "var(--grid-spacing)",
-        padding: "var(--grid-spacing)",
-        overflowX: "auto",
-        scrollSnapType: "x mandatory"
-      },
-      itemStyle: {
-        height: "var(--thumbnail-size)",
-        minWidth: "var(--thumbnail-size)",
-        borderRadius: "8px",
-        overflow: "hidden",
-        scrollSnapAlign: "start",
-        flexShrink: "0"
-      },
-      responsive: {
-        mobile: { height: "120px", minWidth: "120px" },
-        tablet: { height: "160px", minWidth: "160px" },
-        desktop: { height: "var(--thumbnail-size)", minWidth: "var(--thumbnail-size)" }
-      }
     }
   },
 
@@ -340,27 +330,27 @@ export const STYLING_CONSTANTS: StylingConstants = {
   gridSpacing: {
     0: {
       name: "Tight",
-      description: "Minimal spacing (8px)",
-      value: "8px",
-      css: { "--grid-spacing": "8px" }
+      description: "Minimal spacing (4px)",
+      value: "4px",
+      css: { "--grid-spacing": "4px" }
     },
     1: {
       name: "Normal",
-      description: "Standard spacing (16px)",
-      value: "16px",
-      css: { "--grid-spacing": "16px" }
+      description: "Standard spacing (8px)",
+      value: "8px",
+      css: { "--grid-spacing": "8px" }
     },
     2: {
       name: "Loose",
-      description: "Generous spacing (24px)",
-      value: "24px",
-      css: { "--grid-spacing": "24px" }
+      description: "Generous spacing (16px)",
+      value: "16px",
+      css: { "--grid-spacing": "16px" }
     },
     3: {
       name: "Extra Loose",
-      description: "Maximum spacing (32px)",
-      value: "32px",
-      css: { "--grid-spacing": "32px" }
+      description: "Maximum spacing (24px)",
+      value: "24px",
+      css: { "--grid-spacing": "24px" }
     }
   },
 
@@ -368,9 +358,10 @@ export const STYLING_CONSTANTS: StylingConstants = {
   thumbnailSizes: {
     0: {
       name: "Small",
-      description: "Compact thumbnails (180px)",
+      description: "Compact (180px)",
       width: 180,
       height: 180,
+      size: "180px",
       css: {
         "--thumbnail-size": "180px",
         "--thumbnail-width": "180px",
@@ -379,9 +370,10 @@ export const STYLING_CONSTANTS: StylingConstants = {
     },
     1: {
       name: "Medium",
-      description: "Standard thumbnails (250px)",
+      description: "Standard (250px)",
       width: 250,
       height: 250,
+      size: "250px",
       css: {
         "--thumbnail-size": "250px",
         "--thumbnail-width": "250px",
@@ -390,29 +382,19 @@ export const STYLING_CONSTANTS: StylingConstants = {
     },
     2: {
       name: "Large",
-      description: "Large thumbnails (320px)",
+      description: "Large (320px)",
       width: 320,
       height: 320,
+      size: "320px",
       css: {
         "--thumbnail-size": "320px",
         "--thumbnail-width": "320px",
         "--thumbnail-height": "320px"
       }
-    },
-    3: {
-      name: "Extra Large",
-      description: "Maximum thumbnails (400px)",
-      width: 400,
-      height: 400,
-      css: {
-        "--thumbnail-size": "400px",
-        "--thumbnail-width": "400px",
-        "--thumbnail-height": "400px"
-      }
     }
   },
 
-  // Themes
+  // Themes - Expanded with more options
   themes: {
     0: {
       name: "Clean Light",
@@ -476,7 +458,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
         secondary: "#3282b8",
         background: "#f0f8ff",
         surface: "#ffffff",
-        accent: "#bbe1fa",
+        accent: "#3282b8",
         text: "#0f4c75",
         textSecondary: "#5a7a95",
         border: "#d1e7ff",
@@ -489,7 +471,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
         "--color-secondary": "#3282b8",
         "--color-background": "#f0f8ff",
         "--color-surface": "#ffffff",
-        "--color-accent": "#bbe1fa",
+        "--color-accent": "#3282b8",
         "--color-text": "#0f4c75",
         "--color-text-secondary": "#5a7a95",
         "--color-border": "#d1e7ff"
@@ -503,7 +485,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
         secondary: "#4caf50",
         background: "#f1f8e9",
         surface: "#ffffff",
-        accent: "#81c784",
+        accent: "#4caf50",
         text: "#1b5e20",
         textSecondary: "#558b2f",
         border: "#c8e6c9",
@@ -516,37 +498,118 @@ export const STYLING_CONSTANTS: StylingConstants = {
         "--color-secondary": "#4caf50",
         "--color-background": "#f1f8e9",
         "--color-surface": "#ffffff",
-        "--color-accent": "#81c784",
+        "--color-accent": "#4caf50",
         "--color-text": "#1b5e20",
         "--color-text-secondary": "#558b2f",
         "--color-border": "#c8e6c9"
       }
     },
-    8: {
-      name: "System Default",
-      description: "Platform default styling",
+    4: {
+      name: "Sunset Orange",
+      description: "Warm and vibrant",
       colors: {
-        primary: "#007bff",
-        secondary: "#6c757d",
-        background: "#f8f9fa",
+        primary: "#e65100",
+        secondary: "#ff9800",
+        background: "#fff3e0",
         surface: "#ffffff",
-        accent: "#17a2b8",
-        text: "#212529",
-        textSecondary: "#6c757d",
-        border: "#dee2e6",
-        success: "#28a745",
-        warning: "#ffc107",
-        error: "#dc3545"
+        accent: "#ff9800",
+        text: "#e65100",
+        textSecondary: "#f57c00",
+        border: "#ffe0b2",
+        success: "#388e3c",
+        warning: "#ffa000",
+        error: "#d32f2f"
       },
       css: {
-        "--color-primary": "#007bff",
-        "--color-secondary": "#6c757d",
-        "--color-background": "#f8f9fa",
+        "--color-primary": "#e65100",
+        "--color-secondary": "#ff9800",
+        "--color-background": "#fff3e0",
         "--color-surface": "#ffffff",
-        "--color-accent": "#17a2b8",
-        "--color-text": "#212529",
-        "--color-text-secondary": "#6c757d",
-        "--color-border": "#dee2e6"
+        "--color-accent": "#ff9800",
+        "--color-text": "#e65100",
+        "--color-text-secondary": "#f57c00",
+        "--color-border": "#ffe0b2"
+      }
+    },
+    5: {
+      name: "Purple Elegance",
+      description: "Rich and elegant",
+      colors: {
+        primary: "#4a148c",
+        secondary: "#9c27b0",
+        background: "#f3e5f5",
+        surface: "#ffffff",
+        accent: "#9c27b0",
+        text: "#4a148c",
+        textSecondary: "#7b1fa2",
+        border: "#e1bee7",
+        success: "#388e3c",
+        warning: "#ffa000",
+        error: "#d32f2f"
+      },
+      css: {
+        "--color-primary": "#4a148c",
+        "--color-secondary": "#9c27b0",
+        "--color-background": "#f3e5f5",
+        "--color-surface": "#ffffff",
+        "--color-accent": "#9c27b0",
+        "--color-text": "#4a148c",
+        "--color-text-secondary": "#7b1fa2",
+        "--color-border": "#e1bee7"
+      }
+    },
+    6: {
+      name: "Rose Gold",
+      description: "Soft and luxurious",
+      colors: {
+        primary: "#880e4f",
+        secondary: "#e91e63",
+        background: "#fce4ec",
+        surface: "#ffffff",
+        accent: "#e91e63",
+        text: "#880e4f",
+        textSecondary: "#ad1457",
+        border: "#f8bbd9",
+        success: "#388e3c",
+        warning: "#ffa000",
+        error: "#d32f2f"
+      },
+      css: {
+        "--color-primary": "#880e4f",
+        "--color-secondary": "#e91e63",
+        "--color-background": "#fce4ec",
+        "--color-surface": "#ffffff",
+        "--color-accent": "#e91e63",
+        "--color-text": "#880e4f",
+        "--color-text-secondary": "#ad1457",
+        "--color-border": "#f8bbd9"
+      }
+    },
+    7: {
+      name: "Teal Fresh",
+      description: "Fresh and modern",
+      colors: {
+        primary: "#004d40",
+        secondary: "#00695c",
+        background: "#e0f2f1",
+        surface: "#ffffff",
+        accent: "#00695c",
+        text: "#004d40",
+        textSecondary: "#00796b",
+        border: "#b2dfdb",
+        success: "#388e3c",
+        warning: "#ffa000",
+        error: "#d32f2f"
+      },
+      css: {
+        "--color-primary": "#004d40",
+        "--color-secondary": "#00695c",
+        "--color-background": "#e0f2f1",
+        "--color-surface": "#ffffff",
+        "--color-accent": "#00695c",
+        "--color-text": "#004d40",
+        "--color-text-secondary": "#00796b",
+        "--color-border": "#b2dfdb"
       }
     }
   },
@@ -611,6 +674,80 @@ export const STYLING_CONSTANTS: StylingConstants = {
     }
   },
 
+  // Corner Radius Options
+  cornerRadius: {
+    0: {
+      name: "None",
+      value: "0px",
+      css: { "--border-radius": "0px" }
+    },
+    1: {
+      name: "Small",
+      value: "4px",
+      css: { "--border-radius": "4px" }
+    },
+    2: {
+      name: "Medium",
+      value: "8px",
+      css: { "--border-radius": "8px" }
+    },
+    3: {
+      name: "Large",
+      value: "12px",
+      css: { "--border-radius": "12px" }
+    },
+    4: {
+      name: "Extra Large",
+      value: "16px",
+      css: { "--border-radius": "16px" }
+    },
+    5: {
+      name: "Full",
+      value: "9999px",
+      css: { "--border-radius": "9999px" }
+    }
+  },
+
+  // Animation Options
+  animations: {
+    0: {
+      name: "None",
+      description: "No animations",
+      css: {
+        "--transition-duration": "0ms",
+        "--animation-scale": "1",
+        "--animation-opacity": "1"
+      }
+    },
+    1: {
+      name: "Subtle",
+      description: "Gentle hover effects",
+      css: {
+        "--transition-duration": "200ms",
+        "--animation-scale": "1.02",
+        "--animation-opacity": "0.8"
+      }
+    },
+    2: {
+      name: "Smooth",
+      description: "Smooth transitions",
+      css: {
+        "--transition-duration": "300ms",
+        "--animation-scale": "1.05",
+        "--animation-opacity": "0.7"
+      }
+    },
+    3: {
+      name: "Dynamic",
+      description: "Enhanced animations",
+      css: {
+        "--transition-duration": "400ms",
+        "--animation-scale": "1.08",
+        "--animation-opacity": "0.6"
+      }
+    }
+  },
+
   // Navigation Styles
   navigationStyles: {
     0: {
@@ -669,29 +806,97 @@ export const STYLING_CONSTANTS: StylingConstants = {
   }
 };
 
+// Helper functions for UI previews
+export const getTemplatePreviewClass = (templateId: number): string => {
+  const previews = {
+    0: "bg-gray-100 border-2 border-dashed border-gray-300",
+    1: "bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600",
+    2: "bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900",
+    3: "bg-gradient-to-br from-green-600 via-teal-600 to-cyan-600",
+    4: "bg-gradient-to-r from-blue-500 to-transparent",
+    5: "bg-gradient-to-l from-purple-500 to-transparent",
+    6: "bg-gradient-to-br from-indigo-600 via-purple-500 to-pink-500",
+    7: "bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900",
+    8: "bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700",
+    9: "bg-gradient-to-br from-rose-600 via-pink-600 to-orange-500",
+    10: "bg-gradient-to-r from-violet-600 to-transparent"
+  };
+  return previews[templateId as keyof typeof previews] || previews[1];
+};
+
+export const getThemePreviewClass = (themeId: number): string => {
+  const previews = {
+    0: "bg-white border-gray-200",
+    1: "bg-gray-900 border-gray-700",
+    2: "bg-blue-50 border-blue-200",
+    3: "bg-green-50 border-green-200",
+    4: "bg-orange-50 border-orange-200",
+    5: "bg-purple-50 border-purple-200",
+    6: "bg-pink-50 border-pink-200",
+    7: "bg-teal-50 border-teal-200"
+  };
+  return previews[themeId as keyof typeof previews] || previews[0];
+};
+
+export const getThumbnailPreviewClass = (sizeId: number): string => {
+  const previews = {
+    0: "w-12 h-12",
+    1: "w-16 h-16",
+    2: "w-20 h-20",
+    3: "w-24 h-24"
+  };
+  return previews[sizeId as keyof typeof previews] || previews[1];
+};
+
+export const getSpacingPreviewClass = (spacingId: number): string => {
+  const previews = {
+    0: "gap-1",
+    1: "gap-2",
+    2: "gap-4",
+    3: "gap-6"
+  };
+  return previews[spacingId as keyof typeof previews] || previews[1];
+};
+
+export const getCornerRadiusPreviewClass = (radiusId: number): string => {
+  const previews = {
+    0: "rounded-none",
+    1: "rounded",
+    2: "rounded-md",
+    3: "rounded-lg",
+    4: "rounded-xl",
+    5: "rounded-full"
+  };
+  return previews[radiusId as keyof typeof previews] || previews[2];
+};
+
 // Type-safe utility functions
 export const getStylingConfig = (event: any) => {
   const styling = event?.styling_config || event?.styling || {};
 
   // Safely get IDs with fallbacks
-  const coverTemplateId = styling.cover?.template_id ?? 0;
+  const coverTemplateId = styling.cover?.template_id ?? 1;
   const coverTypeId = styling.cover?.type ?? 0;
-  const galleryLayoutId = styling.gallery?.layout_id ?? 1;
+  const galleryLayoutId = styling.gallery?.layout_id ?? 0;
   const gridSpacingId = styling.gallery?.grid_spacing ?? 1;
   const thumbnailSizeId = styling.gallery?.thumbnail_size ?? 1;
   const themeId = styling.theme?.theme_id ?? 0;
   const fontsetId = styling.theme?.fontset_id ?? 0;
+  const cornerRadiusId = styling.theme?.corner_radius ?? 2;
+  const animationId = styling.theme?.animations ?? 1;
   const navigationStyleId = styling.navigation?.style_id ?? 0;
   const language = styling.language ?? 'en';
 
   return {
-    coverTemplate: STYLING_CONSTANTS.coverTemplates[coverTemplateId] || STYLING_CONSTANTS.coverTemplates[0],
+    coverTemplate: STYLING_CONSTANTS.coverTemplates[coverTemplateId] || STYLING_CONSTANTS.coverTemplates[1],
     coverType: STYLING_CONSTANTS.coverTypes[coverTypeId] || STYLING_CONSTANTS.coverTypes[0],
-    galleryLayout: STYLING_CONSTANTS.galleryLayouts[galleryLayoutId] || STYLING_CONSTANTS.galleryLayouts[1],
+    galleryLayout: STYLING_CONSTANTS.galleryLayouts[galleryLayoutId] || STYLING_CONSTANTS.galleryLayouts[0],
     gridSpacing: STYLING_CONSTANTS.gridSpacing[gridSpacingId] || STYLING_CONSTANTS.gridSpacing[1],
     thumbnailSize: STYLING_CONSTANTS.thumbnailSizes[thumbnailSizeId] || STYLING_CONSTANTS.thumbnailSizes[1],
     theme: STYLING_CONSTANTS.themes[themeId] || STYLING_CONSTANTS.themes[0],
     fontset: STYLING_CONSTANTS.fontsets[fontsetId] || STYLING_CONSTANTS.fontsets[0],
+    cornerRadius: STYLING_CONSTANTS.cornerRadius[cornerRadiusId] || STYLING_CONSTANTS.cornerRadius[2],
+    animation: STYLING_CONSTANTS.animations[animationId] || STYLING_CONSTANTS.animations[1],
     navigationStyle: STYLING_CONSTANTS.navigationStyles[navigationStyleId] || STYLING_CONSTANTS.navigationStyles[0],
     language: STYLING_CONSTANTS.languages[language] || STYLING_CONSTANTS.languages['en']
   };
@@ -700,12 +905,18 @@ export const getStylingConfig = (event: any) => {
 // Generate CSS variables safely
 export const generateEventCSS = (event: any): Record<string, string> => {
   const config = getStylingConfig(event);
+  const advanced = event?.styling_config?.advanced || {};
 
   return {
     ...config.theme.css,
     ...config.fontset.css,
     ...config.gridSpacing.css,
-    ...config.thumbnailSize.css
+    ...config.thumbnailSize.css,
+    ...config.cornerRadius.css,
+    ...config.animation.css,
+    // Advanced options
+    "--overlay-opacity": `${advanced.overlay_opacity || 40}%`,
+    "--blur-strength": `${advanced.blur_strength || 0}px`
   };
 };
 
@@ -719,6 +930,14 @@ export const applyEventStyling = (element: HTMLElement, event: any): void => {
         element.style.setProperty(key, value);
       }
     });
+
+    // Apply custom CSS if provided
+    const customCSS = event?.styling_config?.advanced?.custom_css;
+    if (customCSS && typeof customCSS === 'string') {
+      const style = document.createElement('style');
+      style.textContent = customCSS;
+      document.head.appendChild(style);
+    }
   } catch (error) {
     console.warn('Error applying event styling:', error);
   }
@@ -726,7 +945,7 @@ export const applyEventStyling = (element: HTMLElement, event: any): void => {
 
 // Get responsive styles safely
 export const getResponsiveStyles = (
-  config: any, 
+  config: any,
   breakpoint: 'mobile' | 'tablet' | 'desktop' = 'desktop'
 ): Record<string, any> => {
   try {
@@ -738,34 +957,99 @@ export const getResponsiveStyles = (
   }
 };
 
-// Type-safe style options
+// Type-safe style options getters
 export const getStyleOptions = () => {
   return {
     coverTemplates: Object.entries(STYLING_CONSTANTS.coverTemplates).map(([id, config]) => ({
       id: Number(id),
       name: config.name,
-      description: config.description
+      description: config.description,
+      preview: getTemplatePreviewClass(Number(id))
     })),
     coverTypes: Object.entries(STYLING_CONSTANTS.coverTypes).map(([id, config]) => ({
       id: Number(id),
       name: config.name,
       description: config.description
     })),
+    galleryLayouts: Object.entries(STYLING_CONSTANTS.galleryLayouts).map(([id, config]) => ({
+      id: Number(id),
+      name: config.name,
+      description: config.description,
+      icon: config.icon
+    })),
+    gridSpacing: Object.entries(STYLING_CONSTANTS.gridSpacing).map(([id, config]) => ({
+      id: Number(id),
+      name: config.name,
+      description: config.description,
+      value: config.value,
+      preview: getSpacingPreviewClass(Number(id))
+    })),
+    thumbnailSizes: Object.entries(STYLING_CONSTANTS.thumbnailSizes).map(([id, config]) => ({
+      id: Number(id),
+      name: config.name,
+      description: config.description,
+      size: config.size,
+      preview: getThumbnailPreviewClass(Number(id))
+    })),
     themes: Object.entries(STYLING_CONSTANTS.themes).map(([id, config]) => ({
       id: Number(id),
       name: config.name,
       description: config.description,
-      colors: config.colors
-    })),
-    galleryLayouts: Object.entries(STYLING_CONSTANTS.galleryLayouts).map(([id, config]) => ({
-      id: Number(id),
-      name: config.name,
-      description: config.description
+      colors: config.colors,
+      preview: getThemePreviewClass(Number(id))
     })),
     fontsets: Object.entries(STYLING_CONSTANTS.fontsets).map(([id, config]) => ({
       id: Number(id),
       name: config.name,
+      description: config.description,
+      fonts: config.fonts
+    })),
+    cornerRadius: Object.entries(STYLING_CONSTANTS.cornerRadius).map(([id, config]) => ({
+      id: Number(id),
+      name: config.name,
+      value: config.value,
+      preview: getCornerRadiusPreviewClass(Number(id))
+    })),
+    animations: Object.entries(STYLING_CONSTANTS.animations).map(([id, config]) => ({
+      id: Number(id),
+      name: config.name,
       description: config.description
     }))
+  };
+};
+
+// Validation helpers
+export const validateStylingConfig = (config: any): boolean => {
+  try {
+    const cover = config?.cover?.template_id;
+    const gallery = config?.gallery?.layout_id;
+    const theme = config?.theme?.theme_id;
+
+    return (
+      typeof cover === 'number' && cover >= 0 && cover <= 10 &&
+      typeof gallery === 'number' && gallery >= 0 && gallery <= 3 &&
+      typeof theme === 'number' && theme >= 0 && theme <= 7
+    );
+  } catch (error) {
+    return false;
+  }
+};
+
+// Get default styling config
+export const getDefaultStylingConfig = () => {
+  return {
+    cover: { template_id: 1 },
+    gallery: { layout_id: 0, grid_spacing: 1, thumbnail_size: 1 },
+    theme: {
+      theme_id: 0,
+      fontset_id: 0,
+      corner_radius: 2,
+      animations: 1
+    },
+    advanced: {
+      custom_css: '',
+      overlay_opacity: 40,
+      blur_strength: 0
+    }
   };
 };

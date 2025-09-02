@@ -518,7 +518,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         totalPhotos={totalPhotos}
       >
         {/* Action buttons in the cover */}
-        <div className="flex items-center gap-4 mt-6">
+        {/* <div className="flex items-center gap-4 mt-6">
           <ConnectionStatus />
           <RoomStatsDisplay roomStats={roomStats} />
 
@@ -553,7 +553,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           >
             Refresh
           </button>
-        </div>
+        </div> */}
       </DynamicEventCover>
 
       {/* Photo Gallery Section */}

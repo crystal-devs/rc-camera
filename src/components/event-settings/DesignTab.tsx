@@ -1,198 +1,24 @@
 // components/event-settings/EnhancedDesignTab.tsx
-import React, { useState } from 'react';
-import { Camera, Upload, X, Palette, Layout, Type, Image, Grid, Eye, Monitor } from 'lucide-react';
+import React from 'react';
+import { Camera, Upload, X, Palette, Layout, Grid, Type, Zap, Sliders } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Slider } from '@/components/ui/slider';
 
-// Enhanced constants
-const ENHANCED_COVER_TEMPLATES = {
-  // Full Screen Templates
-  0: {
-    name: "Full Screen Center",
-    description: "Full-screen image with centered text overlay",
-    layout: "fullscreen-center",
-    hasImage: true,
-    textPosition: "center",
-    decorativeElement: "none",
-    preview: "bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600"
-  },
-  1: {
-    name: "Full Screen Left",
-    description: "Full-screen image with left-aligned text",
-    layout: "fullscreen-left",
-    hasImage: true,
-    textPosition: "left",
-    decorativeElement: "none",
-    preview: "bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900"
-  },
-  2: {
-    name: "Full Screen Right",
-    description: "Full-screen image with right-aligned text",
-    layout: "fullscreen-right",
-    hasImage: true,
-    textPosition: "right",
-    decorativeElement: "none",
-    preview: "bg-gradient-to-br from-green-600 via-teal-600 to-cyan-600"
-  },
-  3: {
-    name: "Full Screen Top",
-    description: "Full-screen image with text at top",
-    layout: "fullscreen-top",
-    hasImage: true,
-    textPosition: "top",
-    decorativeElement: "none",
-    preview: "bg-gradient-to-b from-indigo-600 via-purple-500 to-pink-500"
-  },
-  4: {
-    name: "Full Screen Bottom",
-    description: "Full-screen image with text at bottom",
-    layout: "fullscreen-bottom",
-    hasImage: true,
-    textPosition: "bottom",
-    decorativeElement: "none",
-    preview: "bg-gradient-to-t from-orange-600 via-red-500 to-pink-500"
-  },
-
-  // Decorative Templates
-  5: {
-    name: "Framed Center",
-    description: "Full-screen with white frame border",
-    layout: "fullscreen-center",
-    hasImage: true,
-    textPosition: "center",
-    decorativeElement: "frame",
-    preview: "bg-gradient-to-br from-emerald-600 to-teal-700 border-4 border-white"
-  },
-  6: {
-    name: "Striped Top",
-    description: "Full-screen with decorative top stripe",
-    layout: "fullscreen-center",
-    hasImage: true,
-    textPosition: "center",
-    decorativeElement: "stripe",
-    preview: "bg-gradient-to-br from-violet-600 to-purple-700 border-t-8 border-yellow-400"
-  },
-  7: {
-    name: "Outlined Text",
-    description: "Full-screen with outlined text effect",
-    layout: "fullscreen-center",
-    hasImage: true,
-    textPosition: "center",
-    decorativeElement: "outline",
-    preview: "bg-gradient-to-br from-rose-600 to-pink-700"
-  },
-  8: {
-    name: "Gradient Overlay",
-    description: "Full-screen with gradient overlay",
-    layout: "fullscreen-center",
-    hasImage: true,
-    textPosition: "center",
-    decorativeElement: "gradient",
-    preview: "bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900"
-  },
-
-  // Split Layouts
-  9: {
-    name: "Split Left Image",
-    description: "Image on left half, text on right half",
-    layout: "split-left",
-    hasImage: true,
-    textPosition: "right",
-    decorativeElement: "none",
-    preview: "bg-gradient-to-r from-blue-500 to-transparent"
-  },
-  10: {
-    name: "Split Right Image",
-    description: "Text on left half, image on right half",
-    layout: "split-right",
-    hasImage: true,
-    textPosition: "left",
-    decorativeElement: "none",
-    preview: "bg-gradient-to-l from-purple-500 to-transparent"
-  },
-
-  // Text Only Templates
-  11: {
-    name: "Text Only Center",
-    description: "Clean centered title, no background",
-    layout: "text-only-center",
-    hasImage: false,
-    textPosition: "center",
-    decorativeElement: "none",
-    preview: "bg-gray-50 border-2 border-dashed border-gray-300"
-  },
-  12: {
-    name: "Text Only Left",
-    description: "Left-aligned title, minimal style",
-    layout: "text-only-left",
-    hasImage: false,
-    textPosition: "left",
-    decorativeElement: "none",
-    preview: "bg-gray-50 border-2 border-dashed border-gray-300"
-  },
-  13: {
-    name: "Text Only Right",
-    description: "Right-aligned title, clean style",
-    layout: "text-only-right",
-    hasImage: false,
-    textPosition: "right",
-    decorativeElement: "none",
-    preview: "bg-gray-50 border-2 border-dashed border-gray-300"
-  },
-  14: {
-    name: "Text with Frame",
-    description: "Text header with decorative border",
-    layout: "text-only-center",
-    hasImage: false,
-    textPosition: "center",
-    decorativeElement: "frame",
-    preview: "bg-white border-4 border-gray-800"
-  },
-  15: {
-    name: "Text with Stripe",
-    description: "Text header with accent stripe",
-    layout: "text-only-center",
-    hasImage: false,
-    textPosition: "center",
-    decorativeElement: "stripe",
-    preview: "bg-gray-100 border-t-8 border-blue-500"
-  }
-};
-
-const TEMPLATE_CATEGORIES = {
-  fullscreen: {
-    name: "Full Screen",
-    description: "Full viewport coverage with image",
-    templates: [0, 1, 2, 3, 4, 5, 6, 7, 8],
-    icon: "🖼️"
-  },
-  split: {
-    name: "Split Layout",
-    description: "Image and text in separate halves",
-    templates: [9, 10],
-    icon: "⚡"
-  },
-  textOnly: {
-    name: "Text Only",
-    description: "Clean headers without images",
-    templates: [11, 12, 13, 14, 15],
-    icon: "📝"
-  }
-};
-
-const COVER_TYPES = [
-  { id: 0, name: 'Standard', description: 'Normal height (400px)' },
-  { id: 1, name: 'Tall', description: 'Increased height (600px)' },
-  { id: 2, name: 'Compact', description: 'Reduced height (250px)' },
-  { id: 3, name: 'Full Screen', description: 'Full viewport height' },
-  { id: 4, name: 'Hero Section', description: 'Large hero style (80vh)' },
-  { id: 5, name: 'Text Header', description: 'Minimal header (150px)' }
-];
+// Import all constants from the consolidated file
+import { 
+  STYLING_CONSTANTS,
+  getTemplatePreviewClass,
+  getThemePreviewClass,
+  getThumbnailPreviewClass,
+  getSpacingPreviewClass,
+  getCornerRadiusPreviewClass,
+  getStyleOptions
+} from '@/constants/styling.constant';
 
 interface EnhancedDesignTabProps {
   formData: any;
@@ -209,79 +35,76 @@ export const DesignTab: React.FC<EnhancedDesignTabProps> = ({
   onCoverImageChange,
   onClearImage
 }) => {
-  const [activeCategory, setActiveCategory] = useState('fullscreen');
-
   const stylingConfig = formData?.styling_config || {
-    cover: { template_id: 0, type: 0 },
-    gallery: { layout_id: 1, grid_spacing: 1, thumbnail_size: 1 },
-    theme: { theme_id: 8, fontset_id: 0 },
-    navigation: { style_id: 0 }
+    cover: { template_id: 1 },
+    gallery: { layout_id: 0, grid_spacing: 1, thumbnail_size: 1 },
+    theme: { 
+      theme_id: 0, 
+      fontset_id: 0,
+      corner_radius: 2,
+      animations: 1
+    },
+    advanced: {
+      custom_css: '',
+      overlay_opacity: 40,
+      blur_strength: 0
+    }
   };
 
   const handleStyleChange = (section: string, field: string, value: any) => {
     onInputChange(`styling_config.${section}.${field}`, value);
   };
 
-  const currentTemplate = ENHANCED_COVER_TEMPLATES[stylingConfig.cover.template_id as keyof typeof ENHANCED_COVER_TEMPLATES] || ENHANCED_COVER_TEMPLATES[0];
+  // Get style options from constants
+  const styleOptions = getStyleOptions();
+  const selectedTemplate = STYLING_CONSTANTS.coverTemplates[stylingConfig.cover.template_id] || STYLING_CONSTANTS.coverTemplates[1];
 
   const TemplatePreview = ({ template, templateId }: { template: any, templateId: number }) => {
     const isSelected = stylingConfig.cover.template_id === templateId;
     
     return (
       <Card
-        className={`cursor-pointer transition-all hover:shadow-lg ${
-          isSelected ? 'ring-2 ring-blue-500 border-blue-500 shadow-lg' : 'border-gray-200 hover:border-gray-300'
+        className={`cursor-pointer transition-all hover:shadow-md ${
+          isSelected ? 'ring-2 ring-blue-500 border-blue-500 shadow-md' : 'border-gray-200 hover:border-gray-300'
         }`}
         onClick={() => handleStyleChange('cover', 'template_id', templateId)}
       >
         <CardContent className="p-3">
-          {/* Template Preview */}
-          <div className={`w-full h-24 rounded mb-3 ${template.preview} relative overflow-hidden`}>
-            {/* Show text positioning */}
-            <div className={`absolute inset-0 flex ${
-              template.textPosition === 'left' ? 'justify-start items-center' :
-              template.textPosition === 'right' ? 'justify-end items-center' :
-              template.textPosition === 'top' ? 'justify-center items-start pt-2' :
-              template.textPosition === 'bottom' ? 'justify-center items-end pb-2' :
-              'justify-center items-center'
-            }`}>
-              <div className={`text-xs font-bold text-white bg-black bg-opacity-50 px-2 py-1 rounded ${
-                template.textPosition === 'left' ? 'ml-2' :
-                template.textPosition === 'right' ? 'mr-2' : ''
-              }`}>
-                Title
-              </div>
-            </div>
-            
-            {/* Decorative elements */}
-            {template.decorativeElement === 'frame' && (
-              <div className="absolute inset-2 border-2 border-white border-opacity-80 rounded" />
-            )}
-            {template.decorativeElement === 'stripe' && (
-              <div className="absolute top-0 left-0 right-0 h-2 bg-yellow-400" />
-            )}
-            
-            {/* No image indicator */}
-            {!template.hasImage && (
+          <div className={`w-full h-20 rounded mb-2 ${getTemplatePreviewClass(templateId)} relative overflow-hidden`}>
+            {template.layout === 'none' ? (
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-gray-400 text-xs">No Image</div>
+                <div className="text-gray-400 text-xs font-medium">No Cover</div>
               </div>
+            ) : (
+              <>
+                {/* Text positioning indicator */}
+                <div className={`absolute inset-0 flex ${
+                  template.textPosition === 'left' ? 'justify-start items-center pl-2' :
+                  template.textPosition === 'right' ? 'justify-end items-center pr-2' :
+                  'justify-center items-center'
+                }`}>
+                  <div className="text-xs font-bold text-white bg-black bg-opacity-60 px-2 py-1 rounded">
+                    Title
+                  </div>
+                </div>
+                
+                {/* Split layout indicator */}
+                {template.layout.startsWith('split') && (
+                  <div className={`absolute top-0 bottom-0 w-1/2 bg-black bg-opacity-20 ${
+                    template.layout === 'split-left' ? 'left-0' : 'right-0'
+                  }`} />
+                )}
+              </>
             )}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-gray-900">{template.name}</p>
-              {!template.hasImage && <Badge variant="outline" className="text-xs">Text Only</Badge>}
+              {template.height === '100vh' && <Badge variant="outline" className="text-xs">Full</Badge>}
+              {template.height === '60vh' && <Badge variant="outline" className="text-xs">Hero</Badge>}
             </div>
             <p className="text-xs text-gray-500">{template.description}</p>
-            
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              <span>Position: {template.textPosition}</span>
-              {template.decorativeElement !== 'none' && (
-                <span>• {template.decorativeElement}</span>
-              )}
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -291,142 +114,387 @@ export const DesignTab: React.FC<EnhancedDesignTabProps> = ({
   return (
     <div className="space-y-8">
       {/* Cover Image Upload */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <Camera className="h-5 w-5 text-gray-500" />
-            Cover Image
-          </h3>
-          <p className="text-sm text-gray-600">
-            Upload your cover image. Some templates work without images for text-only headers.
-          </p>
-        </div>
+      {selectedTemplate.hasImage && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="space-y-3">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Camera className="h-5 w-5 text-gray-500" />
+              Cover Image
+            </h3>
+            <p className="text-sm text-gray-600">
+              Upload your cover image. This will be displayed according to your selected template.
+            </p>
+          </div>
 
-        <div className="lg:col-span-2 space-y-4">
-          <Input
-            id="cover_image"
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onCoverImageChange}
-          />
-          <div className="flex gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => document.getElementById('cover_image')?.click()}
-              className="flex-1"
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              {previewUrl ? 'Change Image' : 'Upload Image'}
-            </Button>
-            {previewUrl && (
-              <Button type="button" variant="outline" onClick={onClearImage} className="px-3">
-                <X className="h-4 w-4" />
+          <div className="lg:col-span-2 space-y-4">
+            <Input
+              id="cover_image"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={onCoverImageChange}
+            />
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => document.getElementById('cover_image')?.click()}
+                className="flex-1"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                {previewUrl ? 'Change Image' : 'Upload Image'}
               </Button>
+              {previewUrl && (
+                <Button type="button" variant="outline" onClick={onClearImage} className="px-3">
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            
+            {previewUrl && (
+              <img src={previewUrl} alt="Cover preview" className="w-full h-32 object-cover rounded-lg border" />
             )}
           </div>
-          
-          {previewUrl && (
-            <img src={previewUrl} alt="Cover preview" className="w-full h-32 object-cover rounded-lg border" />
-          )}
         </div>
-      </div>
+      )}
 
-      {/* Template Selection */}
+      {/* Cover Template Selection */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="space-y-3">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Layout className="h-5 w-5 text-gray-500" />
-            Cover Templates
+            Cover Template
           </h3>
           <p className="text-sm text-gray-600">
-            Choose how your cover image and text are displayed. Options include full-screen, split layouts, and text-only headers.
-          </p>
-        </div>
-
-        <div className="lg:col-span-2">
-          <Tabs value={activeCategory} onValueChange={setActiveCategory} className="w-full">
-            <TabsList className="grid grid-cols-3 w-full mb-6">
-              {Object.entries(TEMPLATE_CATEGORIES).map(([key, category]) => (
-                <TabsTrigger key={key} value={key} className="text-xs">
-                  <span className="mr-1">{category.icon}</span>
-                  {category.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
-            {Object.entries(TEMPLATE_CATEGORIES).map(([key, category]) => (
-              <TabsContent key={key} value={key} className="space-y-4">
-                <div className="text-center mb-4">
-                  <h4 className="text-sm font-medium text-gray-800">{category.name}</h4>
-                  <p className="text-xs text-gray-500">{category.description}</p>
-                </div>
-                
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                  {category.templates.map((templateId) => (
-                    <TemplatePreview
-                      key={templateId}
-                      template={ENHANCED_COVER_TEMPLATES[templateId as keyof typeof ENHANCED_COVER_TEMPLATES]}
-                      templateId={templateId}
-                    />
-                  ))}
-                </div>
-              </TabsContent>
-            ))}
-          </Tabs>
-        </div>
-      </div>
-
-      {/* Cover Height */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold text-gray-900">Cover Height</h3>
-          <p className="text-sm text-gray-600">
-            Choose the height for your cover section. Full-screen templates will override this setting.
+            Choose how your cover section appears. Options include different layouts and heights.
           </p>
         </div>
 
         <div className="lg:col-span-2">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            {COVER_TYPES.map((type) => (
-              <Button
-                key={type.id}
-                type="button"
-                variant={stylingConfig.cover.type === type.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => handleStyleChange('cover', 'type', type.id)}
-                className="h-auto p-3 flex flex-col items-start"
+            {styleOptions.coverTemplates.map((template) => (
+              <TemplatePreview
+                key={template.id}
+                template={STYLING_CONSTANTS.coverTemplates[template.id]}
+                templateId={template.id}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Gallery Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Grid className="h-5 w-5 text-gray-500" />
+            Gallery Layout
+          </h3>
+          <p className="text-sm text-gray-600">
+            Choose how photos are arranged in your gallery.
+          </p>
+        </div>
+
+        <div className="lg:col-span-2">
+          <div className="grid grid-cols-2 gap-3">
+            {styleOptions.galleryLayouts.map((layout) => (
+              <Card
+                key={layout.id}
+                className={`cursor-pointer transition-all hover:shadow-md ${
+                  stylingConfig.gallery.layout_id === layout.id
+                    ? 'ring-2 ring-blue-500 border-blue-500'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => handleStyleChange('gallery', 'layout_id', layout.id)}
               >
-                <span className="font-medium text-sm">{type.name}</span>
-                <span className="text-xs opacity-70">{type.description}</span>
+                <CardContent className="p-4">
+                  <div className="w-full h-16 rounded mb-3 bg-gray-100 flex items-center justify-center">
+                    <span className="text-2xl">{layout.icon}</span>
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{layout.name}</p>
+                    <p className="text-xs text-gray-500">{layout.description}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Grid Spacing */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-gray-900">Grid Spacing</h3>
+          <p className="text-sm text-gray-600">
+            Adjust the spacing between photos in your gallery.
+          </p>
+        </div>
+
+        <div className="lg:col-span-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            {styleOptions.gridSpacing.map((spacing) => (
+              <Button
+                key={spacing.id}
+                type="button"
+                variant={stylingConfig.gallery.grid_spacing === spacing.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleStyleChange('gallery', 'grid_spacing', spacing.id)}
+                className="h-auto p-3 flex flex-col items-center"
+              >
+                <div className={`w-8 h-8 grid grid-cols-2 ${spacing.preview} bg-gray-300 rounded mb-1`}>
+                  <div className="bg-blue-400 rounded-sm"></div>
+                  <div className="bg-blue-400 rounded-sm"></div>
+                  <div className="bg-blue-400 rounded-sm"></div>
+                  <div className="bg-blue-400 rounded-sm"></div>
+                </div>
+                <span className="text-xs font-medium">{spacing.name}</span>
               </Button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Current Selection Summary */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-medium text-blue-900 mb-2">Current Selection</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-          <div>
-            <span className="text-blue-700 font-medium">Template:</span>
-            <br />
-            <span className="text-blue-600">{currentTemplate.name}</span>
+      {/* Thumbnail Size */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-gray-900">Thumbnail Size</h3>
+          <p className="text-sm text-gray-600">
+            Choose the base size for thumbnails in your gallery.
+          </p>
+        </div>
+
+        <div className="lg:col-span-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {styleOptions.thumbnailSizes.map((size) => (
+              <Button
+                key={size.id}
+                type="button"
+                variant={stylingConfig.gallery.thumbnail_size === size.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleStyleChange('gallery', 'thumbnail_size', size.id)}
+                className="h-auto p-3 flex flex-col items-center"
+              >
+                <div className={`${size.preview} bg-blue-400 rounded mb-2`}></div>
+                <span className="text-xs font-medium">{size.name}</span>
+                <span className="text-xs opacity-70">{size.description}</span>
+              </Button>
+            ))}
           </div>
-          <div>
-            <span className="text-blue-700 font-medium">Text Position:</span>
-            <br />
-            <span className="text-blue-600 capitalize">{currentTemplate.textPosition}</span>
+        </div>
+      </div>
+
+      {/* Color Theme */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Palette className="h-5 w-5 text-gray-500" />
+            Color Theme
+          </h3>
+          <p className="text-sm text-gray-600">
+            Choose a color scheme that matches your event's style and mood.
+          </p>
+        </div>
+
+        <div className="lg:col-span-2">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+            {styleOptions.themes.map((theme) => (
+              <Card
+                key={theme.id}
+                className={`cursor-pointer transition-all hover:shadow-md ${
+                  stylingConfig.theme.theme_id === theme.id
+                    ? 'ring-2 ring-blue-500 border-blue-500'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => handleStyleChange('theme', 'theme_id', theme.id)}
+              >
+                <CardContent className="p-4">
+                  <div className={`w-full h-16 rounded mb-3 ${theme.preview} relative overflow-hidden`}>
+                    {/* Color swatches */}
+                    <div className="absolute inset-0 flex">
+                      <div 
+                        className="w-1/3 h-full" 
+                        style={{ backgroundColor: theme.colors.primary }}
+                      />
+                      <div 
+                        className="w-1/3 h-full" 
+                        style={{ backgroundColor: theme.colors.background }}
+                      />
+                      <div 
+                        className="w-1/3 h-full" 
+                        style={{ backgroundColor: theme.colors.accent }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{theme.name}</p>
+                    <p className="text-xs text-gray-500">{theme.description}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-          <div>
-            <span className="text-blue-700 font-medium">Style:</span>
-            <br />
-            <span className="text-blue-600">
-              {currentTemplate.hasImage ? 'With Image' : 'Text Only'}
-              {currentTemplate.decorativeElement !== 'none' && ` • ${currentTemplate.decorativeElement}`}
-            </span>
+        </div>
+      </div>
+
+      {/* Typography */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Type className="h-5 w-5 text-gray-500" />
+            Typography
+          </h3>
+          <p className="text-sm text-gray-600">
+            Select font styles for your event's text content.
+          </p>
+        </div>
+
+        <div className="lg:col-span-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {styleOptions.fontsets.map((font) => (
+              <Card
+                key={font.id}
+                className={`cursor-pointer transition-all hover:shadow-md ${
+                  stylingConfig.theme.fontset_id === font.id
+                    ? 'ring-2 ring-blue-500 border-blue-500'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => handleStyleChange('theme', 'fontset_id', font.id)}
+              >
+                <CardContent className="p-4 text-center">
+                  <div 
+                    className="text-2xl font-bold mb-2"
+                    style={{ fontFamily: font.fonts.primary }}
+                  >
+                    Aa
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{font.name}</p>
+                    <p className="text-xs text-gray-500">{font.description}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Corner Style */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-gray-900">Corner Style</h3>
+          <p className="text-sm text-gray-600">
+            Adjust the corner radius for photos and UI elements.
+          </p>
+        </div>
+
+        <div className="lg:col-span-2">
+          <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+            {styleOptions.cornerRadius.map((radius) => (
+              <Button
+                key={radius.id}
+                type="button"
+                variant={stylingConfig.theme.corner_radius === radius.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleStyleChange('theme', 'corner_radius', radius.id)}
+                className="h-auto p-3 flex flex-col items-center"
+              >
+                <div className={`w-8 h-8 bg-blue-400 ${radius.preview} mb-1`}></div>
+                <span className="text-xs font-medium">{radius.name}</span>
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Animation Level */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Zap className="h-5 w-5 text-gray-500" />
+            Animations
+          </h3>
+          <p className="text-sm text-gray-600">
+            Control the level of animations and transitions.
+          </p>
+        </div>
+
+        <div className="lg:col-span-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {styleOptions.animations.map((anim) => (
+              <Button
+                key={anim.id}
+                type="button"
+                variant={stylingConfig.theme.animations === anim.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleStyleChange('theme', 'animations', anim.id)}
+                className="h-auto p-3 flex flex-col items-start"
+              >
+                <span className="font-medium text-sm">{anim.name}</span>
+                <span className="text-xs opacity-70 text-left">{anim.description}</span>
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced Options */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Sliders className="h-5 w-5 text-gray-500" />
+            Advanced Styling
+          </h3>
+          <p className="text-sm text-gray-600">
+            Fine-tune overlay opacity and background blur effects for your cover image.
+          </p>
+        </div>
+
+        <div className="lg:col-span-2 space-y-6">
+          {/* Overlay Opacity */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Cover Overlay Opacity</Label>
+              <span className="text-xs text-gray-500">{stylingConfig.advanced?.overlay_opacity || 40}%</span>
+            </div>
+            <Slider
+              value={[stylingConfig.advanced?.overlay_opacity || 40]}
+              onValueChange={(value) => handleStyleChange('advanced', 'overlay_opacity', value[0])}
+              max={80}
+              min={0}
+              step={5}
+              className="w-full"
+            />
+            <p className="text-xs text-gray-500">Controls the darkness of the overlay on cover images</p>
+          </div>
+
+          {/* Background Blur */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Background Blur</Label>
+              <span className="text-xs text-gray-500">{stylingConfig.advanced?.blur_strength || 0}px</span>
+            </div>
+            <Slider
+              value={[stylingConfig.advanced?.blur_strength || 0]}
+              onValueChange={(value) => handleStyleChange('advanced', 'blur_strength', value[0])}
+              max={10}
+              min={0}
+              step={1}
+              className="w-full"
+            />
+            <p className="text-xs text-gray-500">Adds blur effect to background images behind text</p>
+          </div>
+
+          {/* Custom CSS */}
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Custom CSS (Advanced)</Label>
+            <textarea
+              value={stylingConfig.advanced?.custom_css || ''}
+              onChange={(e) => handleStyleChange('advanced', 'custom_css', e.target.value)}
+              placeholder="/* Add custom CSS styles here */&#10;.event-cover { /* your styles */ }&#10;.gallery-item { /* your styles */ }"
+              className="w-full h-24 px-3 py-2 border border-gray-300 rounded-md text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500">Add custom CSS for advanced styling customization</p>
           </div>
         </div>
       </div>
