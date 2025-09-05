@@ -6,7 +6,7 @@ import PhotoGallery from '@/components/album/PhotoGallery';
 import { CameraCapture } from '@/components/camera/CameraCapture';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { db, Photo } from '@/lib/db';
+import { Photo } from '@/types/PhotoGallery.types';
 import { Camera, Upload, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
@@ -55,11 +55,6 @@ export default function AlbumPage({ params }: AlbumPageProps) {
 
         console.log('Album data loaded successfully:', albumData);
         setAlbum(albumData);
-
-        // For now, we'll still use the local DB for photos
-        // In the future, this should be replaced with an API call
-        const photosList = await db.photos.where('albumId').equals(albumId).toArray();
-        setPhotos(photosList);
       } catch (error) {
         console.error('Error loading album:', error);
         toast.error("Failed to load album details");
@@ -98,14 +93,7 @@ export default function AlbumPage({ params }: AlbumPageProps) {
   };
 
   const handlePhotoCapture = (photoId: string) => {
-    db.photos
-      .where('albumId')
-      .equals(albumId)
-      .toArray()
-      .then(updatedPhotos => {
-        setPhotos(updatedPhotos);
-        setCameraOpen(false);
-      });
+    
   };
 
   const handleUploadClick = () => {
@@ -153,8 +141,6 @@ export default function AlbumPage({ params }: AlbumPageProps) {
     }
 
     // Reload photos
-    const updatedPhotos = await db.photos.where('albumId').equals(albumId).toArray();
-    setPhotos(updatedPhotos);
   };
 
   const readFileAsDataURL = (file: File): Promise<string> => {
@@ -197,8 +183,6 @@ export default function AlbumPage({ params }: AlbumPageProps) {
   const handlePhotoDelete = async (photoId: string) => {
     try {
       // Refresh photos after deletion
-      const updatedPhotos = await db.photos.where('albumId').equals(albumId).toArray();
-      setPhotos(updatedPhotos);
     } catch (error) {
       console.error('Error refreshing photos after delete:', error);
     }

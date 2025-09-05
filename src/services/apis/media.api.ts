@@ -2,6 +2,8 @@
 
 import axios from 'axios';
 import { API_BASE_URL } from '@/lib/api-config';
+import { MediaFetchOptions, MediaResponse } from '@/types/events';
+import { Photo } from '@/types/PhotoGallery.types';
 
 // Enhanced media response type with progressive loading support
 export interface MediaItem {
@@ -11,73 +13,102 @@ export interface MediaItem {
     event_id: string;
     url: string;
     thumbnail_url?: string;
-    compressed_versions?: Array<{
-        quality: 'low' | 'medium' | 'high';
-        url: string;
-        size_mb: number;
-    }>;
-    processing: {
+    image_variants?: {
+        small: { webp: { url: string }, jpeg: { url: string } };
+        medium: { webp: { url: string }, jpeg: { url: string } };
+        large: { webp: { url: string }, jpeg: { url: string } };
+        original: { url: string };
+    };
+    approval?: {
+        status: 'pending' | 'approved' | 'rejected' | 'hidden' | 'auto_approved';
+        approved_at?: string;
+        approved_by?: string;
+        rejection_reason?: string;
+    };
+    processing?: {
         status: 'pending' | 'processing' | 'completed' | 'failed';
         thumbnails_generated: boolean;
-        ai_analysis?: {
-            content_score: number;
-            tags: string[];
-            faces_detected: number;
-        };
+        variants_generated?: boolean;
+    };
+    metadata?: {
+        width?: number;
+        height?: number;
+        file_name?: string;
+        file_type?: string;
+        file_size?: number;
     };
     created_at: string;
     created_by: number;
     updated_at: string;
 }
 
+export interface MediaApiResponse {
+    status: boolean;
+    code: number;
+    message: string;
+    data: MediaItem[];
+    pagination?: {
+        page: number;
+        limit: number;
+        totalCount: number;
+        totalPages: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+    };
+    other?: any;
+}
+
+export interface MediaApiResponse {
+    status: boolean;
+    code: number;
+    message: string;
+    data: MediaItem[];
+    pagination?: {
+        page: number;
+        limit: number;
+        totalCount: number;
+        totalPages: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+    };
+    other?: any;
+}
 
 /**
- * Fetch event media with smart caching and progressive loading
+ * FIXED: Main API function that returns the full response
  */
-export const getEventMedia = async (
+export const getEventMediaWithPagination = async (
     eventId: string,
     authToken: string,
-    includeAllAlbums: boolean = true,
     options: {
+        albumId?: string;
         includeProcessing?: boolean;
         includePending?: boolean;
         page?: number;
         limit?: number;
         quality?: 'thumbnail' | 'display' | 'full';
         since?: string;
-        // NEW: Status-based filtering
         status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
         scrollType?: 'pagination' | 'infinite';
         cursor?: string;
     } = {}
-): Promise<MediaItem[]> => {
+): Promise<MediaApiResponse> => {
     try {
-        const cacheKey = `event_${eventId}_${options.status || 'all'}`;
-
-        // Log to verify function call
         console.log(`Fetching event media for eventId: ${eventId}, status: ${options.status}, options:`, options);
 
-        // Check cache for incremental updates
-        if (!options.since && !options.includeProcessing && !options.includePending && !options.cursor) {
-            const cached = imageCache.get(cacheKey);
-            if (cached) {
-                console.log(`Using cached event media (${cached.length} items)`);
-                return cached;
-            }
-        }
+        const endpoint = options.albumId
+            ? `${API_BASE_URL}/media/album/${options.albumId}`
+            : `${API_BASE_URL}/media/event/${eventId}`;
 
-        const endpoint = `${API_BASE_URL}/media/event/${eventId}`;
         const params = new URLSearchParams();
 
-        // Legacy parameters (for backward compatibility)
+        // Add all parameters
         if (options.includeProcessing) params.append('include_processing', 'true');
         if (options.includePending) params.append('include_pending', 'true');
         if (options.page) params.append('page', options.page.toString());
         if (options.limit) params.append('limit', options.limit.toString());
         if (options.quality) params.append('quality', options.quality);
         if (options.since) params.append('since', options.since);
-
-        // NEW: Status-based filtering
         if (options.status) params.append('status', options.status);
         if (options.scrollType) params.append('scroll_type', options.scrollType);
         if (options.cursor) params.append('cursor', options.cursor);
@@ -87,35 +118,15 @@ export const getEventMedia = async (
         const response = await axios.get(`${endpoint}?${params}`, {
             headers: {
                 'Authorization': `Bearer ${authToken}`,
-                'If-Modified-Since': imageCache.getLastModified(cacheKey) || '',
             },
             timeout: 15000,
         });
 
         console.log('API Response:', response.status, response.data);
 
-        if (response.status === 304) {
-            const cached = imageCache.get(cacheKey);
-            console.log('Returning cached media due to 304 Not Modified');
-            return cached || [];
-        }
-
         if (response.data && response.data.status === true) {
-            const mediaItems: MediaItem[] = response.data.data || [];
-
-            // Handle incremental updates
-            if (options.since || options.cursor) {
-                const cached = imageCache.get(cacheKey) || [];
-                const combined = mergeMediaUpdates(cached, mediaItems);
-                imageCache.set(cacheKey, combined, response.headers['last-modified']);
-                return combined;
-            } else {
-                const lastModified = response.headers['last-modified'];
-                imageCache.set(cacheKey, mediaItems, lastModified);
-            }
-
-            console.log(`Fetched ${mediaItems.length} media items for event`);
-            return mediaItems;
+            // Return the full response structure
+            return response.data as MediaApiResponse;
         }
 
         throw new Error(response.data?.message || 'Failed to fetch event media');
@@ -130,8 +141,21 @@ export const getEventMedia = async (
                 throw new Error('Authentication error. Please log in again.');
             }
             if (error.response?.status === 404) {
-                console.log('No media found for event, returning empty array');
-                return []; // Event has no photos yet
+                console.log('No media found for event, returning empty response');
+                return {
+                    status: true,
+                    code: 200,
+                    message: 'No media found',
+                    data: [],
+                    pagination: {
+                        page: 1,
+                        limit: options.limit || 20,
+                        totalCount: 0,
+                        totalPages: 0,
+                        hasNext: false,
+                        hasPrev: false
+                    }
+                };
             }
             if (error.response?.status >= 500) {
                 throw new Error('Server error. Please try again later.');
@@ -140,6 +164,29 @@ export const getEventMedia = async (
 
         throw error;
     }
+};
+
+/**
+ * Fetch event media with smart caching and progressive loading
+ */
+export const getEventMedia = async (
+    eventId: string,
+    authToken: string,
+    options: {
+        albumId?: string;
+        includeProcessing?: boolean;
+        includePending?: boolean;
+        page?: number;
+        limit?: number;
+        quality?: 'thumbnail' | 'display' | 'full';
+        since?: string;
+        status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
+        scrollType?: 'pagination' | 'infinite';
+        cursor?: string;
+    } = {}
+): Promise<MediaItem[]> => {
+    const response = await getEventMediaWithPagination(eventId, authToken, options);
+    return response.data || [];
 };
 
 export const updateMediaStatus = async (
@@ -215,25 +262,7 @@ export const bulkUpdateMediaStatus = async (
     }
 };
 
-/**
- * Merge incremental media updates with cached data
- */
-function mergeMediaUpdates(cached: MediaItem[], updates: MediaItem[]): MediaItem[] {
-    const updatedMap = new Map(updates.map(item => [item._id, item]));
 
-    // Update existing items and add new ones
-    const merged = cached.map(item =>
-        updatedMap.has(item._id) ? updatedMap.get(item._id)! : item
-    );
-
-    // Add completely new items
-    const existingIds = new Set(cached.map(item => item._id));
-    const newItems = updates.filter(item => !existingIds.has(item._id));
-
-    return [...newItems, ...merged].sort((a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-}
 export const getEventMediaCounts = async (
     eventId: string,
     authToken: string
@@ -245,22 +274,23 @@ export const getEventMediaCounts = async (
     total: number;
 } | null> => {
     try {
-        const endpoint = `${API_BASE_URL}/media/event/${eventId}/counts`;
+        // const endpoint = `${API_BASE_URL}/media/event/${eventId}/counts`;
 
-        console.log(`Fetching media counts for eventId: ${eventId}`);
+        // console.log(`Fetching media counts for eventId: ${eventId}`);
 
-        const response = await axios.get(endpoint, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-            },
-            timeout: 10000,
-        });
+        // const response = await axios.get(endpoint, {
+        //     headers: {
+        //         'Authorization': `Bearer ${authToken}`,
+        //     },
+        //     timeout: 10000,
+        // });
 
-        if (response.data && response.data.status === true) {
-            return response.data.data;
-        }
+        // if (response.data && response.data.status === true) {
+        //     return response.data.data;
+        // }
 
-        throw new Error(response.data?.message || 'Failed to fetch media counts');
+        // throw new Error(response.data?.message || 'Failed to fetch media counts');
+        return null;
     } catch (error) {
         console.error('Error fetching media counts:', error);
         return null;
@@ -271,77 +301,164 @@ export const getEventMediaCounts = async (
  * Guest access functions with progressive loading
  */
 export const getEventMediaWithGuestToken = async (
-    eventId: string,
+    shareToken: string,
     authToken?: string | null,
-    guestToken?: string,
-    options: {
-        page?: number;
-        limit?: number;
-        quality?: 'thumbnail' | 'display' | 'full';
-    } = {}
-): Promise<MediaItem[]> => {
+    options: Partial<MediaFetchOptions> = {}
+): Promise<MediaResponse> => {
     try {
-        const cacheKey = `guest_event_${eventId}_${guestToken}`;
+        // Input validation
+        if (!shareToken) {
+            throw new Error('Share token is required');
+        }
+
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
         };
 
-        // Add auth token if available (for authenticated users)
+        // Add auth token if available
         if (authToken) {
             headers['Authorization'] = `Bearer ${authToken}`;
         }
-        // Check cache first
-        const cached = imageCache.get(cacheKey);
-        if (cached && !options.page) {
-            console.log(`Using cached guest event media (${cached.length} items)`);
-            return cached;
+
+        // Build query parameters with defaults
+        const params = new URLSearchParams();
+        if (options.page) params.append('page', options.page.toString());
+        if (options.limit) params.append('limit', options.limit.toString());
+        if (options.quality) params.append('quality', options.quality);
+        if (options.scroll_type) params.append('scrollType', options.scroll_type); // Fixed param name
+
+        console.log(`🔗 Fetching guest event media: ${shareToken.substring(0, 8)}... with params:`, Object.fromEntries(params));
+
+        const url = `${API_BASE_URL}/media/guest/${shareToken}${params.toString() ? `?${params.toString()}` : ''}`;
+        console.log(`📡 API URL: ${url}`);
+
+        const response = await axios.get(url, {
+            timeout: 15000,
+            headers,
+            validateStatus: (status) => status < 500 // Accept 4xx errors to handle them properly
+        });
+
+        console.log('📦 API Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            dataKeys: response.data ? Object.keys(response.data) : [],
+            hasData: !!response.data?.data,
+            itemCount: response.data?.data?.length || 0,
+            apiStatus: response.data?.status,
+            apiSuccess: response.data?.success,
+            pagination: response.data?.pagination,
+            other: response.data?.other
+        });
+
+        // Handle different HTTP status codes
+        if (response.status >= 400) {
+            const errorMessage = response.data?.message || response.data?.error?.message || `HTTP ${response.status}`;
+
+            if (response.status === 401 || response.status === 403) {
+                throw new Error('Share link has expired or is no longer valid');
+            } else if (response.status === 404) {
+                throw new Error('Event not found or share link is invalid');
+            } else {
+                throw new Error(errorMessage);
+            }
         }
 
-        console.log(`Fetching guest event media: ${eventId}`);
+        // Check API response structure
+        if (!response.data) {
+            throw new Error('No response data received');
+        }
 
-        // const params = new URLSearchParams({
-        //     token: guestToken,
-        //     includeAllAlbums: includeAllAlbums.toString()
-        // });
+        // Handle different API response formats
+        const isSuccessful = response.data.status === true ||
+            response.data.success === true ||
+            response.status === 200;
 
-        // if (options.page) params.append('page', options.page.toString());
-        // if (options.limit) params.append('limit', options.limit.toString());
-        // if (options.quality) params.append('quality', options.quality);
+        if (!isSuccessful) {
+            const errorMessage = response.data.message ||
+                response.data.error?.message ||
+                'API request was not successful';
+            throw new Error(errorMessage);
+        }
 
-        const response = await axios.get(`${API_BASE_URL}/media/guest/${eventId}`, {
-            timeout: 15000,
-            headers
+        const mediaItems = response.data.data || [];
+
+        // Enhanced response structure to handle multiple pagination formats
+        const result: MediaResponse = {
+            data: mediaItems,
+            // Try multiple sources for total count
+            total: response.data.pagination?.total ||
+                response.data.pagination?.totalCount ||
+                response.data.total ||
+                response.data.other?.pagination?.totalCount ||
+                mediaItems.length,
+
+            // Try multiple sources for hasMore
+            hasMore: response.data.pagination?.hasMore ||
+                response.data.hasMore ||
+                response.data.pagination?.hasNext ||
+                response.data.other?.pagination?.hasNext ||
+                false,
+
+            nextCursor: response.data.nextCursor,
+
+            // Preserve original pagination structure
+            pagination: response.data.pagination,
+            other: response.data.other
+        };
+
+        console.log('✅ Processed API response:', {
+            dataCount: result.data.length,
+            total: result.total,
+            hasMore: result.hasMore,
+            hasPagination: !!result.pagination,
+            hasOther: !!result.other
         });
-        // const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/guest?${params}`, {
-        //     timeout: 15000
-        // });
 
-        console.log(response, 'response from guest event media API asdfasdf');
+        return result;
 
-        if (response.data && (response.data.status === true || response.data.success)) {
-            const mediaItems = response.data.data || [];
+    } catch (error) {
+        console.error('❌ Error fetching event media with guest token:', {
+            shareToken: shareToken.substring(0, 8) + '...',
+            error: error instanceof Error ? error.message : String(error),
+            options
+        });
 
-            if (!options.page) {
-                imageCache.set(cacheKey, mediaItems);
+        // Enhanced error handling
+        if (axios.isAxiosError(error)) {
+            if (error.code === 'ECONNABORTED') {
+                throw new Error('Request timeout - please check your connection');
             }
 
-            console.log(`Fetched ${mediaItems.length} media items as guest`);
-            return mediaItems;
-        }
-
-        throw new Error(response.data?.message || 'Failed to fetch event media');
-    } catch (error) {
-        console.error('Error fetching event media with guest token:', error);
-
-        if (axios.isAxiosError(error)) {
             if (error.response?.status === 401 || error.response?.status === 403) {
                 throw new Error('Share link has expired or is no longer valid');
             }
+
+            if (error.response?.status === 404) {
+                throw new Error('Event not found or share link is invalid');
+            }
+
+            if (error.response?.status >= 500) {
+                throw new Error('Server error - please try again later');
+            }
+
+            // Use response error message if available
+            const responseMessage = error.response?.data?.message ||
+                error.response?.data?.error?.message;
+            if (responseMessage) {
+                throw new Error(responseMessage);
+            }
         }
 
-        throw error;
+        // Re-throw the error if it's already a custom error
+        if (error instanceof Error) {
+            throw error;
+        }
+
+        // Generic fallback error
+        throw new Error('Failed to fetch event media - please try again');
     }
 };
+
 
 export const getAlbumMediaWithGuestToken = async (
     albumId: string,
@@ -617,60 +734,6 @@ export const getMediaProcessingStatus = async (
 };
 
 /**
- * Enhanced photo transformation with progressive loading support
- */
-export const transformMediaToPhoto = (mediaItem: MediaItem) => {
-    // Generate progressive URLs for ImageKit
-    const generateProgressiveUrls = (baseUrl: string) => {
-        if (!baseUrl.includes('imagekit.io') && !baseUrl.includes('ik.imagekit.io')) {
-            return {
-                placeholder: baseUrl,
-                thumbnail: baseUrl,
-                display: baseUrl,
-                full: baseUrl
-            };
-        }
-
-        return {
-            placeholder: `${baseUrl}?tr=w-20,h-15,bl-10,q-20`,
-            thumbnail: `${baseUrl}?tr=w-300,h-200,q-60,f-webp`,
-            display: `${baseUrl}?tr=w-800,h-600,q-80,f-webp`,
-            full: `${baseUrl}?tr=q-90,f-webp`
-        };
-    };
-
-    const progressiveUrls = generateProgressiveUrls(mediaItem.url);
-
-    return {
-        id: mediaItem._id || mediaItem.id,
-        albumId: mediaItem.album_id,
-        eventId: mediaItem.event_id,
-        takenBy: mediaItem.created_by,
-        imageUrl: mediaItem.url,
-        thumbnail: mediaItem.thumbnail_url || progressiveUrls.thumbnail,
-        progressiveUrls,
-        createdAt: mediaItem.created_at ? new Date(mediaItem.created_at) : new Date(),
-        approval: mediaItem.approval,
-        processing: mediaItem.processing,
-        metadata: {
-            ...mediaItem.metadata,
-            width: mediaItem.metadata?.width,
-            height: mediaItem.metadata?.height,
-            fileName: mediaItem.metadata?.file_name,
-            fileType: mediaItem.metadata?.file_type,
-            fileSize: mediaItem.metadata?.file_size,
-            location: mediaItem.metadata?.location ? {
-                lat: mediaItem.metadata.location.latitude,
-                lng: mediaItem.metadata.location.longitude
-            } : undefined,
-            device: mediaItem.metadata?.device_info ?
-                `${mediaItem.metadata.device_info.brand} ${mediaItem.metadata.device_info.model}` :
-                undefined
-        }
-    };
-};
-
-/**
  * Batch operations for better performance
  */
 export const batchApproveMedia = async (
@@ -941,6 +1004,59 @@ async function uploadWithRetry(formData: FormData, authToken: string, maxRetries
     throw new Error('Upload failed after all retry attempts');
 }
 
+
+/**
+ * 🚀 API FUNCTION: Updated upload function
+ */
+export const uploadMultipleMedia = async (
+    files: File[],
+    eventId: string,
+    albumId: string | null,
+    authToken: string
+) => {
+    try {
+        const formData = new FormData();
+
+        // Add all files
+        files.forEach((file) => {
+            formData.append('images', file);
+        });
+
+        // Add required fields
+        formData.append('event_id', eventId);
+        if (albumId) {
+            formData.append('album_id', albumId);
+        }
+
+        console.log('🚀 Starting upload:', {
+            fileCount: files.length,
+            totalSize: `${(files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)}MB`
+        });
+
+        const response = await fetch(`${API_BASE_URL}/media/upload`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                // Don't set Content-Type for multipart/form-data
+            },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('✅ Upload completed:', result);
+        return result;
+
+    } catch (error: any) {
+        console.error('❌ Upload error:', error);
+        throw new Error(error.message || 'Upload failed. Please try again.');
+    }
+};
+
 /**
  * Enhanced error handling for uploads
  */
@@ -1055,4 +1171,82 @@ export const getAlbumMedia = async (
 
         throw error;
     }
+};
+
+export const transformMediaToPhoto = (mediaItem: any): Photo => {
+    // 🔧 FIX 1: Define hasValidUrl before using it
+    const hasValidUrl = mediaItem.url &&
+        mediaItem.url !== '' &&
+        !mediaItem.url.startsWith('placeholder://');
+
+    // 🔧 FIX 2: Build progressive URLs with fallbacks
+    const progressiveUrls = {
+        placeholder: mediaItem.image_variants?.small?.jpeg?.url ||
+            mediaItem.responsive_urls?.thumbnail ||
+            mediaItem.url || '',
+        thumbnail: mediaItem.image_variants?.small?.jpeg?.url ||
+            mediaItem.responsive_urls?.thumbnail ||
+            mediaItem.url || '',
+        display: mediaItem.image_variants?.medium?.jpeg?.url ||
+            mediaItem.responsive_urls?.medium ||
+            mediaItem.url || '',
+        full: mediaItem.image_variants?.large?.jpeg?.url ||
+            mediaItem.responsive_urls?.large ||
+            mediaItem.url || '',
+        original: mediaItem.image_variants?.original?.url ||
+            mediaItem.responsive_urls?.original ||
+            mediaItem.url || ''
+    };
+
+    // 🔧 FIX 3: Correct processing status logic
+    const processingStatus = mediaItem.processing?.status ||
+        (hasValidUrl ? 'completed' : 'pending');
+
+    return {
+        id: mediaItem._id || mediaItem.id,
+        albumId: mediaItem.album_id,
+        eventId: mediaItem.event_id,
+        takenBy: mediaItem.uploader_display_name || mediaItem.created_by,
+
+        // 🔧 FIX 4: Use display URL for main imageUrl, empty if processing
+        imageUrl: hasValidUrl ? progressiveUrls.display : '',
+        thumbnail: progressiveUrls.thumbnail,
+
+        createdAt: new Date(mediaItem.created_at),
+        originalFilename: mediaItem.original_filename || `Image-${mediaItem._id}`,
+
+        // 🔧 FIX 5: Remove extra comma and fix variable name
+        processingStatus: processingStatus as 'pending' | 'processing' | 'completed' | 'failed',
+        processingProgress: mediaItem.processing?.progress || 0, // Fixed: was 'media', should be 'mediaItem'
+
+        approval: {
+            status: mediaItem.approval_status || mediaItem.approval?.status,
+            approved_at: mediaItem.approval?.approved_at ? new Date(mediaItem.approval.approved_at) : undefined,
+            approved_by: mediaItem.approval?.approved_by,
+            rejection_reason: mediaItem.approval?.rejection_reason
+        },
+
+        processing: {
+            status: mediaItem.processing_status || mediaItem.processing?.status,
+            thumbnails_generated: mediaItem.has_variants || mediaItem.processing?.thumbnails_generated,
+            variants_generated: mediaItem.has_variants || mediaItem.processing?.variants_generated
+        },
+
+        progressiveUrls,
+
+        metadata: {
+            width: mediaItem.dimensions?.width || mediaItem.metadata?.width || mediaItem.image_variants?.original?.width || 0,
+            height: mediaItem.dimensions?.height || mediaItem.metadata?.height || mediaItem.image_variants?.original?.height || 0,
+            fileName: mediaItem.original_filename || mediaItem.metadata?.file_name,
+            fileType: mediaItem.format || mediaItem.metadata?.file_type,
+            fileSize: mediaItem.size_mb || mediaItem.metadata?.file_size || 0
+        },
+
+        stats: mediaItem.stats || {
+            views: 0,
+            downloads: 0,
+            shares: 0,
+            likes: 0
+        }
+    };
 };
