@@ -517,6 +517,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         photoCount={photos.length}
         totalPhotos={totalPhotos}
       >
+      </DynamicEventCover>
         {/* Action buttons in the cover */}
         {/* <div className="flex items-center gap-4 mt-6">
           <ConnectionStatus />
@@ -554,10 +555,9 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             Refresh
           </button>
         </div> */}
-      </DynamicEventCover>
 
       {/* Photo Gallery Section */}
-      <div className="max-w-full mx-auto px-0 py-8">
+      <div className="max-w-full mx-auto px-0 pb-8">
         {renderContent()}
       </div>
 

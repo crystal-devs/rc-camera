@@ -268,7 +268,7 @@ export const PinterestPhotoGrid: React.FC<{
     }
 
     return (
-      <div className="space-y-4" style={getContainerStyles}>
+      <div className="space-y-4 pt-10" style={getContainerStyles}>
         <div
           ref={containerRef}
           className="relative w-full"

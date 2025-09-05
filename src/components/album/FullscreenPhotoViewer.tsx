@@ -62,7 +62,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const [isHighResLoading, setIsHighResLoading] = useState(false);
   const [photoInfoOpen, setPhotoInfoOpen] = useState(false);
 
-  const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const controlsTimeoutRef = useRef<NodeJS.Timeout>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
   // Smart URL resolution with support for original quality
@@ -74,7 +74,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   // Calculate display dimensions based on original metadata and viewport
   const calculateDisplayDimensions = useMemo(() => {
     const metadata = selectedPhoto.metadata;
-    if (!metadata?.width || !metadata?.height) {
+    if (!metadata?.originalWidth || !metadata?.originalHeight) {
       // Fallback if no metadata
       return {
         width: 'auto',
@@ -84,7 +84,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
       };
     }
 
-    const { width: originalWidth, height: originalHeight } = metadata;
+    const originalWidth = metadata?.originalWidth;
+    const originalHeight = metadata?.originalHeight;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
@@ -110,7 +111,6 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
     if (progressiveUrls) {
       return {
-        placeholder: progressiveUrls.placeholder || progressiveUrls.thumbnail,
         thumbnail: progressiveUrls.thumbnail || progressiveUrls.display,
         display: progressiveUrls.display || progressiveUrls.full,
         high: progressiveUrls.full || progressiveUrls.original,
@@ -694,8 +694,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                 }}
                 draggable={false}
                 onClick={(e) => e.stopPropagation()}
-                width={selectedPhoto.metadata?.width}
-                height={selectedPhoto.metadata?.height}
+                width={selectedPhoto.metadata?.originalWidth}
+                height={selectedPhoto.metadata?.originalHeight}
               />
 
               {/* Loading indicator */}
@@ -711,7 +711,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
               {/* Success indicator with dimensions */}
               {imageLoaded && !isHighResLoading && selectedPhoto.metadata && (
                 <div className="absolute top-4 right-4 bg-green-500/80 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm z-10 opacity-0 animate-[fadeInOut_2s_ease-in-out]">
-                  {selectedPhoto.metadata.width}×{selectedPhoto.metadata.height}
+                  {selectedPhoto.metadata.originalWidth}×{selectedPhoto.metadata.originalHeight}
                 </div>
               )}
             </div>
@@ -727,14 +727,27 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           id: selectedPhoto.id,
           imageUrl: originalUrl,
           src: originalUrl,
-          title: selectedPhoto.title,
-          takenBy: selectedPhoto.takenBy || selectedPhoto.uploadedBy,
-          uploadedBy: selectedPhoto.uploadedBy,
-          uploadedAt: selectedPhoto.uploadedAt || selectedPhoto.createdAt,
-          takenAt: selectedPhoto.takenAt,
+          title: selectedPhoto?.title,
+          takenBy: selectedPhoto.takenBy?.toString(),
+          uploadedBy: selectedPhoto.uploadedBy?.toString(),
+          uploadedAt: selectedPhoto.uploadedAt?.toString(),
+          takenAt: selectedPhoto.takenAt?.toString(),
           location: selectedPhoto.location,
-          metadata: selectedPhoto.metadata,
-          stats: selectedPhoto.stats,
+          metadata: {
+            width: selectedPhoto.metadata?.originalWidth,
+            height: selectedPhoto.metadata?.originalHeight,
+            size: selectedPhoto.metadata?.fileSize,
+            camera: selectedPhoto.metadata?.device,
+            lens: undefined,
+            iso: undefined,
+            aperture: undefined,
+            shutterSpeed: undefined,
+            focalLength: undefined
+          },
+          stats: {
+            views: undefined,
+            downloads: undefined
+          },
           approval: selectedPhoto.approval
         }}
         canDownload={userPermissions?.download}

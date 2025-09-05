@@ -9,15 +9,38 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useStore } from '@/lib/store';
 import { toast } from 'sonner';
+import z from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+
+
+const profileFormSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  phone: z.string().min(10, "Enter a valid phone number").optional(),
+  email: z.string().nonempty({ message: "Email is required" }).refine((val) => {
+    return !val; // Always return false, so the field is not editable
+  })
+})
 
 export default function AccountSettingsPage() {
   const router = useRouter();
   const { isAuthenticated, userData, setUserData, hydrated } = useStore();
+
+  const form = useForm<z.infer<typeof profileFormSchema>>({
+    resolver: zodResolver(profileFormSchema),
+    defaultValues: {
+      name: userData?.name || '',
+      email: userData?.email || '',
+      phone: '' // Default phone number
+    },
+  })
+
   
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    phone: '+1 234 567 8900' // Default phone number
+    phone: '' // Default phone number
   });
   
   useEffect(() => {
@@ -77,6 +100,24 @@ export default function AccountSettingsPage() {
               <p>You need to be logged in to edit account information.</p>
             </div>
           )}
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSave)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="John Doe" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </form>
+          </Form>
           
           <div className="space-y-2">
             <Label htmlFor="name">Full Name</Label>

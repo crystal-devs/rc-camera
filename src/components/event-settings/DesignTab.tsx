@@ -16,7 +16,6 @@ import {
   getThemePreviewClass,
   getThumbnailPreviewClass,
   getSpacingPreviewClass,
-  getCornerRadiusPreviewClass,
   getStyleOptions
 } from '@/constants/styling.constant';
 
@@ -41,7 +40,6 @@ export const DesignTab: React.FC<EnhancedDesignTabProps> = ({
     theme: { 
       theme_id: 0, 
       fontset_id: 0,
-      corner_radius: 2,
       animations: 1
     },
     advanced: {
@@ -101,10 +99,10 @@ export const DesignTab: React.FC<EnhancedDesignTabProps> = ({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-gray-900">{template.name}</p>
-              {template.height === '100vh' && <Badge variant="outline" className="text-xs">Full</Badge>}
-              {template.height === '60vh' && <Badge variant="outline" className="text-xs">Hero</Badge>}
+              {/* {template.height === '100vh' && <Badge variant="outline" className="text-xs">Full</Badge>} */}
+              {/* {template.height === '60vh' && <Badge variant="outline" className="text-xs">Hero</Badge>} */}
             </div>
-            <p className="text-xs text-gray-500">{template.description}</p>
+            {/* <p className="text-xs text-gray-500">{template.description}</p> */}
           </div>
         </CardContent>
       </Card>
@@ -375,126 +373,6 @@ export const DesignTab: React.FC<EnhancedDesignTabProps> = ({
                 </CardContent>
               </Card>
             ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Corner Style */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold text-gray-900">Corner Style</h3>
-          <p className="text-sm text-gray-600">
-            Adjust the corner radius for photos and UI elements.
-          </p>
-        </div>
-
-        <div className="lg:col-span-2">
-          <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
-            {styleOptions.cornerRadius.map((radius) => (
-              <Button
-                key={radius.id}
-                type="button"
-                variant={stylingConfig.theme.corner_radius === radius.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => handleStyleChange('theme', 'corner_radius', radius.id)}
-                className="h-auto p-3 flex flex-col items-center"
-              >
-                <div className={`w-8 h-8 bg-blue-400 ${radius.preview} mb-1`}></div>
-                <span className="text-xs font-medium">{radius.name}</span>
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Animation Level */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <Zap className="h-5 w-5 text-gray-500" />
-            Animations
-          </h3>
-          <p className="text-sm text-gray-600">
-            Control the level of animations and transitions.
-          </p>
-        </div>
-
-        <div className="lg:col-span-2">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {styleOptions.animations.map((anim) => (
-              <Button
-                key={anim.id}
-                type="button"
-                variant={stylingConfig.theme.animations === anim.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => handleStyleChange('theme', 'animations', anim.id)}
-                className="h-auto p-3 flex flex-col items-start"
-              >
-                <span className="font-medium text-sm">{anim.name}</span>
-                <span className="text-xs opacity-70 text-left">{anim.description}</span>
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Advanced Options */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <Sliders className="h-5 w-5 text-gray-500" />
-            Advanced Styling
-          </h3>
-          <p className="text-sm text-gray-600">
-            Fine-tune overlay opacity and background blur effects for your cover image.
-          </p>
-        </div>
-
-        <div className="lg:col-span-2 space-y-6">
-          {/* Overlay Opacity */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Cover Overlay Opacity</Label>
-              <span className="text-xs text-gray-500">{stylingConfig.advanced?.overlay_opacity || 40}%</span>
-            </div>
-            <Slider
-              value={[stylingConfig.advanced?.overlay_opacity || 40]}
-              onValueChange={(value) => handleStyleChange('advanced', 'overlay_opacity', value[0])}
-              max={80}
-              min={0}
-              step={5}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-500">Controls the darkness of the overlay on cover images</p>
-          </div>
-
-          {/* Background Blur */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Background Blur</Label>
-              <span className="text-xs text-gray-500">{stylingConfig.advanced?.blur_strength || 0}px</span>
-            </div>
-            <Slider
-              value={[stylingConfig.advanced?.blur_strength || 0]}
-              onValueChange={(value) => handleStyleChange('advanced', 'blur_strength', value[0])}
-              max={10}
-              min={0}
-              step={1}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-500">Adds blur effect to background images behind text</p>
-          </div>
-
-          {/* Custom CSS */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">Custom CSS (Advanced)</Label>
-            <textarea
-              value={stylingConfig.advanced?.custom_css || ''}
-              onChange={(e) => handleStyleChange('advanced', 'custom_css', e.target.value)}
-              placeholder="/* Add custom CSS styles here */&#10;.event-cover { /* your styles */ }&#10;.gallery-item { /* your styles */ }"
-              className="w-full h-24 px-3 py-2 border border-gray-300 rounded-md text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <p className="text-xs text-gray-500">Add custom CSS for advanced styling customization</p>
           </div>
         </div>
       </div>

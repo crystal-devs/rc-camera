@@ -1,4 +1,4 @@
-// constants/styling.ts - Consolidated styling constants
+// constants/styling.ts - Updated with comprehensive template configurations
 interface CoverTemplate {
   name: string;
   description: string;
@@ -6,24 +6,16 @@ interface CoverTemplate {
   hasImage: boolean;
   height: string;
   textPosition?: string;
+  overlay?: string;
+  bottomBar?: string;
+  special?: string;
+  border?: string;
   style: {
     objectFit: string;
     objectPosition: string;
     overlay: { opacity: number; color: string };
     textAlign: string;
     contentPosition: string;
-  };
-}
-
-interface CoverType {
-  name: string;
-  description: string;
-  css: {
-    width: string;
-    height: string;
-    borderRadius: string;
-    minHeight?: string;
-    margin?: string;
   };
 }
 
@@ -120,7 +112,6 @@ interface Language {
 
 interface StylingConstants {
   coverTemplates: Record<number, CoverTemplate>;
-  coverTypes: Record<number, CoverType>;
   galleryLayouts: Record<number, GalleryLayout>;
   gridSpacing: Record<number, GridSpacing>;
   thumbnailSizes: Record<number, ThumbnailSize>;
@@ -133,8 +124,9 @@ interface StylingConstants {
 }
 
 export const STYLING_CONSTANTS: StylingConstants = {
-  // Cover Templates - Consolidated with heights and layouts
+  // Cover Templates - Comprehensive template system from component
   coverTemplates: {
+    // No Cover
     0: {
       name: "None",
       description: "No cover section, start directly with gallery",
@@ -149,6 +141,8 @@ export const STYLING_CONSTANTS: StylingConstants = {
         contentPosition: "center"
       }
     },
+
+    // Existing Templates
     1: {
       name: "Center Full Screen",
       description: "Centered overlay text (full viewport height)",
@@ -159,7 +153,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
       style: {
         objectFit: "cover",
         objectPosition: "center",
-        overlay: { opacity: 0.5, color: "rgba(0, 0, 0, 0.5)" },
+        overlay: { opacity: 0.4, color: "rgba(0, 0, 0, 0.4)" },
         textAlign: "center",
         contentPosition: "center"
       }
@@ -174,7 +168,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
       style: {
         objectFit: "cover",
         objectPosition: "center",
-        overlay: { opacity: 0.5, color: "rgba(0, 0, 0, 0.5)" },
+        overlay: { opacity: 0.4, color: "rgba(0, 0, 0, 0.4)" },
         textAlign: "left",
         contentPosition: "left"
       }
@@ -189,7 +183,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
       style: {
         objectFit: "cover",
         objectPosition: "center",
-        overlay: { opacity: 0.5, color: "rgba(0, 0, 0, 0.5)" },
+        overlay: { opacity: 0.4, color: "rgba(0, 0, 0, 0.4)" },
         textAlign: "right",
         contentPosition: "right"
       }
@@ -223,56 +217,105 @@ export const STYLING_CONSTANTS: StylingConstants = {
         textAlign: "left",
         contentPosition: "right"
       }
-    }
-  },
+    },
 
-  // Cover Types (keeping for backward compatibility)
-  coverTypes: {
-    0: {
-      name: "Standard",
-      description: "Normal height cover (400px)",
-      css: {
-        width: "100%",
-        height: "400px",
-        borderRadius: "0"
+    // NEW ELEGANT TEMPLATES - Border Overlay Templates (100vh)
+    8: {
+      name: "Simple Border Overlay",
+      description: "Clean simple border overlay (full viewport height)",
+      layout: "border-overlay-simple",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "center",
+      overlay: "border-simple",
+      style: {
+        objectFit: "cover",
+        objectPosition: "center",
+        overlay: { opacity: 0.4, color: "rgba(0, 0, 0, 0.4)" },
+        textAlign: "center",
+        contentPosition: "center"
       }
     },
-    1: {
-      name: "Tall",
-      description: "Increased height for impact (500px)",
-      css: {
-        width: "100%",
-        height: "500px",
-        borderRadius: "0"
+    9: {
+      name: "Double Border Overlay",
+      description: "Elegant double border overlay (full viewport height)",
+      layout: "border-overlay-double",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "center",
+      overlay: "border-double",
+      style: {
+        objectFit: "cover",
+        objectPosition: "center",
+        overlay: { opacity: 0.3, color: "rgba(0, 0, 0, 0.3)" },
+        textAlign: "center",
+        contentPosition: "center"
       }
     },
-    2: {
-      name: "Compact",
-      description: "Reduced height, more content focus (300px)",
-      css: {
-        width: "100%",
-        height: "300px",
-        borderRadius: "0"
+    11: {
+      name: "Dashed Border Overlay",
+      description: "Stylish dashed border overlay (full viewport height)",
+      layout: "border-overlay-dashed",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "center",
+      overlay: "border-dashed",
+      style: {
+        objectFit: "cover",
+        objectPosition: "center",
+        overlay: { opacity: 0.3, color: "rgba(0, 0, 0, 0.3)" },
+        textAlign: "center",
+        contentPosition: "center"
       }
     },
-    3: {
-      name: "Hero",
-      description: "Full viewport height",
-      css: {
-        width: "100%",
-        height: "60vh",
-        minHeight: "500px",
-        borderRadius: "0"
+
+    // Bottom Bar Templates (100vh)
+    12: {
+      name: "Solid Bottom Bar",
+      description: "Solid color bottom information bar (full viewport height)",
+      layout: "bottom-bar-solid",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "bottom",
+      bottomBar: "solid",
+      style: {
+        objectFit: "cover",
+        objectPosition: "center",
+        overlay: { opacity: 0.2, color: "rgba(0, 0, 0, 0.2)" },
+        textAlign: "left",
+        contentPosition: "bottom"
       }
     },
-    4: {
-      name: "Container",
-      description: "Contained with rounded corners",
-      css: {
-        width: "100%",
-        height: "400px",
-        borderRadius: "12px",
-        margin: "1rem"
+    15: {
+      name: "Vintage Frame",
+      description: "Classic vintage frame style (full viewport height)",
+      layout: "vintage-frame",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "center",
+      special: "vintage",
+      style: {
+        objectFit: "cover",
+        objectPosition: "center",
+        overlay: { opacity: 0.3, color: "rgba(0, 0, 0, 0.3)" },
+        textAlign: "center",
+        contentPosition: "center"
+      }
+    },
+    16: {
+      name: "Minimalist Frame",
+      description: "Minimalist frame style (full viewport height)",
+      layout: "minimalist-frame",
+      hasImage: true,
+      height: "100vh",
+      textPosition: "center",
+      special: "minimalist",
+      style: {
+        objectFit: "cover",
+        objectPosition: "center",
+        overlay: { opacity: 0.3, color: "rgba(0, 0, 0, 0.3)" },
+        textAlign: "center",
+        contentPosition: "center"
       }
     }
   },
@@ -396,222 +439,114 @@ export const STYLING_CONSTANTS: StylingConstants = {
 
   // Themes - Expanded with more options
   themes: {
-    0: {
-      name: "Clean Light",
-      description: "Bright and minimal",
-      colors: {
-        primary: "#000000",
-        secondary: "#666666",
-        background: "#ffffff",
-        surface: "#f8f9fa",
-        accent: "#007bff",
-        text: "#212529",
-        textSecondary: "#6c757d",
-        border: "#dee2e6",
-        success: "#28a745",
-        warning: "#ffc107",
-        error: "#dc3545"
-      },
-      css: {
-        "--color-primary": "#000000",
-        "--color-secondary": "#666666",
-        "--color-background": "#ffffff",
-        "--color-surface": "#f8f9fa",
-        "--color-accent": "#007bff",
-        "--color-text": "#212529",
-        "--color-text-secondary": "#6c757d",
-        "--color-border": "#dee2e6"
-      }
-    },
     1: {
-      name: "Modern Dark",
-      description: "Sophisticated dark theme",
+      name: "Sage Elegance",
+      description: "Sophisticated sage green with cream and charcoal",
       colors: {
-        primary: "#ffffff",
-        secondary: "#b3b3b3",
-        background: "#121212",
-        surface: "#1e1e1e",
-        accent: "#bb86fc",
-        text: "#ffffff",
-        textSecondary: "#b3b3b3",
-        border: "#333333",
-        success: "#4caf50",
-        warning: "#ff9800",
-        error: "#f44336"
+        primary: "#9CAF88",
+        secondary: "#F5F5DC",
+        background: "#F5F5DC",
+        surface: "#F5F5DC",
+        accent: "#6B7456",
+        text: "#2F3E2B",
+        textSecondary: "#5A6B4D",
+        border: "#E8EDE6",
+        success: "#7A8471",
+        warning: "#D4A574",
+        error: "#B85C5C"
       },
       css: {
-        "--color-primary": "#ffffff",
-        "--color-secondary": "#b3b3b3",
-        "--color-background": "#121212",
-        "--color-surface": "#1e1e1e",
-        "--color-accent": "#bb86fc",
-        "--color-text": "#ffffff",
-        "--color-text-secondary": "#b3b3b3",
-        "--color-border": "#333333"
+        "--color-primary": "#9CAF88",
+        "--color-secondary": "#F5F5DC",
+        "--color-background": "#FEFEFE",
+        "--color-surface": "#FFFFFF",
+        "--color-accent": "#6B7456",
+        "--color-text": "#2F3E2B",
+        "--color-text-secondary": "#5A6B4D",
+        "--color-border": "#E8EDE6"
       }
     },
     2: {
-      name: "Ocean Blue",
-      description: "Professional blue theme",
+      name: "Pearl Blush",
+      description: "Soft pearl white with dusty rose and warm gray",
       colors: {
-        primary: "#0f4c75",
-        secondary: "#3282b8",
-        background: "#f0f8ff",
-        surface: "#ffffff",
-        accent: "#3282b8",
-        text: "#0f4c75",
-        textSecondary: "#5a7a95",
-        border: "#d1e7ff",
-        success: "#16a085",
-        warning: "#f39c12",
-        error: "#e74c3c"
+        primary: "#E8D5D5",
+        secondary: "#F8F4F4",
+        background: "#FDFCFC",
+        surface: "#FFFFFF",
+        accent: "#D4A5A5",
+        text: "#4A3C3C",
+        textSecondary: "#6B5B5B",
+        border: "#F0EBEB",
+        success: "#A5C4A5",
+        warning: "#D4B574",
+        error: "#C59999"
       },
       css: {
-        "--color-primary": "#0f4c75",
-        "--color-secondary": "#3282b8",
-        "--color-background": "#f0f8ff",
-        "--color-surface": "#ffffff",
-        "--color-accent": "#3282b8",
-        "--color-text": "#0f4c75",
-        "--color-text-secondary": "#5a7a95",
-        "--color-border": "#d1e7ff"
+        "--color-primary": "#E8D5D5",
+        "--color-secondary": "#F8F4F4",
+        "--color-background": "#FDFCFC",
+        "--color-surface": "#FFFFFF",
+        "--color-accent": "#D4A5A5",
+        "--color-text": "#4A3C3C",
+        "--color-text-secondary": "#6B5B5B",
+        "--color-border": "#F0EBEB"
       }
     },
     3: {
-      name: "Forest Green",
-      description: "Natural earthy theme",
+      name: "Coastal Breeze",
+      description: "Soft blue-gray with cream and seafoam",
       colors: {
-        primary: "#1b5e20",
-        secondary: "#4caf50",
-        background: "#f1f8e9",
-        surface: "#ffffff",
-        accent: "#4caf50",
-        text: "#1b5e20",
-        textSecondary: "#558b2f",
-        border: "#c8e6c9",
-        success: "#2e7d32",
-        warning: "#ef6c00",
-        error: "#c62828"
+        primary: "#A8C4D6",
+        secondary: "#F7F5F3",
+        background: "#FDFDFD",
+        surface: "#FFFFFF",
+        accent: "#7BA8C2",
+        text: "#2D3E4F",
+        textSecondary: "#5A6B7D",
+        border: "#E6EEF4",
+        success: "#8BC4A8",
+        warning: "#D6B887",
+        error: "#C4889B"
       },
       css: {
-        "--color-primary": "#1b5e20",
-        "--color-secondary": "#4caf50",
-        "--color-background": "#f1f8e9",
-        "--color-surface": "#ffffff",
-        "--color-accent": "#4caf50",
-        "--color-text": "#1b5e20",
-        "--color-text-secondary": "#558b2f",
-        "--color-border": "#c8e6c9"
+        "--color-primary": "#A8C4D6",
+        "--color-secondary": "#F7F5F3",
+        "--color-background": "#FDFDFD",
+        "--color-surface": "#FFFFFF",
+        "--color-accent": "#7BA8C2",
+        "--color-text": "#2D3E4F",
+        "--color-text-secondary": "#5A6B7D",
+        "--color-border": "#E6EEF4"
       }
     },
     4: {
-      name: "Sunset Orange",
-      description: "Warm and vibrant",
+      name: "Warm Linen",
+      description: "Natural linen with warm beige and soft brown",
       colors: {
-        primary: "#e65100",
-        secondary: "#ff9800",
-        background: "#fff3e0",
-        surface: "#ffffff",
-        accent: "#ff9800",
-        text: "#e65100",
-        textSecondary: "#f57c00",
-        border: "#ffe0b2",
-        success: "#388e3c",
-        warning: "#ffa000",
-        error: "#d32f2f"
+        primary: "#D4C4A8",
+        secondary: "#F4F1ED",
+        background: "#FEFDFB",
+        surface: "#FFFFFF",
+        accent: "#B8A082",
+        text: "#3F362A",
+        textSecondary: "#6B5D4F",
+        border: "#EDE7DF",
+        success: "#A8B894",
+        warning: "#D4A574",
+        error: "#B87A7A"
       },
       css: {
-        "--color-primary": "#e65100",
-        "--color-secondary": "#ff9800",
-        "--color-background": "#fff3e0",
-        "--color-surface": "#ffffff",
-        "--color-accent": "#ff9800",
-        "--color-text": "#e65100",
-        "--color-text-secondary": "#f57c00",
-        "--color-border": "#ffe0b2"
+        "--color-primary": "#D4C4A8",
+        "--color-secondary": "#F4F1ED",
+        "--color-background": "#FEFDFB",
+        "--color-surface": "#FFFFFF",
+        "--color-accent": "#B8A082",
+        "--color-text": "#3F362A",
+        "--color-text-secondary": "#6B5D4F",
+        "--color-border": "#EDE7DF"
       }
     },
-    5: {
-      name: "Purple Elegance",
-      description: "Rich and elegant",
-      colors: {
-        primary: "#4a148c",
-        secondary: "#9c27b0",
-        background: "#f3e5f5",
-        surface: "#ffffff",
-        accent: "#9c27b0",
-        text: "#4a148c",
-        textSecondary: "#7b1fa2",
-        border: "#e1bee7",
-        success: "#388e3c",
-        warning: "#ffa000",
-        error: "#d32f2f"
-      },
-      css: {
-        "--color-primary": "#4a148c",
-        "--color-secondary": "#9c27b0",
-        "--color-background": "#f3e5f5",
-        "--color-surface": "#ffffff",
-        "--color-accent": "#9c27b0",
-        "--color-text": "#4a148c",
-        "--color-text-secondary": "#7b1fa2",
-        "--color-border": "#e1bee7"
-      }
-    },
-    6: {
-      name: "Rose Gold",
-      description: "Soft and luxurious",
-      colors: {
-        primary: "#880e4f",
-        secondary: "#e91e63",
-        background: "#fce4ec",
-        surface: "#ffffff",
-        accent: "#e91e63",
-        text: "#880e4f",
-        textSecondary: "#ad1457",
-        border: "#f8bbd9",
-        success: "#388e3c",
-        warning: "#ffa000",
-        error: "#d32f2f"
-      },
-      css: {
-        "--color-primary": "#880e4f",
-        "--color-secondary": "#e91e63",
-        "--color-background": "#fce4ec",
-        "--color-surface": "#ffffff",
-        "--color-accent": "#e91e63",
-        "--color-text": "#880e4f",
-        "--color-text-secondary": "#ad1457",
-        "--color-border": "#f8bbd9"
-      }
-    },
-    7: {
-      name: "Teal Fresh",
-      description: "Fresh and modern",
-      colors: {
-        primary: "#004d40",
-        secondary: "#00695c",
-        background: "#e0f2f1",
-        surface: "#ffffff",
-        accent: "#00695c",
-        text: "#004d40",
-        textSecondary: "#00796b",
-        border: "#b2dfdb",
-        success: "#388e3c",
-        warning: "#ffa000",
-        error: "#d32f2f"
-      },
-      css: {
-        "--color-primary": "#004d40",
-        "--color-secondary": "#00695c",
-        "--color-background": "#e0f2f1",
-        "--color-surface": "#ffffff",
-        "--color-accent": "#00695c",
-        "--color-text": "#004d40",
-        "--color-text-secondary": "#00796b",
-        "--color-border": "#b2dfdb"
-      }
-    }
   },
 
   // Font Sets
@@ -806,7 +741,13 @@ export const STYLING_CONSTANTS: StylingConstants = {
   }
 };
 
-// Helper functions for UI previews
+// Template utility function to get template configuration
+export const getTemplateConfig = (templateId: number = 1) => {
+  const template = STYLING_CONSTANTS.coverTemplates[templateId] || STYLING_CONSTANTS.coverTemplates[1];
+  return template;
+};
+
+// Helper functions for UI previews - Updated with new templates
 export const getTemplatePreviewClass = (templateId: number): string => {
   const previews = {
     0: "bg-gray-100 border-2 border-dashed border-gray-300",
@@ -817,9 +758,16 @@ export const getTemplatePreviewClass = (templateId: number): string => {
     5: "bg-gradient-to-l from-purple-500 to-transparent",
     6: "bg-gradient-to-br from-indigo-600 via-purple-500 to-pink-500",
     7: "bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900",
-    8: "bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700",
-    9: "bg-gradient-to-br from-rose-600 via-pink-600 to-orange-500",
-    10: "bg-gradient-to-r from-violet-600 to-transparent"
+    8: "bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 border-4 border-white border-opacity-60",
+    9: "bg-gradient-to-br from-rose-600 via-pink-600 to-orange-500 border-4 border-white border-opacity-60",
+    10: "bg-gradient-to-r from-violet-600 to-indigo-600",
+    11: "bg-gradient-to-br from-amber-600 via-orange-500 to-red-500 border-4 border-dashed border-white border-opacity-60",
+    12: "bg-gradient-to-t from-gray-900 via-transparent to-transparent",
+    13: "bg-gradient-to-t from-blue-900 via-blue-600 to-transparent",
+    14: "bg-gradient-to-t from-white/20 via-transparent to-transparent backdrop-blur-sm",
+    15: "bg-gradient-to-br from-amber-700 via-yellow-600 to-orange-500 border-4 border-amber-300",
+    16: "bg-gradient-to-b from-purple-600 to-transparent",
+    17: "bg-gradient-to-br from-slate-900 via-purple-900 to-violet-900"
   };
   return previews[templateId as keyof typeof previews] || previews[1];
 };
@@ -876,7 +824,6 @@ export const getStylingConfig = (event: any) => {
 
   // Safely get IDs with fallbacks
   const coverTemplateId = styling.cover?.template_id ?? 1;
-  const coverTypeId = styling.cover?.type ?? 0;
   const galleryLayoutId = styling.gallery?.layout_id ?? 0;
   const gridSpacingId = styling.gallery?.grid_spacing ?? 1;
   const thumbnailSizeId = styling.gallery?.thumbnail_size ?? 1;
@@ -889,7 +836,6 @@ export const getStylingConfig = (event: any) => {
 
   return {
     coverTemplate: STYLING_CONSTANTS.coverTemplates[coverTemplateId] || STYLING_CONSTANTS.coverTemplates[1],
-    coverType: STYLING_CONSTANTS.coverTypes[coverTypeId] || STYLING_CONSTANTS.coverTypes[0],
     galleryLayout: STYLING_CONSTANTS.galleryLayouts[galleryLayoutId] || STYLING_CONSTANTS.galleryLayouts[0],
     gridSpacing: STYLING_CONSTANTS.gridSpacing[gridSpacingId] || STYLING_CONSTANTS.gridSpacing[1],
     thumbnailSize: STYLING_CONSTANTS.thumbnailSizes[thumbnailSizeId] || STYLING_CONSTANTS.thumbnailSizes[1],
@@ -966,11 +912,6 @@ export const getStyleOptions = () => {
       description: config.description,
       preview: getTemplatePreviewClass(Number(id))
     })),
-    coverTypes: Object.entries(STYLING_CONSTANTS.coverTypes).map(([id, config]) => ({
-      id: Number(id),
-      name: config.name,
-      description: config.description
-    })),
     galleryLayouts: Object.entries(STYLING_CONSTANTS.galleryLayouts).map(([id, config]) => ({
       id: Number(id),
       name: config.name,
@@ -1026,9 +967,9 @@ export const validateStylingConfig = (config: any): boolean => {
     const theme = config?.theme?.theme_id;
 
     return (
-      typeof cover === 'number' && cover >= 0 && cover <= 10 &&
+      typeof cover === 'number' && cover >= 0 && cover <= 17 &&
       typeof gallery === 'number' && gallery >= 0 && gallery <= 3 &&
-      typeof theme === 'number' && theme >= 0 && theme <= 7
+      typeof theme === 'number' && theme >= 0 && theme <= 11 // Updated to include new themes
     );
   } catch (error) {
     return false;
