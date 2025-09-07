@@ -94,7 +94,7 @@ export const EventGrid = ({ events, onEventClick }: EventGridProps) => {
                 <DropdownMenuItem 
                   onClick={(e) => {
                     e.stopPropagation();
-                    router.push(`/events/${event.id}/edit`);
+                    router.push(`/events/${event.id}/settings`);
                   }}
                 >
                   Edit Event
@@ -104,7 +104,7 @@ export const EventGrid = ({ events, onEventClick }: EventGridProps) => {
           </div>
 
           {/* Past Event Indicator */}
-          {!event.isActive && (
+          {!event?.isActive && (
             <div className="absolute top-2 left-2 bg-gray-900/70 text-white text-xs py-1 px-2 rounded-full">
               Past Event
             </div>

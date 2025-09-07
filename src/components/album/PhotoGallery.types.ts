@@ -26,6 +26,12 @@ export interface Photo {
     thumbnails_generated?: boolean;
     compression_progress?: number; // 0-100
   };
+  progressiveUrls?: {
+    thumbnail: string;
+    display: string;
+    full: string;
+    original: string;
+  };
   metadata?: {
     location?: { lat: number; lng: number };
     device?: string;

@@ -2,7 +2,6 @@ import React, { useRef, useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle, SwitchCamera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '@/lib/db';
 
 interface CameraCaptureProps {
   albumId: string;
@@ -176,9 +175,7 @@ export function CameraCapture({ albumId, userId, onPhotoCapture, fullscreen = fa
           device: navigator.userAgent
         }
       };
-      
-      await db.photos.add(photo);
-      
+            
       if (onPhotoCapture) {
         onPhotoCapture(photoId);
       }

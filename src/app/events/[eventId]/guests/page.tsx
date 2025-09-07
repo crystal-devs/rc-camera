@@ -152,7 +152,6 @@ export default function GuestManagementPage({ params }: PageProps) {
     }
     
     const loadEventAndGuests = async () => {
-      // Try to get the token from the hook or directly from localStorage as fallback
       const token = authToken || localStorage.getItem('rc-token');
       
       console.log('Using token for API request:', token ? 'Token available' : 'No token');

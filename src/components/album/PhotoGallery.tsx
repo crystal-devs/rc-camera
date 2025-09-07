@@ -1,41 +1,41 @@
-// components/PhotoGallery.tsx
+// Enhanced Gallery component with proper quality management
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { CameraIcon, DownloadIcon, ClockIcon } from 'lucide-react';
-import { useFullscreen } from '@/lib/FullscreenContext';
+import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
+import { XIcon, WifiIcon, WifiOffIcon, UploadIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogContent } from '@/components/ui/dialog';
-import { db } from '@/lib/db';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import PhotoInfoDialog from '@/components/photo/PhotoInfoDialog';
 import {
-  uploadAlbumMedia,
-  getAlbumMedia,
-  getEventMedia,
-  transformMediaToPhoto,
-  deleteMedia,
-  getEventMediaWithGuestToken,
-  getAlbumMediaWithGuestToken,
-  getEventMediaCounts,
-  updateMediaStatus
-} from '@/services/apis/media.api';
-import { useAuthToken } from '@/hooks/use-auth';
-import { getOrCreateDefaultAlbum } from '@/services/apis/albums.api';
-import PhotoGrid from './PhotoGrid';
+  useEventMedia,
+  useInfiniteEventMediaFlat,
+  useEventMediaCounts,
+  useUploadMultipleMedia,
+  useUpdateMediaStatus,
+  useDeleteMedia,
+  useGalleryUtils
+} from '@/hooks/useMediaQueries';
+import { useUploadStatusMonitor } from '@/hooks/useUploadStatusMonitor';
+import { StatusTabs } from './StatusTabs';
+import { EmptyState } from './EmptyState';
 import PhotoUploadDialog from './PhotoUploadDialog';
-import useSwipe from './useSwipe';
-import { Photo, PhotoGalleryProps } from './PhotoGallery.types';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
+import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
+import { OptimizedPhotoGrid } from './PhotoGrid';
+import { useSimpleWebSocket } from '@/hooks/useWebSocket';
+import { AdminNotificationBadge } from './AdminNotificationBadge';
+import { useUploadProgress } from '@/hooks/useUploadProgress';
 
-export default function PhotoGallery({
+interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
+  shareToken?: string;
+}
+export default function OptimizedPhotoGallery({
   eventId,
   albumId,
+  shareToken,
   canUpload = true,
-  guestToken,
   userPermissions = {
     upload: true,
     download: false,
@@ -43,637 +43,346 @@ export default function PhotoGallery({
     delete: true
   },
   approvalMode = 'auto'
-}: PhotoGalleryProps) {
-  // Core state
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+}: OptimizedPhotoGalleryProps) {
+  // State management
+  const [activeTab, setActiveTab] = useState<'approved' | 'pending' | 'rejected' | 'hidden'>('approved');
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
-  const [isRealtime, setIsRealtime] = useState(true);
-  const [photoInfoOpen, setPhotoInfoOpen] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [defaultAlbumId, setDefaultAlbumId] = useState<string | null>(albumId || null);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
 
-  // NEW: Status management state
-  const [activeTab, setActiveTab] = useState<'approved' | 'pending' | 'rejected' | 'hidden'>('approved');
-  const [mediaCounts, setMediaCounts] = useState({
-    approved: 0,
-    pending: 0,
-    rejected: 0,
-    hidden: 0,
-    total: 0
-  });
-  const [tabLoading, setTabLoading] = useState(false);
+
+  // Upload tracking
+  const [uploadedMediaIds, setUploadedMediaIds] = useState<string[]>([]);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const realtimeInterval = useRef<NodeJS.Timeout | null>(null);
 
-  const token = useAuthToken();
-  const userId = 1; // This should come from auth context
+  // WebSocket connection
+  const webSocket = useSimpleWebSocket(eventId, shareToken, 'admin');
 
-  // Cache for loaded images to prevent re-fetching
-  const imageCache = useRef<Map<string, Photo[]>>(new Map());
-  const lastFetchTime = useRef<Map<string, number>>(new Map());
+  // 🚀 QUALITY MANAGEMENT: Use thumbnail for grid, full for viewer
+  const gridQuality = 'thumbnail'; // Fast loading for grid
 
-  // Check if user can upload based on permissions
-  const canUserUpload = useMemo(() => {
-    return canUpload && userPermissions.upload;
-  }, [canUpload, userPermissions.upload]);
+  // Data fetching hooks with thumbnail quality for grid
+  const {
+    data: regularPhotos = [],
+    isLoading: regularLoading,
+    error: regularError,
+    refetch: refetchRegular
+  } = useEventMedia(eventId, {
+    status: activeTab,
+    limit: 100,
+    quality: gridQuality, // 🚀 Use thumbnail for grid
+    enabled: !useInfiniteScroll
+  });
 
-  // Navigation functions
-  const navigateToPhoto = useCallback((direction: 'next' | 'prev') => {
-    if (selectedPhotoIndex === null || photos.length <= 1) return;
+  const {
+    photos: infinitePhotos = [],
+    isLoading: infiniteLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    error: infiniteError,
+    refetch: refetchInfinite
+  } = useInfiniteEventMediaFlat(eventId, {
+    status: activeTab,
+    limit: 20,
+    quality: gridQuality, // 🚀 Use thumbnail for grid
+    enabled: useInfiniteScroll
+  });
 
-    let newIndex: number;
-    if (direction === 'next' && selectedPhotoIndex < photos.length - 1) {
-      newIndex = selectedPhotoIndex + 1;
-    } else if (direction === 'prev' && selectedPhotoIndex > 0) {
-      newIndex = selectedPhotoIndex - 1;
-    } else {
-      // Don't navigate if at boundaries
-      console.log('🚫 Navigation blocked - at boundary:', {
-        direction,
-        currentIndex: selectedPhotoIndex,
-        totalPhotos: photos.length
-      });
-      return;
+  // Use regular or infinite photos based on mode
+  const photos = useInfiniteScroll ? infinitePhotos : regularPhotos;
+  const isLoading = useInfiniteScroll ? infiniteLoading : regularLoading;
+  const photosError = useInfiniteScroll ? infiniteError : regularError;
+  const refetchPhotos = useInfiniteScroll ? refetchInfinite : refetchRegular;
+
+  // Switch to infinite scroll if we have many photos
+  useEffect(() => {
+    if (regularPhotos.length > 50 && !useInfiniteScroll) {
+      console.log('Switching to infinite scroll mode due to large photo count');
+      setUseInfiniteScroll(true);
     }
+  }, [regularPhotos.length, useInfiniteScroll]);
 
-    console.log('📸 Navigation successful:', {
-      direction,
-      from: selectedPhotoIndex,
-      to: newIndex,
-      totalPhotos: photos.length,
-      fromPhotoId: photos[selectedPhotoIndex]?.id,
-      toPhotoId: photos[newIndex]?.id
+  // Media counts
+  const {
+    data: mediaCounts,
+    isLoading: countsLoading,
+    refetch: refetchCounts
+  } = useEventMediaCounts(eventId, userPermissions.moderate);
+
+  // Upload status monitoring
+  const {
+    statuses: uploadStatuses,
+    summary: uploadSummary,
+    isMonitoring
+  } = useUploadStatusMonitor(uploadedMediaIds, eventId, {
+    onComplete: (mediaId, status) => {
+      console.log('✅ Upload completed:', mediaId, status.filename);
+      setUploadedMediaIds(prev => prev.filter(id => id !== mediaId));
+      refetchPhotos();
+      refetchCounts();
+    },
+    onFailed: (mediaId, status) => {
+      console.log('❌ Upload failed:', mediaId, status.filename);
+      setUploadedMediaIds(prev => prev.filter(id => id !== mediaId));
+      refetchPhotos();
+    },
+    enabled: uploadedMediaIds.length > 0
+  });
+
+  const uploadProgress = useUploadProgress(webSocket, eventId, {
+    onComplete: (mediaId) => {
+      console.log('✅ Upload completed:', mediaId);
+      refetchPhotos();
+      refetchCounts();
+    },
+    onFailed: (mediaId, error) => {
+      console.log('❌ Upload failed:', mediaId, error);
+      refetchPhotos();
+    },
+    showToasts: true
+  });
+
+  // Mutations
+  const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
+    onSuccess: (result) => {
+      const { data } = result;
+      setUploadDialogOpen(false);
+
+      // Clear file inputs
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
+
+      // Start monitoring uploads with the new system
+      if (data?.uploads && Array.isArray(data.uploads)) {
+        const validUploads = data.uploads.filter((upload: any) =>
+          upload.id && upload.status !== 'failed'
+        );
+
+        if (validUploads.length > 0) {
+          const mediaIds = validUploads.map((upload: any) => upload.id);
+          const filenames = validUploads.map((upload: any) => upload.filename || 'Unknown');
+
+          // Start monitoring with the new progress system
+          uploadProgress.startMonitoring(mediaIds, filenames);
+          console.log('📊 Started monitoring uploads:', mediaIds);
+        }
+      }
+
+      refetchCounts();
+      refetchPhotos();
+    },
+    onError: (error) => {
+      console.error('Upload failed:', error);
+    }
+  });
+
+
+
+  const updateStatusMutation = useUpdateMediaStatus(eventId);
+  const deleteMutation = useDeleteMedia(eventId);
+  const { getCachedPhotoCount } = useGalleryUtils(eventId);
+
+
+  // Upload Progress Indicator
+  const UploadProgressIndicator = memo(() => {
+    // Use the new progress hook instead of the old monitoring system
+    const uploadProgress = useUploadProgress(webSocket, eventId, {
+      onComplete: (mediaId) => {
+        console.log('✅ Upload completed:', mediaId);
+        refetchPhotos();
+        refetchCounts();
+      },
+      onFailed: (mediaId, error) => {
+        console.log('❌ Upload failed:', mediaId, error);
+        refetchPhotos();
+      },
+      showToasts: true
     });
 
-    setSelectedPhotoIndex(newIndex);
-    setSelectedPhoto(photos[newIndex]);
-  }, [selectedPhotoIndex, photos]);
-
-
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!photoViewerOpen) return;
-
-      if (e.key === 'ArrowRight') {
-        navigateToPhoto('next');
-      } else if (e.key === 'ArrowLeft') {
-        navigateToPhoto('prev');
-      } else if (e.key === 'Escape') {
-        setPhotoViewerOpen(false);
-        setIsFullscreen(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [photoViewerOpen, navigateToPhoto]);
-
-  // Smart cache key generation
-  const getCacheKey = useCallback((eventId: string, albumId: string | null, status?: string) => {
-    const baseKey = albumId === null ? `event_${eventId}` : `album_${albumId}`;
-    return status ? `${baseKey}_${status}` : baseKey;
-  }, []);
-
-  // Fetch media counts
-  const fetchMediaCounts = useCallback(async () => {
-    const authToken = token || localStorage.getItem('rc-token');
-    if (!authToken || guestToken) return; // Skip for guest access
-
-    try {
-      const counts = 0
-      // const counts = await getEventMediaCounts(eventId, authToken);
-      if (counts) {
-        setMediaCounts(counts);
-      }
-    } catch (error) {
-      console.error('Error fetching media counts:', error);
-    }
-  }, [token, eventId, guestToken]);
-
-  // Fetch photos with status filtering
-  const fetchPhotosFromAPI = useCallback(async (
-    status?: 'approved' | 'pending' | 'rejected' | 'hidden',
-    cursor?: string,
-    forceRefresh = false
-  ) => {
-    const authToken = token || localStorage.getItem('rc-token');
-    const isGuestAccess = Boolean(guestToken);
-
-    if (!authToken && !isGuestAccess) {
-      console.error('No auth token or guest token available');
-      return false;
+    if (!uploadProgress.isMonitoring || uploadProgress.summary.total === 0) {
+      return null;
     }
 
-    try {
-      const targetStatus = status || activeTab;
-      const cacheKey = getCacheKey(eventId, null, targetStatus);
-      const lastFetch = lastFetchTime.current.get(cacheKey) || 0;
-      const now = Date.now();
-      const cacheAge = now - lastFetch;
-      const CACHE_DURATION = 60000; // 30 seconds
+    const { total, completed, processing, failed, overallProgress } = uploadProgress.summary;
+    const hasActiveUploads = processing > 0;
 
-      // Use cache if not forcing refresh and cache is fresh
-      if (!forceRefresh && !cursor && cacheAge < CACHE_DURATION && imageCache.current.has(cacheKey)) {
-        const cachedPhotos = imageCache.current.get(cacheKey)!;
-        console.log(`Using cached photos (${cachedPhotos.length} items, ${cacheAge}ms old)`);
-        setPhotos(cachedPhotos);
-        return true;
-      }
+    return (
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {hasActiveUploads ? (
+              <div className="animate-spin">
+                <UploadIcon className="h-4 w-4 text-blue-600" />
+              </div>
+            ) : (
+              <UploadIcon className="h-4 w-4 text-blue-600" />
+            )}
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              {hasActiveUploads ? 'Processing uploads' : 'Uploads processed'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-blue-600 dark:text-blue-400">
+              {completed + failed}/{total}
+            </span>
+            {!hasActiveUploads && (
+              <button
+                onClick={() => uploadProgress.clearAll()}
+                className="text-xs text-blue-500 hover:text-blue-700"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
 
-      console.log('Fetching photos from API with status:', targetStatus);
+        <Progress value={overallProgress} className="h-2" />
 
-      let mediaItems;
-      if (isGuestAccess && guestToken) {
-        // For guest access, only show approved media
-        mediaItems = await getEventMediaWithGuestToken(eventId, guestToken);
-      } else if (authToken) {
-        mediaItems = await getEventMedia(eventId, authToken, true, {
-          status: targetStatus,
-          scrollType: 'infinite',
-          cursor: cursor,
-          limit: 20
-        });
-      }
+        <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+          <span>{processing} processing</span>
+          <span>{completed} completed</span>
+          {failed > 0 && <span className="text-red-600">{failed} failed</span>}
+        </div>
 
-      if (mediaItems && Array.isArray(mediaItems)) {
-        const transformedPhotos = mediaItems.map(transformMediaToPhoto);
+        {/* Show individual file progress if there are active uploads */}
+        {hasActiveUploads && Object.values(uploadProgress.uploadProgress).length > 0 && (
+          <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+            {Object.values(uploadProgress.uploadProgress)
+              .filter(progress => progress.status === 'processing' || progress.status === 'uploading')
+              .map(progress => (
+                <div key={progress.mediaId} className="flex items-center gap-2 text-xs">
+                  <span className="flex-1 truncate">{progress.filename}</span>
+                  <span className="text-blue-600">{progress.percentage}%</span>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+    );
+  });
 
-        console.log(`Fetched ${transformedPhotos.length} photos for status: ${targetStatus}`);
 
-        // Update cache only if not cursor-based (initial load)
-        if (!cursor) {
-          imageCache.current.set(cacheKey, transformedPhotos);
-          lastFetchTime.current.set(cacheKey, now);
-          setPhotos(transformedPhotos);
-        } else {
-          // For infinite scroll, append to existing photos
-          setPhotos(prev => [...prev, ...transformedPhotos]);
-        }
+  // Memoized computed values
+  const canUserUpload = useMemo(() =>
+    canUpload && userPermissions.upload,
+    [canUpload, userPermissions.upload]
+  );
 
-        return true;
-      }
+  const displayCounts = useMemo(() =>
+    mediaCounts || {
+      approved: getCachedPhotoCount('approved'),
+      pending: getCachedPhotoCount('pending'),
+      rejected: getCachedPhotoCount('rejected'),
+      hidden: getCachedPhotoCount('hidden'),
+      auto_approved: getCachedPhotoCount('auto_approved'),
+      total: 0
+    },
+    [mediaCounts, getCachedPhotoCount]
+  );
 
-      return false;
-    } catch (error) {
-      console.error('Error fetching photos from API:', error);
-      return false;
-    }
-  }, [token, eventId, guestToken, getCacheKey, activeTab]);
-
-  // Tab change handler
-  const handleTabChange = useCallback(async (newTab: 'approved' | 'pending' | 'rejected' | 'hidden') => {
+  // Event handlers
+  const handleTabChange = useCallback((newTab: typeof activeTab) => {
     if (newTab === activeTab) return;
 
+    console.log(`Switching to tab: ${newTab}`);
     setActiveTab(newTab);
-    setTabLoading(true);
-    setPhotos([]); // Clear current photos
+    setSelectedPhoto(null);
+    setPhotoViewerOpen(false);
+    setUseInfiniteScroll(false);
+  }, [activeTab]);
 
-    try {
-      await fetchPhotosFromAPI(newTab, undefined, true);
-    } finally {
-      setTabLoading(false);
-    }
-  }, [activeTab, fetchPhotosFromAPI]);
+  const handleStatusUpdate = useCallback((photoId: string, status: string, reason?: string) => {
+    updateStatusMutation.mutate({
+      mediaId: photoId,
+      status: status as 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved',
+      reason
+    });
+  }, [updateStatusMutation]);
 
-  // Photo status management functions
-  const approvePhoto = async (photoId: string) => {
-    if (!userPermissions.moderate) {
-      toast.error("You don't have permission to moderate photos.");
-      return;
-    }
-
-    try {
-      await updateMediaStatus(photoId, 'approved', token!);
-
-      // Update local state
-      const approvedPhoto = photos.find(p => p.id === photoId);
-      if (approvedPhoto) {
-        // Remove from current tab
-        setPhotos(prev => prev.filter(p => p.id !== photoId));
-
-        // Update counts
-        setMediaCounts(prev => ({
-          ...prev,
-          [activeTab]: Math.max(0, prev[activeTab] - 1),
-          approved: prev.approved + 1
-        }));
-
-        // Clear approved cache to refresh
-        const approvedCacheKey = getCacheKey(eventId, null, 'approved');
-        imageCache.current.delete(approvedCacheKey);
-      }
-
-      toast.success("Photo approved successfully.");
-    } catch (error) {
-      console.error('Error approving photo:', error);
-      toast.error("Failed to approve photo.");
-    }
-  };
-
-  const rejectPhoto = async (photoId: string, reason?: string) => {
-    if (!userPermissions.moderate) {
-      toast.error("You don't have permission to moderate photos.");
-      return;
-    }
-
-    try {
-      await updateMediaStatus(photoId, 'rejected', token!, { reason });
-
-      // Update local state
-      setPhotos(prev => prev.filter(p => p.id !== photoId));
-
-      // Update counts
-      setMediaCounts(prev => ({
-        ...prev,
-        [activeTab]: Math.max(0, prev[activeTab] - 1),
-        rejected: prev.rejected + 1
-      }));
-
-      toast.success("Photo rejected successfully.");
-    } catch (error) {
-      console.error('Error rejecting photo:', error);
-      toast.error("Failed to reject photo.");
-    }
-  };
-
-  const hidePhoto = async (photoId: string, reason?: string) => {
-    if (!userPermissions.moderate) {
-      toast.error("You don't have permission to moderate photos.");
-      return;
-    }
-
-    try {
-      await updateMediaStatus(photoId, 'hidden', token!, { hideReason: reason });
-
-      // Update local state
-      setPhotos(prev => prev.filter(p => p.id !== photoId));
-
-      // Update counts
-      setMediaCounts(prev => ({
-        ...prev,
-        [activeTab]: Math.max(0, prev[activeTab] - 1),
-        hidden: prev.hidden + 1
-      }));
-
-      toast.success("Photo hidden successfully.");
-    } catch (error) {
-      console.error('Error hiding photo:', error);
-      toast.error("Failed to hide photo.");
-    }
-  };
-
-  // Get default album effect
-  useEffect(() => {
-    const isEventPhotosMode = albumId === null;
-
-    if (isEventPhotosMode || !eventId) {
-      return;
-    }
-
-    const authToken = token || localStorage.getItem('rc-token');
-    if (!authToken) {
-      return;
-    }
-
-    let isMounted = true;
-
-    const fetchDefaultAlbum = async () => {
-      if (albumId) {
-        if (isMounted) {
-          setDefaultAlbumId(albumId);
-        }
-        return;
-      }
-
-      if (defaultAlbumId) {
-        return;
-      }
-
-      try {
-        const defaultAlbum = await getOrCreateDefaultAlbum(eventId, authToken);
-        if (isMounted && defaultAlbum) {
-          setDefaultAlbumId(defaultAlbum.id);
-        }
-      } catch (error) {
-        if (isMounted) {
-          console.error('Error fetching default album:', error);
-          toast.error("Error loading album. Please try again.");
-        }
-      }
-    };
-
-    fetchDefaultAlbum();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [eventId, albumId, token, defaultAlbumId]);
-
-  // Load photos effect
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadPhotos = async () => {
-      if (!isMounted) return;
-
-      setIsLoading(true);
-
-      try {
-        // Fetch counts first (for moderators)
-        if (userPermissions.moderate && !guestToken) {
-          await fetchMediaCounts();
-        }
-
-        // Fetch photos for current tab
-        const apiSuccess = await fetchPhotosFromAPI();
-
-        if (!isMounted) return;
-      } catch (error) {
-        if (isMounted) {
-          console.error('Error in photo loading process:', error);
-          toast.error("Failed to load photos");
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    loadPhotos();
-
-    // Setup realtime polling
-    let intervalId: NodeJS.Timeout | null = null;
-    if (isRealtime) {
-      intervalId = setInterval(() => {
-        if (isMounted && !isLoading) {
-          fetchPhotosFromAPI(activeTab, undefined, false).catch(err => {
-            if (isMounted) console.error('Error in interval photo fetch:', err);
-          });
-          if (userPermissions.moderate) {
-            fetchMediaCounts().catch(err => {
-              if (isMounted) console.error('Error fetching counts:', err);
-            });
-          }
-        }
-      }, 30000);
-      realtimeInterval.current = intervalId;
-    }
-
-    return () => {
-      isMounted = false;
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      if (realtimeInterval.current) {
-        clearInterval(realtimeInterval.current);
-      }
-    };
-  }, [eventId, activeTab, fetchPhotosFromAPI, fetchMediaCounts, isRealtime, userPermissions.moderate, guestToken]);
-
-  // File upload handler
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    // Check upload permissions
     if (!canUserUpload) {
       toast.error("You don't have permission to upload photos to this event.");
       return;
     }
 
-    const isEventPhotosMode = albumId === null && eventId;
-    const targetAlbumId = isEventPhotosMode ? null : (albumId || defaultAlbumId);
+    const validFiles = Array.from(files).filter(file => {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`"${file.name}" is not a valid image file.`);
+        return false;
+      }
 
-    if (!isEventPhotosMode && !targetAlbumId) {
-      toast.error("No album available for uploading. Please try again later.");
+      const maxSize = 100 * 1024 * 1024; // 100MB
+      if (file.size > maxSize) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+        toast.error(`"${file.name}" is too large (${sizeMB}MB). Maximum size is 100MB.`);
+        return false;
+      }
+
+      return true;
+    });
+
+    if (validFiles.length === 0) {
+      toast.error("No valid image files to upload.");
       return;
     }
 
-    if (!token) {
-      toast.error("You need to be logged in to upload photos.");
-      return;
+    // Show immediate feedback
+    const filenames = validFiles.map(f => f.name);
+    toast.success(`Starting upload of ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}...`);
+
+    uploadMutation.mutate(validFiles);
+  }, [canUserUpload, uploadMutation]);
+
+  // 🚀 ENHANCED: Photo viewer with full quality loading
+  const openPhotoViewer = useCallback((photo: Photo, index: number) => {
+    // Don't open viewer for uploading photos
+    if (photo.status === 'uploading' || photo.isTemporary) return;
+
+    console.log('🔍 Opening photo viewer with full quality for:', photo.id);
+    setSelectedPhoto(photo);
+    setSelectedPhotoIndex(index);
+    setPhotoViewerOpen(true);
+  }, []);
+
+  const closePhotoViewer = useCallback(() => {
+    setPhotoViewerOpen(false);
+    setSelectedPhoto(null);
+    setSelectedPhotoIndex(null);
+  }, []);
+
+  const navigatePhoto = useCallback((direction: 'next' | 'prev') => {
+    if (selectedPhotoIndex === null || photos.length <= 1) return;
+
+    let newIndex: number;
+    if (direction === 'next') {
+      newIndex = selectedPhotoIndex < photos.length - 1 ? selectedPhotoIndex + 1 : 0;
+    } else {
+      newIndex = selectedPhotoIndex > 0 ? selectedPhotoIndex - 1 : photos.length - 1;
     }
 
-    try {
-      setIsUploading(true);
-      setUploadDialogOpen(false);
+    console.log(`🔍 Navigating to photo ${newIndex + 1}/${photos.length}`);
+    setSelectedPhotoIndex(newIndex);
+    setSelectedPhoto(photos[newIndex]);
+  }, [selectedPhotoIndex, photos]);
 
-      const validFiles = Array.from(files).filter(file => {
-        if (!file.type.startsWith('image/')) {
-          toast.error(`"${file.name}" is not a valid image file.`);
-          return false;
-        }
-
-        const maxSize = 50 * 1024 * 1024; // 50MB
-        if (file.size > maxSize) {
-          const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-          toast.error(`"${file.name}" is too large (${sizeMB}MB). Maximum size is 50MB.`);
-          return false;
-        }
-
-        return true;
-      });
-
-      if (validFiles.length === 0) {
-        toast.error("No valid image files to upload.");
-        setIsUploading(false);
-        return;
-      }
-
-      const progressToast = toast.loading(`Uploading ${validFiles.length} photo${validFiles.length > 1 ? 's' : ''}...`, {
-        duration: 60000
-      });
-
-      let completedUploads = 0;
-
-      const results = await Promise.allSettled(
-        validFiles.map(async (file) => {
-          try {
-            const uploadedData = await uploadAlbumMedia(file, targetAlbumId, token, eventId);
-
-            completedUploads++;
-            toast.dismiss(progressToast);
-            toast.loading(`Uploaded ${completedUploads}/${validFiles.length} photos...`, {
-              id: progressToast,
-              duration: 60000
-            });
-
-            const photoId = uploadedData._id || uploadedData.id || uuidv4();
-            const responseAlbumId = uploadedData.album_id || targetAlbumId;
-
-            const newPhoto: Photo = {
-              id: photoId,
-              albumId: responseAlbumId,
-              eventId,
-              takenBy: userId,
-              imageUrl: uploadedData.url,
-              thumbnail: uploadedData.thumbnail_url || uploadedData.url,
-              createdAt: new Date(),
-              approval: {
-                status: approvalMode === 'auto' ? 'auto_approved' : 'pending',
-                approved_at: approvalMode === 'auto' ? new Date() : undefined
-              },
-              processing: {
-                status: 'completed',
-                thumbnails_generated: !!uploadedData.thumbnail_url
-              },
-              metadata: {
-                device: navigator.userAgent,
-                fileName: file.name,
-                fileType: file.type,
-                fileSize: file.size
-              }
-            };
-
-            try {
-              if (newPhoto.albumId) {
-                await db.photos.add({
-                  ...newPhoto,
-                  albumId: newPhoto.albumId
-                });
-              }
-            } catch (dbError) {
-              console.warn('Failed to add to local DB, continuing:', dbError);
-            }
-
-            return newPhoto;
-          } catch (error) {
-            console.error(`Error uploading file ${file.name}:`, error);
-            throw error;
-          }
-        })
-      );
-
-      const successfulUploads = results.filter(r => r.status === 'fulfilled');
-      const failedUploads = results.filter(r => r.status === 'rejected');
-
-      const newPhotos = successfulUploads.map(r => (r as PromiseFulfilledResult<any>).value);
-
-      if (newPhotos.length > 0) {
-        // Add new photos to current view if they match active tab
-        const photosForCurrentTab = newPhotos.filter(photo => {
-          const status = photo.approval?.status;
-          switch (activeTab) {
-            case 'approved':
-              return status === 'approved' || status === 'auto_approved';
-            case 'pending':
-              return status === 'pending';
-            case 'rejected':
-              return status === 'rejected';
-            case 'hidden':
-              return status === 'hidden';
-            default:
-              return false;
-          }
-        });
-
-        if (photosForCurrentTab.length > 0) {
-          setPhotos(prev => [...photosForCurrentTab, ...prev]);
-        }
-
-        // Update counts
-        if (userPermissions.moderate) {
-          fetchMediaCounts();
-        }
-
-        // Invalidate relevant caches
-        const cacheKeysToInvalidate = ['approved', 'pending', 'rejected', 'hidden'];
-        cacheKeysToInvalidate.forEach(status => {
-          const cacheKey = getCacheKey(eventId, albumId ?? null, status);
-          imageCache.current.delete(cacheKey);
-        });
-      }
-
-      toast.dismiss(progressToast);
-
-      if (successfulUploads.length > 0) {
-        toast.success(`${successfulUploads.length} photo${successfulUploads.length > 1 ? 's' : ''} uploaded successfully.`);
-      }
-
-      if (failedUploads.length > 0) {
-        toast.error(`Failed to upload ${failedUploads.length} photo${failedUploads.length > 1 ? 's' : ''}.`);
-      }
-
-      // Reset file inputs
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      if (cameraInputRef.current) cameraInputRef.current.value = '';
-
-    } catch (error) {
-      console.error('Error uploading photos:', error);
-      const errorMessage = error instanceof Error ? error.message : "There was an error uploading your photos.";
-      toast.error(errorMessage, { duration: 8000 });
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  // Delete photo
-  const deletePhoto = async (photoId: string) => {
+  const handleDelete = useCallback((photoId: string) => {
     if (!userPermissions.delete) {
       toast.error("You don't have permission to delete photos.");
       return;
     }
+    deleteMutation.mutate(photoId);
+  }, [userPermissions.delete, deleteMutation]);
 
-    try {
-      const loadingToast = toast.loading("Deleting photo...");
-
-      if (token) {
-        try {
-          await deleteMedia(photoId, token);
-        } catch (apiError) {
-          console.error('Error deleting photo from backend:', apiError);
-        }
-      }
-
-      await db.photos.where('id').equals(photoId).delete();
-
-      setPhotos(prev => prev.filter(p => p.id !== photoId));
-
-      // Update counts
-      if (userPermissions.moderate) {
-        setMediaCounts(prev => ({
-          ...prev,
-          [activeTab]: Math.max(0, prev[activeTab] - 1),
-          total: Math.max(0, prev.total - 1)
-        }));
-      }
-
-      // Invalidate cache
-      const cacheKey = getCacheKey(eventId, albumId ?? null, activeTab);
-      imageCache.current.delete(cacheKey);
-
-      if (selectedPhoto?.id === photoId) {
-        setSelectedPhoto(null);
-        setPhotoViewerOpen(false);
-      }
-
-      toast.dismiss(loadingToast);
-      toast.success("Photo deleted successfully.");
-    } catch (error) {
-      console.error('Error deleting photo:', error);
-      toast.error("Failed to delete photo.");
-    }
-  };
-
-  // Camera capture
-  const handleCameraCapture = () => {
-    if (cameraInputRef.current) {
-      cameraInputRef.current.click();
-    }
-  };
-
-  // Download photo
-  const downloadPhoto = (photo: Photo) => {
+  const handleDownload = useCallback((photo: Photo) => {
     if (!userPermissions.download) {
       toast.error("You don't have permission to download photos.");
       return;
@@ -685,208 +394,212 @@ export default function PhotoGallery({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [userPermissions.download]);
 
-  // Open photo viewerconst openPhotoViewer = (photo: Photo, index: number) => {
-  const openPhotoViewer = (photo: Photo, index: number) => {
-    console.log('🔍 Opening photo viewer:', {
-      photoId: photo.id,
-      index,
-      totalPhotos: photos.length
-    });
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-    setSelectedPhoto(photo);
-    setSelectedPhotoIndex(index);
-    setPhotoViewerOpen(true);
-    setIsFullscreen(true);
-  };
-  const handlePrevPhoto = useCallback(() => {
-    navigateToPhoto('prev');
-  }, [navigateToPhoto]);
+  const handleManualRefresh = useCallback(() => {
+    console.log('🔄 Manual refresh triggered');
+    refetchPhotos();
+    refetchCounts();
+    toast.info('Refreshing data...');
+  }, [refetchPhotos, refetchCounts]);
 
-  const handleNextPhoto = useCallback(() => {
-    navigateToPhoto('next');
-  }, [navigateToPhoto]);
+  // WebSocket error handling
+  useEffect(() => {
+    if (webSocket.connectionError) {
+      console.error('WebSocket connection error:', webSocket.connectionError);
+      if (process.env.NODE_ENV === 'development') {
+        toast.error(`Connection failed: ${webSocket.connectionError}`, {
+          description: 'Real-time updates may not work',
+          duration: 5000
+        });
+      }
+    }
+  }, [webSocket.connectionError]);
 
+  useEffect(() => {
+    if (webSocket.isAuthenticated && webSocket.user) {
+      console.log('✅ Admin WebSocket authenticated:', webSocket.user);
+      if (process.env.NODE_ENV === 'development') {
+        toast.success(`Connected as ${webSocket.user.name}`, { duration: 2000 });
+      }
+    }
+  }, [webSocket.isAuthenticated, webSocket.user]);
+
+  // Error handling
+  if (photosError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-4">
+        <div className="bg-red-100 dark:bg-red-900 p-4 rounded-full mb-4">
+          <XIcon className="h-8 w-8 text-red-600" />
+        </div>
+        <h3 className="text-xl font-medium text-red-700 dark:text-red-300 mb-2">
+          Failed to Load Photos
+        </h3>
+        <p className="text-red-600 dark:text-red-400 text-center max-w-md mb-6">
+          {photosError.message || 'Something went wrong while loading photos.'}
+        </p>
+        <div className="flex gap-2">
+          <Button onClick={refetchPhotos} variant="outline">
+            Try Again
+          </Button>
+          <Button onClick={handleManualRefresh} variant="outline">
+            Force Refresh
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      {/* Header with status tabs and controls */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {/* Status tabs for moderators */}
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-accent p-1 rounded-lg">
-            <button
-              onClick={() => handleTabChange('approved')}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'approved'
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-            >
-              Published
-              {mediaCounts.approved > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 rounded-full">
-                  {mediaCounts.approved}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => handleTabChange('pending')}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'pending'
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-            >
-              <ClockIcon className="h-3 w-3 mr-1 inline" />
-              Pending
-              {mediaCounts.pending > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-400 rounded-full">
-                  {mediaCounts.pending}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => handleTabChange('rejected')}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'rejected'
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-            >
-              Rejected
-              {mediaCounts.rejected > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 text-xs bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full">
-                  {mediaCounts.rejected}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => handleTabChange('hidden')}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${activeTab === 'hidden'
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-            >
-              Hidden
-              {mediaCounts.hidden > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full">
-                  {mediaCounts.hidden}
-                </span>
-              )}
-            </button>
-          </div>
+          <StatusTabs
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            mediaCounts={displayCounts}
+            userPermissions={userPermissions}
+          />
+
+          {/* {userPermissions.moderate && (
+            <AdminNotificationBadge
+              eventId={eventId}
+              onNavigateToPending={handleNavigateToPending}
+              className="ml-2"
+            />
+          )} */}
+          {useInfiniteScroll && (
+            <div className="text-xs text-gray-500">
+              Infinite scroll ({photos.length} loaded)
+            </div>
+          )}
         </div>
 
-        {canUserUpload && (defaultAlbumId || albumId !== undefined || albumId === null) && (
-          <PhotoUploadDialog
-            open={uploadDialogOpen}
-            setOpen={setUploadDialogOpen}
-            isUploading={isUploading}
-            approvalMode={approvalMode}
-            onFileUpload={handleFileUpload}
-            fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
-            cameraInputRef={cameraInputRef as React.RefObject<HTMLInputElement>}
-            handleCameraCapture={handleCameraCapture}
-          />
-        )}
+        <div className="flex items-center gap-2">
+          {/* {process.env.NODE_ENV === 'development' && (
+            <>
+              {webSocket.isAuthenticated && webSocket.user && (
+                <Badge variant="outline" className="text-xs">
+                  {webSocket.user.type}: {webSocket.user.name}
+                </Badge>
+              )}
+              <Button
+                onClick={handleManualRefresh}
+                variant="outline"
+                size="sm"
+                className="text-xs"
+              >
+                🔄 Refresh
+              </Button>
+            </>
+          )} */}
+
+          {canUserUpload && (
+            <PhotoUploadDialog
+              open={uploadDialogOpen}
+              setOpen={setUploadDialogOpen}
+              isUploading={uploadMutation.isPending}
+              approvalMode={approvalMode}
+              onFileUpload={handleFileUpload}
+              fileInputRef={fileInputRef}
+              cameraInputRef={cameraInputRef}
+            />
+          )}
+        </div>
       </div>
 
-      {/* Main photo grid */}
-      {(isLoading || tabLoading) ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-8 gap-2 sm:gap-3 md:gap-4">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+      {/* Upload progress indicator */}
+      <UploadProgressIndicator />
+
+      {(updateStatusMutation.isPending || uploadMutation.isPending) && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-blue-700 dark:text-blue-300">
+            {uploadMutation.isPending ? 'Starting upload...' : 'Updating status...'}
+          </span>
+        </div>
+      )}
+
+      {isLoading || countsLoading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4">
+          {Array.from({ length: 16 }).map((_, i) => (
             <Skeleton key={i} className="aspect-square rounded-lg" />
           ))}
         </div>
-      ) : !defaultAlbumId && !albumId && albumId !== null && !eventId ? (
-        <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed rounded-lg">
-          <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-full mb-4">
-            <CameraIcon className="h-8 w-8 text-gray-400" />
-          </div>
-          <h3 className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">Loading Album...</h3>
-          <p className="text-gray-500 dark:text-gray-400 text-center max-w-md mb-6">
-            Please wait while we prepare your album.
-          </p>
-        </div>
       ) : photos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed rounded-lg">
-          <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-full mb-4">
-            <CameraIcon className="h-8 w-8 text-gray-400" />
-          </div>
-          <h3 className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
-            {activeTab === 'approved' ? 'No Published Photos' :
-              activeTab === 'pending' ? 'No Pending Photos' :
-                activeTab === 'rejected' ? 'No Rejected Photos' :
-                  'No Hidden Photos'}
-          </h3>
-          <p className="text-gray-500 dark:text-gray-400 text-center max-w-md mb-6">
-            {activeTab === 'approved' ?
-              (canUserUpload ? "Be the first to add photos to this album." : "No photos have been approved yet.") :
-              activeTab === 'pending' ? "No photos are waiting for approval." :
-                activeTab === 'rejected' ? "No photos have been rejected." :
-                  "No photos have been hidden."}
-          </p>
-          {canUserUpload && activeTab === 'approved' && (
-            <Button
-              onClick={() => {
-                if (fileInputRef.current) {
-                  fileInputRef.current.click();
-                }
-              }}
-              disabled={isUploading}
-            >
-              <CameraIcon className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Add Photos</span>
-            </Button>
-          )}
-        </div>
+        <EmptyState
+          activeTab={activeTab}
+          canUserUpload={canUserUpload}
+          isUploading={uploadMutation.isPending}
+          onUploadClick={() => setUploadDialogOpen(true)}
+        />
       ) : (
         <>
-          <PhotoGrid
+          <OptimizedPhotoGrid
             photos={photos}
             onPhotoClick={openPhotoViewer}
             userPermissions={userPermissions}
-            downloadPhoto={downloadPhoto}
-            deletePhoto={deletePhoto}
-            // These are the new props for status management
-            approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
-            rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
-            hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
             currentTab={activeTab}
+            onStatusUpdate={handleStatusUpdate}
+            onDownload={handleDownload}
+            onDelete={handleDelete}
           />
 
+          {useInfiniteScroll && hasNextPage && (
+            <div className="flex justify-center pt-6">
+              <Button
+                onClick={handleLoadMore}
+                disabled={isFetchingNextPage}
+                variant="outline"
+              >
+                {isFetchingNextPage ? 'Loading...' : 'Load More Photos'}
+              </Button>
+            </div>
+          )}
+
+          {/* 🚀 ENHANCED: Photo viewer with full quality support */}
           {photoViewerOpen && selectedPhoto && (
             <FullscreenPhotoViewer
               selectedPhoto={selectedPhoto}
               selectedPhotoIndex={selectedPhotoIndex}
               photos={photos}
               userPermissions={userPermissions}
-              onClose={() => {
-                setIsFullscreen(false);
-                setPhotoViewerOpen(false);
+              onClose={closePhotoViewer}
+              onPrev={() => navigatePhoto('prev')}
+              onNext={() => navigatePhoto('next')}
+              setPhotoInfoOpen={(open) => {
+                // Handle photo info dialog
+                console.log('Photo info:', open);
               }}
-              onPrev={handlePrevPhoto}  // ✅ Use dedicated handlers
-              onNext={handleNextPhoto}  // ✅ Use dedicated handlers
-              setPhotoInfoOpen={setPhotoInfoOpen}
-              deletePhoto={deletePhoto}
-              downloadPhoto={downloadPhoto}
-            // Add moderation actions to photo viewer
-            // approvePhoto={userPermissions.moderate ? approvePhoto : undefined}
-            // rejectPhoto={userPermissions.moderate ? rejectPhoto : undefined}
-            // hidePhoto={userPermissions.moderate ? hidePhoto : undefined}
-            />
-          )}
-
-
-
-          {selectedPhoto && (
-            <PhotoInfoDialog
-              photo={selectedPhoto}
-              open={photoInfoOpen}
-              onClose={() => setPhotoInfoOpen(false)}
+              deletePhoto={handleDelete}
+              downloadPhoto={handleDownload}
             />
           )}
         </>
       )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
     </div>
   );
 }

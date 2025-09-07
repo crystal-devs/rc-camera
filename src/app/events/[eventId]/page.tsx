@@ -1,443 +1,467 @@
 // app/events/[eventId]/page.tsx
 'use client';
 
+import * as React from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import {
-    CalendarIcon,
-    CameraIcon,
-    FolderIcon,
-    MapPinIcon,
-    QrCodeIcon,
-    SettingsIcon,
+    ImageIcon,
     ShareIcon,
-    UsersIcon
+    SettingsIcon,
+    QrCodeIcon,
+    ExternalLinkIcon,
+    RefreshCwIcon,
+    CopyIcon,
+    InfoIcon,
+    LockIcon,
+    ClockIcon,
+    EyeIcon,
 } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { use, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-    Sheet,
-    SheetContent,
-    SheetDescription,
-    SheetHeader,
-    SheetTitle,
-    SheetTrigger,
-} from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import useEventStore from '@/stores/useEventStore';
+import { useStore } from '@/lib/store';
 
-import AlbumManagement from '@/components/album/AlbumManagement';
-import PhotoGallery from '@/components/album/PhotoGallery';
-import EventHeaderDetails from '@/components/event/EventDetailsHeader';
-import ShareManagement from '@/components/event/ShareManagement';
-import { fetchEventAlbums } from '@/services/apis/albums.api';
-import { getEventById } from '@/services/apis/events.api';
-import {
-    getTokenInfo
-} from '@/services/apis/sharing.api';
-import EventCoverSection from '@/components/event/EventCoverSection';
-import { format } from 'date-fns';
-
-
-
-// Main Event Details Page Component
-export default function EventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
-    const { eventId } = use(params);
+export default function EventDashboardPage() {
+    const params = useParams();
     const router = useRouter();
-    const searchParams = useSearchParams();
+    const eventId = params.eventId as string;
+    const userData = useStore(state => state.userData);
+      
 
-    const [event, setEvent] = useState<any>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('photos');
-    const [qrDialogOpen, setQrDialogOpen] = useState(false);
-    const [shareSheetOpen, setShareSheetOpen] = useState(false);
-    const [defaultAlbumId, setDefaultAlbumId] = useState<string | null>(null);
-    const [albums, setAlbums] = useState<any[]>([]);
-    const [albumsLoaded, setAlbumsLoaded] = useState(false);
+    const {
+        selectedEvent,
+        getEventFromCacheOrFetch,
+        isLoadingEvent,
+        userRole
+    } = useEventStore();
 
-    const isSharedAccess = searchParams.get('via') === 'share';
-    const shareToken = searchParams.get('token');
-    const showWelcome = searchParams.get('welcome') === 'true';
-    const isReturning = searchParams.get('returning') === 'true';
-    const status = searchParams.get('status');
+    const [authToken, setAuthToken] = React.useState('');
+    const [wallUrl, setWallUrl] = React.useState('');
 
-    // Authentication
-    const [authToken, setAuthToken] = useState<string>('');
-    const [sharePermissions, setSharePermissions] = useState(null);
-    const [isSharedUser, setIsSharedUser] = useState(false);
-
-    useEffect(() => {
+    // Initialize auth token
+    React.useEffect(() => {
         const token = localStorage.getItem('authToken') || '';
         setAuthToken(token);
     }, []);
 
-    // Add this function inside your component
-    const validateShareAccess = async () => {
-        if (!isSharedAccess || !shareToken) return;
+    // Fetch event data
+    React.useEffect(() => {
+        if (eventId && authToken && (!selectedEvent || selectedEvent._id !== eventId)) {
+            getEventFromCacheOrFetch(eventId, authToken);
+        }
+    }, [eventId, authToken, selectedEvent, getEventFromCacheOrFetch]);
 
+    // Generate wall URL
+    React.useEffect(() => {
+        if (selectedEvent?.share_token) {
+            const baseUrl = window.location.origin;
+            setWallUrl(`${baseUrl}/wall/${selectedEvent.share_token}`);
+        }
+    }, [selectedEvent]);
+
+    const handleCopyLink = async (url: string) => {
         try {
-            const tokenInfo = await getTokenInfo(shareToken);
-            setSharePermissions(tokenInfo.token.permissions);
-            setIsSharedUser(true);
-
-            // Store sharing context in localStorage for consistent experience
-            localStorage.setItem('shareContext', JSON.stringify({
-                token: shareToken,
-                permissions: tokenInfo.token.permissions,
-                eventId: eventId
-            }));
+            await navigator.clipboard.writeText(url);
+            toast.success('Link copied to clipboard!');
         } catch (error) {
-            console.error('Invalid share token:', error);
-            // Redirect to join page if token is invalid
-            router.push(`/join/${shareToken}`);
+            toast.error('Failed to copy link');
         }
     };
 
-    // Call this in useEffect
-    useEffect(() => {
-        validateShareAccess();
-    }, [isSharedAccess, shareToken]);
-
-    // Add an album update function that can be passed to AlbumManagement
-    const updateAlbumsList = (newAlbum: any) => {
-        console.log(`EventDetailsPage: Updating albums list with new album: ${newAlbum.id}`, newAlbum);
-
-        setAlbums(prevAlbums => {
-            // If it's a default album, remove any existing default album
-            if (newAlbum.isDefault) {
-                const updatedAlbums = [newAlbum, ...prevAlbums.filter(album => !album.isDefault && album.id !== newAlbum.id)];
-                console.log(`Updated albums list (default album case): ${updatedAlbums.length} albums`);
-                return updatedAlbums;
-            }
-            // Otherwise, just add it to the top of the list
-            const updatedAlbums = [newAlbum, ...prevAlbums.filter(album => album.id !== newAlbum.id)];
-            console.log(`Updated albums list: ${updatedAlbums.length} albums`);
-            return updatedAlbums;
-        });
-
-        // If this is a default album, update the defaultAlbumId
-        if (newAlbum.isDefault) {
-            console.log(`Setting default album ID to: ${newAlbum.id}`);
-            setDefaultAlbumId(newAlbum.id);
-        }
-
-        // Ensure we mark albums as loaded
-        setAlbumsLoaded(true);
-    };
-
-    useEffect(() => {
-        const loadEvent = async () => {
-            try {
-                const token = localStorage.getItem('rc-token') || '';
-                console.log(`Loading event data for ID: ${eventId}`);
-
-                // Verify token presence
-                if (!token) {
-                    console.error('No auth token available');
-                    toast.error("Authentication required. Please log in to view events.");
-                    router.push('/login');
-                    return;
-                }
-
-                console.log('Attempting to fetch event details from API...');
-                const eventData = await getEventById(eventId, token);
-
-                if (eventData) {
-                    console.log('Event data fetched successfully:', eventData);
-                    setEvent(eventData);
-                } else {
-                    console.error('No event data returned from API');
-                    toast.error("Event not found. It may have been deleted or you don't have permission to view it.");
-                }
-            } catch (error) {
-                console.error('Error loading event:', error);
-
-                // More informative error messages based on error type
-                if (error instanceof Error) {
-                    if (error.message.includes('Network Error') || error.message.includes('connect')) {
-                        toast.error(
-                            "Network error: Cannot connect to the server. The API server might be down or not running.",
-                            { duration: 8000 }
-                        );
-                    } else if (error.message.includes('401') || error.message.includes('403') ||
-                        error.message.includes('Authentication')) {
-                        toast.error("Authentication error. Please log in again.", { duration: 5000 });
-                        router.push('/login');
-                    } else if (error.message.includes('404') || error.message.includes('not found')) {
-                        toast.error("Event not found. It may have been deleted or is not accessible.", { duration: 5000 });
-                    } else {
-                        toast.error(`Error: ${error.message}`, { duration: 5000 });
-                    }
-                } else {
-                    toast.error("Failed to load event details. Please try again.");
-                }
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        loadEvent();
-    }, [eventId, router]);
-
-    // Load albums when the component mounts or eventId changes
-    useEffect(() => {
-        const loadAlbums = async () => {
-            try {
-                setIsLoading(true);
-                await refreshAlbums();
-            } catch (error) {
-                console.error('Error loading albums:', error);
-                toast.error("Failed to load albums. Please try again.");
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        // Reset state when eventId changes
-        setAlbumsLoaded(false);
-        setAlbums([]);
-        setDefaultAlbumId(null);
-
-        // Always load albums on mount or when eventId changes
-        loadAlbums();
-
-    }, [eventId]);
-
-    // Function to manually refresh albums
-    const refreshAlbums = async () => {
-        console.log(`Manually refreshing albums for event ${eventId}`);
-        try {
-            if (!eventId) {
-                console.error('No eventId provided for refreshAlbums');
-                return [];
-            }
-
-            const token = localStorage.getItem('rc-token') || '';
-            if (!token) {
-                console.error('No auth token available for refreshAlbums');
-                toast.error("Authentication required. Please log in again.");
-                router.push('/login');
-                return [];
-            }
-
-            // First try using the fixed fetchEventAlbums function
-            let fetchedAlbums = await fetchEventAlbums(eventId, token);
-            console.log(`Fetched ${fetchedAlbums.length} albums in refresh using API`);
-
-            // Sort albums - default album first, then by creation date
-            fetchedAlbums.sort((a, b) => {
-                if (a.isDefault && !b.isDefault) return -1;
-                if (!a.isDefault && b.isDefault) return 1;
-                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-            });
-
-            // Find the default album
-            const defaultAlbum = fetchedAlbums.find(album => album.isDefault);
-            if (defaultAlbum) {
-                console.log(`Setting default album to: ${defaultAlbum.id}`);
-                setDefaultAlbumId(defaultAlbum.id);
-            } else if (fetchedAlbums.length > 0) {
-                console.log(`No default album found, using first album: ${fetchedAlbums[0].id}`);
-                setDefaultAlbumId(fetchedAlbums[0].id);
-            } else {
-                console.log('No albums found in refresh, clearing defaultAlbumId');
-                setDefaultAlbumId(null);
-            }
-
-            setAlbums(fetchedAlbums);
-            setAlbumsLoaded(true);
-
-            return fetchedAlbums;
-        } catch (error) {
-            console.error('Error refreshing albums:', error);
-
-            if (error instanceof Error) {
-                toast.error(error.message || "Failed to refresh albums. Please try again.");
-            } else {
-                toast.error("Failed to refresh albums. Please try again.");
-            }
-            return [];
+    const handleOpenAlbum = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}`);
         }
     };
 
-    // Quick Share Function
-    const quickShare = async () => {
-        try {
-            if (!authToken) {
-                toast.error('Authentication required');
-                return;
-            }
-
-            // Create a quick share token
-            const tokenData = {
-                name: 'Quick Share Link',
-                tokenType: 'invite' as const,
-                permissions: {
-                    view: true,
-                    upload: true,
-                    download: false,
-                    share: false,
-                    comment: true
-                }
-            };
-
-            const shareUrl = `${window.location.origin}/join/${event.share_token}`;
-
-            await navigator.clipboard.writeText(shareUrl);
-            toast.success('Share link copied to clipboard!');
-        } catch (error) {
-            console.error('Error creating quick share:', error);
-            toast.error('Failed to create share link');
+    const handleShare = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}/share`);
         }
     };
 
-    if (isLoading) {
+    const handleManageUploads = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}/manage`);
+        }
+    };
+
+    const handleDownloadQR = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}/qr`);
+        }
+    };
+
+    const handleOpenWall = () => {
+        if (wallUrl) {
+            window.open(wallUrl, '_blank');
+        }
+    };
+
+    const handleShareWall = () => {
+        handleCopyLink(wallUrl);
+    };
+
+    const handleGoToSettings = () => {
+        if (selectedEvent) {
+            router.push(`/events/${selectedEvent._id}/settings`);
+        }
+    };
+
+    const getPrivacyText = () => {
+        if (!selectedEvent) return '';
+
+        switch (selectedEvent.visibility) {
+            case 'public':
+                return 'Public - Anyone can find and access this event';
+            case 'anyone_with_link':
+                return 'Accessible to all with link/QR code. Guest can view and upload to the album.';
+            case 'private':
+                return 'Private - Only invited users can access';
+            default:
+                return 'Unknown privacy setting';
+        }
+    };
+
+    const getModerationText = () => {
+        // Based on your API, this might be determined by permissions or settings
+        // For now, showing a general message
+        return 'Uploads immediately visible in the album, no pre-publishing moderation.';
+    };
+
+    if (isLoadingEvent) {
         return (
-            <div className="w-full">
-                <Skeleton className="h-64 w-full" />
-                <div className="container mx-auto px-4">
-                    <Skeleton className="h-8 w-2/3 mt-6 mb-2" />
-                    <Skeleton className="h-6 w-1/2 mb-6" />
-                    <Skeleton className="h-10 w-full mb-6" />
-                    <div className="grid grid-cols-2 gap-4">
-                        <Skeleton className="h-32 rounded-lg" />
-                        <Skeleton className="h-32 rounded-lg" />
-                    </div>
+            <div className="container mx-auto py-8 px-6">
+                <div className="flex items-center justify-center h-64">
+                    <RefreshCwIcon className="h-8 w-8 animate-spin text-gray-400" />
                 </div>
             </div>
         );
     }
 
-    if (!event) {
+    if (!selectedEvent) {
         return (
-            <div className="container mx-auto px-2 py-8 sm:px-4 sm:py-16 text-center">
-                <h1 className="text-2xl font-bold mb-4">Event Not Found</h1>
-                <p className="text-gray-500 mb-6">
-                    The event you're looking for doesn't exist or has been removed.
-                </p>
-                <Button onClick={() => router.push('/events')}>Back to Events</Button>
+            <div className="container mx-auto py-8 px-6">
+                <div className="text-center">
+                    <h1 className="text-2xl font-semibold text-gray-900">Event not found</h1>
+                    <p className="text-gray-600 mt-2">The event you're looking for doesn't exist or you don't have access to it.</p>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="w-full pb-16 sm:pb-20">
-            {/* Sticky Header */}
-            <EventHeaderDetails event={event} />
+        <div className="container mx-auto py-8 px-6 max-w-6xl">
+            {/* Header */}
+            <div className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                    <div>
+                        <h1 className="text-2xl font-semibold text-gray-900 mb-2">
+                            Welcome, {userData?.name}! 👋
+                        </h1>
+                        <p className="text-gray-600">
+                            This is your dashboard, where you can access your album and photo wall.
+                        </p>
+                    </div>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.location.reload()}
+                        className="text-gray-500 hover:text-gray-700"
+                    >
+                        <RefreshCwIcon className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
 
-            {/* Cover Image Section */}
-            <EventCoverSection event={event} />
-
-            <div className="mx-auto px-2 py-4 sm:px-2 sm:py-2">
-                {/* Event Info Section */}
-                <div className="flex flex-wrap gap-3 mb-4 sm:mb-6">
-                    <div className="flex items-center text-sm ">
-                        <CalendarIcon className="h-4 w-4 mr-1.5" />
-                         {format(new Date(event.start_date), 'MMM d, yyyy')}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Main Content */}
+                <div className="lg:col-span-2 space-y-8">
+                    {/* Event Title */}
+                    <div>
+                        <h2 className="text-xl font-semibold text-gray-900 mb-6">{selectedEvent.title}</h2>
                     </div>
 
-
-                    {event.location.address && (
-                        <div className="flex items-center text-sm text-gray-600">
-                            <MapPinIcon className="h-4 w-4 mr-1.5" />
-                            {typeof event.location === 'object' && event.location !== null
-                                ? (event.location.name || event.location.address || '')
-                                : event.location}
+                    {/* How it works section */}
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-medium text-gray-900">How it works?</h3>
                         </div>
-                    )}
-                </div>
 
-                {event.description && (
-                    <p className="text-gray-700 mb-4 sm:mb-6">{event.description}</p>
-                )}
-
-                {/* Action Buttons */}
-                {/* <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
-                    <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
-                        <DialogTrigger asChild>
-                            <Button variant="outline" size="sm">
-                                <QrCodeIcon className="h-4 w-4 sm:mr-2" />
-                                <span className="hidden sm:inline">QR Code</span>
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                            <DialogHeader>
-                                <DialogTitle>Share Event</DialogTitle>
-                                <DialogDescription>
-                                    Scan this QR code or share the link to invite others
-                                </DialogDescription>
-                            </DialogHeader>
-                            <div className="flex flex-col items-center py-4">
-                                <div className="bg-white p-4 rounded-lg shadow-sm border">
-                                    <div className="w-48 h-48 bg-gray-100 flex items-center justify-center">
-                                        <span className="text-gray-400">QR Code would appear here</span>
+                        {/* Action Cards */}
+                        <div className="space-y-4">
+                            {/* Open Album */}
+                            <div className="flex items-center justify-between p-4 bg-green-50 border border-green-100 rounded-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-green-100 p-2 rounded-lg">
+                                        <ImageIcon className="h-5 w-5 text-green-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-gray-900 mb-1">Open your album</h4>
+                                        <p className="text-sm text-gray-600">
+                                            The album is where all added photos and videos will appear.
+                                        </p>
                                     </div>
                                 </div>
-                                <div className="mt-4 text-center">
-                                    <p className="text-sm font-medium mb-1">{event.name}</p>
-                                    <p className="text-xs text-gray-600">
-                                        Share this QR code for quick access
+                                <Button
+                                    className="bg-gray-900 hover:bg-gray-800 text-white w-32"
+                                    onClick={handleOpenAlbum}
+                                >
+                                    Open
+                                </Button>
+                            </div>
+
+                            {/* Invite Others */}
+                            <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-blue-100 p-2 rounded-lg">
+                                        <ShareIcon className="h-5 w-5 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-gray-900 mb-1">Invite others to contribute</h4>
+                                        <p className="text-sm text-gray-600">
+                                            Share your album so others can add their uploads too!
+                                        </p>
+                                    </div>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    className='w-32'
+                                    onClick={handleShare}
+                                >
+                                    Share
+                                </Button>
+                            </div>
+
+                            {/* Manage Uploads */}
+                            <div className="flex items-center justify-between p-4 bg-orange-50 border border-orange-100 rounded-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-orange-100 p-2 rounded-lg">
+                                        <SettingsIcon className="h-5 w-5 text-orange-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-gray-900 mb-1">Manage uploads</h4>
+                                        <p className="text-sm text-gray-600">
+                                            Moderate uploads, hide, delete, and publish in bulk!
+                                        </p>
+                                    </div>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    className='w-32'
+
+                                    onClick={handleManageUploads}
+                                >
+                                    Manage
+                                </Button>
+                            </div>
+
+                            {/* Download QR */}
+                            <div className="flex items-center justify-between p-4 bg-purple-50 border border-purple-100 rounded-lg">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-purple-100 p-2 rounded-lg">
+                                        <QrCodeIcon className="h-5 w-5 text-purple-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-gray-900 mb-1">Download QR code</h4>
+                                        <p className="text-sm text-gray-600">
+                                            Print it on invitations or display it at your event for easy guest uploads.
+                                        </p>
+                                    </div>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    className='w-32'
+
+                                    onClick={handleDownloadQR}
+                                >
+                                    Download
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Photo Wall Section */}
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-medium text-gray-900">Your photo wall (slideshow)</h3>
+                            <h4 className="text-sm font-medium text-gray-600">How it works?</h4>
+                        </div>
+
+                        <p className="text-sm text-gray-600">
+                            Watch it on any screen or connect to a TV or projector for a live stream of uploads.
+                        </p>
+
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                            <div className="text-center mb-6">
+                                <div className="bg-gray-100 rounded-lg p-12 mb-4">
+                                    <p className="text-gray-500 text-sm">
+                                        Your photo wall preview will appear<br />
+                                        once photos and videos are added in<br />
+                                        your album. ❤️
                                     </p>
                                 </div>
+
+                                <div className="bg-white border rounded-lg p-3 mb-4">
+                                    <Input
+                                        value={wallUrl}
+                                        readOnly
+                                        className="text-center text-sm border-0 focus-visible:ring-0"
+                                    />
+                                </div>
+
+                                <div className="flex justify-center gap-3">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleOpenWall}
+                                    >
+                                        Open
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleShareWall}
+                                    >
+                                        Share
+                                    </Button>
+                                </div>
                             </div>
-                            <DialogFooter>
-                                <Button onClick={quickShare} className="w-full">
-                                    <ShareIcon className="h-4 w-4 mr-2" />
-                                    Copy Share Link
+                        </div>
+                    </div>
+                </div>
+
+                {/* Sidebar */}
+                <div className="space-y-6">
+                    {/* Statistics */}
+                    <Card className="shadow-none">
+                        <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-base font-medium flex items-center gap-2">
+                                    📊 Statistics
+                                </CardTitle>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <RefreshCwIcon className="h-4 w-4" />
                                 </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
-                </div> */}
+                            </div>
+                            <CardDescription className="text-sm">
+                                See your uploads by status and check remaining storage.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="text-sm">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-gray-600">
+                                        {selectedEvent.stats.total_size_mb.toFixed(2)} GB of 0.0 GB used (0%)
+                                    </span>
+                                    <Button variant="link" size="sm" className="h-auto p-0 text-xs">
+                                        Upgrade
+                                    </Button>
+                                </div>
+                            </div>
 
-                
-                <PhotoGallery
-                    eventId={eventId}
-                    albumId={null}
-                    canUpload={true}
-                />
-                {/* Tabs Section */}
-                {/* <Tabs
-                    value={activeTab}
-                    onValueChange={(value) => {
-                        setActiveTab(value);
-                    }}
-                    className="w-full"
-                >
-                    <TabsList className="w-full mb-6">
-                        <TabsTrigger value="photos" className="flex-1">
-                            <CameraIcon className="h-4 w-4 mr-2" />
-                            Photos
-                        </TabsTrigger>
-                        <TabsTrigger value="albums" className="flex-1">
-                            <FolderIcon className="h-4 w-4 mr-2" />
-                            Albums ({albums.length})
-                        </TabsTrigger>
-                    </TabsList>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600 flex items-center gap-1">
+                                        Published <ExternalLinkIcon className="h-3 w-3" />
+                                    </span>
+                                    <span className="text-sm font-medium">{selectedEvent.stats.photos + selectedEvent.stats.videos}</span>
+                                </div>
 
-                    <TabsContent value="photos">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600 flex items-center gap-1">
+                                        Needs approval <ExternalLinkIcon className="h-3 w-3" />
+                                    </span>
+                                    <span className="text-sm font-medium">{selectedEvent.stats.pending_approval}</span>
+                                </div>
 
-                    </TabsContent>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600 flex items-center gap-1">
+                                        Unpublished <ExternalLinkIcon className="h-3 w-3" />
+                                    </span>
+                                    <span className="text-sm font-medium">0</span>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
 
-                    <TabsContent value="albums">
-                        <AlbumManagement
-                            eventId={eventId}
-                            initialAlbums={albums}
-                            onAlbumCreated={updateAlbumsList}
-                            onRefresh={refreshAlbums}
-                        />
-                    </TabsContent>
-                </Tabs> */}
+                    {/* Album Status */}
+                    <Card className="shadow-none">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-base font-medium flex items-center gap-2">
+                                🔒 Album status
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="h-auto p-0 text-sm ml-auto"
+                                    onClick={handleGoToSettings}
+                                >
+                                    Go to Settings
+                                </Button>
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {/* Privacy */}
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-sm font-medium">Privacy</span>
+                                    <InfoIcon className="h-4 w-4 text-gray-400" />
+                                </div>
+                                <p className="text-xs text-gray-600">
+                                    {getPrivacyText()}
+                                </p>
+                            </div>
+
+                            <Separator />
+
+                            {/* Moderation */}
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-sm font-medium">Moderation</span>
+                                </div>
+                                <p className="text-xs text-gray-600">
+                                    {getModerationText()}
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Event Details */}
+                    <Card className="shadow-none">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-base font-medium">Event Details</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="flex items-center gap-2 text-sm">
+                                <EyeIcon className="h-4 w-4 text-gray-400" />
+                                <span className="text-gray-600">Visibility:</span>
+                                <Badge variant="secondary" className="text-xs">
+                                    {selectedEvent.visibility}
+                                </Badge>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-sm">
+                                <ClockIcon className="h-4 w-4 text-gray-400" />
+                                <span className="text-gray-600">Created:</span>
+                                <span className="text-gray-900">
+                                    {new Date(selectedEvent.created_at).toLocaleDateString()}
+                                </span>
+                            </div>
+
+                            {selectedEvent.location?.name && (
+                                <div className="text-sm">
+                                    <span className="text-gray-600">Location:</span>
+                                    <span className="text-gray-900 ml-1">{selectedEvent.location.name}</span>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
         </div>
     );

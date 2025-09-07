@@ -87,7 +87,7 @@ export default function EventHeader({ event }: EventHeaderProps) {
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => router.push(`/events/${event.id}/edit`)}>
+                            <DropdownMenuItem onClick={() => router.push(`/events/${event.id}/settings`)}>
                                 Edit Event
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => router.push(`/events/${event.id}/guests`)}>

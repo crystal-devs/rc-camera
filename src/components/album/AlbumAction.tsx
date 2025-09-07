@@ -4,21 +4,12 @@
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Pencil, Trash2 } from 'lucide-react';
-import { db } from '@/lib/db';
 
 export function AlbumActions({ albumId, isOwner }: { albumId: string; isOwner: boolean }) {
   const router = useRouter();
 
   const handleDelete = async () => {
     if (!confirm('Are you sure you want to delete this album and all its photos?')) return;
-    try {
-      await db.photos.where('albumId').equals(albumId).delete(); // Delete photos
-      await db.albumAccess.where('albumId').equals(albumId).delete(); // Delete access
-      await db.albums.delete(albumId); // Delete album
-      router.push('/albums');
-    } catch (error) {
-      console.error('Error deleting album:', error);
-    }
   };
 
   if (!isOwner) return null;
