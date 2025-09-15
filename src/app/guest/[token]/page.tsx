@@ -125,8 +125,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   }, [eventDetails]);
 
   // WebSocket connection - Guest mode
-  const webSocket = {};
-  // const webSocket = useSimpleWebSocket(shareToken, shareToken, 'guest');
+  // const webSocket = {};
+  const webSocket = useSimpleWebSocket(shareToken, shareToken, 'guest');
 
   const {
     photos,
