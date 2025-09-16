@@ -17,14 +17,14 @@ import {
   useDeleteMedia,
   useGalleryUtils
 } from '@/hooks/useMediaQueries';
-import { StatusTabs } from './StatusTabs';
-import { EmptyState } from './EmptyState';
-import PhotoUploadDialog from './PhotoUploadDialog';
+import { StatusTabs } from '../album/StatusTabs';
+import { EmptyState } from '../album/EmptyState';
+import PhotoUploadDialog from '../album/PhotoUploadDialog';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
 import { OptimizedPhotoGrid } from './PhotoGrid';
 import { useSimpleWebSocket } from '@/hooks/useWebSocket';
-import { UploadProgressPanel } from './UploadProgressPanel';
+import { UploadProgressPanel } from '../album/UploadProgressPanel';
 import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {

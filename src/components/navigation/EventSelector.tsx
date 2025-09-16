@@ -29,7 +29,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import useEventStore from '@/stores/useEventStore';
+import type { Event as StoreEvent } from '@/stores/useEventStore';
 import { fetchEvents } from '@/services/apis/events.api';
+import EventCreateModal from '@/components/event/CreateEventModel';
 
 // Helper function to determine the current page type
 const getCurrentPageType = (pathname: string): string => {
@@ -55,17 +57,93 @@ export function EventSelector() {
         events,
         setEvents,
         setSelectedEvent,
-        isLoadingEvent
+        isLoadingEvent,
+        lastEventId
     } = useEventStore();
 
     const [isLoadingEvents, setIsLoadingEvents] = React.useState(false);
     const [authToken, setAuthToken] = React.useState('');
+    const [showCreateEventDialogue, setShowCreateEventDialogue] = React.useState(false);
 
     // Initialize auth token
     React.useEffect(() => {
         const token = localStorage.getItem('authToken') || '';
         setAuthToken(token);
     }, []);
+
+    // Bootstrap: fetch and select initial event on first load
+    React.useEffect(() => {
+        const extractEventIdFromPath = (path: string): string | null => {
+            const match = path.match(/\/events\/(\w+)/);
+            return match ? match[1] : null;
+        };
+
+        const initializeEvent = async () => {
+            if (!authToken) return; // wait until token is available
+            if (selectedEvent) return; // already selected
+            if (isLoadingEvents) return; // avoid duplicate loads
+
+            setIsLoadingEvents(true);
+            try {
+                let fetched: StoreEvent[] = events as StoreEvent[];
+                if (!fetched || fetched.length === 0) {
+                    const apiEvents = await fetchEvents();
+                    setEvents(apiEvents as unknown as StoreEvent[]);
+                    fetched = (apiEvents as unknown as StoreEvent[]) || [];
+                }
+
+                if (fetched && fetched.length > 0) {
+                    const urlEventId = extractEventIdFromPath(pathname || '');
+                    const preferredId = urlEventId || lastEventId || null;
+
+                    let eventToSelect = fetched[0];
+                    if (preferredId) {
+                        const found = fetched.find(e => e._id === preferredId);
+                        if (found) eventToSelect = found;
+                    }
+
+                    // Update the store first
+                    setSelectedEvent(eventToSelect, eventToSelect.user_role);
+
+                    // If we're not already on this event's route, navigate
+                    const alreadyOnEvent = pathname?.includes(`/events/${eventToSelect._id}`);
+                    if (!alreadyOnEvent) {
+                        const currentPageType = getCurrentPageType(pathname || '');
+                        let targetRoute = '';
+
+                        switch (currentPageType) {
+                            case 'settings':
+                                targetRoute = `/events/${eventToSelect._id}/settings`;
+                                break;
+                            case 'templates':
+                                targetRoute = `/events/${eventToSelect._id}/templates`;
+                                break;
+                            case 'highlights':
+                                targetRoute = `/events/${eventToSelect._id}/highlights`;
+                                break;
+                            case 'shop':
+                                targetRoute = `/events/${eventToSelect._id}/shop`;
+                                break;
+                            case 'media':
+                                targetRoute = `/events/${eventToSelect._id}/media`;
+                                break;
+                            default:
+                                targetRoute = `/events/${eventToSelect._id}`;
+                                break;
+                        }
+
+                        router.replace(targetRoute);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Failed to initialize events:', error);
+            } finally {
+                setIsLoadingEvents(false);
+            }
+        };
+
+        initializeEvent();
+    }, [authToken, selectedEvent, events, pathname, lastEventId, setEvents, setSelectedEvent, isLoadingEvents, router]);
 
     // Fetch events when dropdown opens and we don't have events yet
     React.useEffect(() => {
@@ -76,7 +154,7 @@ export function EventSelector() {
 
             try {
                 const fetchedEvents = await fetchEvents();
-                setEvents(fetchedEvents);
+                setEvents(fetchedEvents as unknown as StoreEvent[]);
                 console.log(`✅ Loaded ${fetchedEvents.length} events`);
             } catch (error) {
                 console.error('❌ Failed to load events:', error);
@@ -125,87 +203,100 @@ export function EventSelector() {
     };
 
     return (
-        <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-                <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={open}
-                    className="w-[280px] justify-between border-gray-200 dark:border-gray-700"
-                    disabled={isLoadingEvent}
-                >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <Calendar size={16} className="text-gray-500" />
-                        <span className="font-medium text-sm truncate text-left">
-                            {selectedEvent
-                                ? selectedEvent.title
-                                : (isLoadingEvent ? 'Loading...' : 'Select an event')
-                            }
-                        </span>
-                    </div>
-                    <ChevronDownIcon className="ml-2 h-4 w-4 opacity-50" />
-                </Button>
-            </PopoverTrigger>
+        <>
+            <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={open}
+                        className="w-[280px] justify-between border-gray-200 dark:border-gray-700"
+                        disabled={isLoadingEvent}
+                    >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Calendar size={16} className="text-gray-500" />
+                            <span className="font-medium text-sm truncate text-left">
+                                {selectedEvent
+                                    ? selectedEvent.title
+                                    : (isLoadingEvent ? 'Loading...' : 'Select an event')
+                                }
+                            </span>
+                        </div>
+                        <ChevronDownIcon className="ml-2 h-4 w-4 opacity-50" />
+                    </Button>
+                </PopoverTrigger>
 
-            <PopoverContent className="w-[320px] p-0" align="start">
-                <Command>
-                    <CommandInput placeholder="Search events..." className="h-9" />
-                    <CommandList>
-                        <CommandEmpty>
-                            {isLoadingEvents ? 'Loading events...' : 'No events found.'}
-                        </CommandEmpty>
-                        {!isLoadingEvents && events.length > 0 && (
+                <PopoverContent className="w-[320px] p-0" align="start">
+                    <Command>
+                        <CommandInput placeholder="Search events..." className="h-9" />
+                        <CommandList>
+                            <CommandEmpty>
+                                {isLoadingEvents ? 'Loading events...' : 'No events found.'}
+                            </CommandEmpty>
+                            {!isLoadingEvents && events.length > 0 && (
+                                <CommandGroup>
+                                    {events.map((event) => (
+                                        <CommandItem
+                                            key={event._id}
+                                            value={event.title}
+                                            onSelect={() => handleEventSelect(event)}
+                                            className="flex items-center gap-3 p-3"
+                                        >
+                                            <div className="bg-primary/10 p-1.5">
+                                                <Calendar size={14} className="text-primary" />
+                                            </div>
+                                            <div className="flex flex-col flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-medium text-sm truncate">
+                                                        {event.title}
+                                                    </span>
+                                                    {selectedEvent?._id === event._id && (
+                                                        <CheckIcon className="ml-auto h-4 w-4 text-primary" />
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-3 mt-1">
+                                                    <Badge
+                                                        variant={event.user_role === 'creator' ? 'default' : 'secondary'}
+                                                        className="text-xs h-4"
+                                                    >
+                                                        {event.user_role}
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            )}
+                            <Separator />
                             <CommandGroup>
-                                {events.map((event) => (
-                                    <CommandItem
-                                        key={event._id}
-                                        value={event.title}
-                                        onSelect={() => handleEventSelect(event)}
-                                        className="flex items-center gap-3 p-3"
-                                    >
-                                        <div className="bg-primary/10 p-1.5">
-                                            <Calendar size={14} className="text-primary" />
-                                        </div>
-                                        <div className="flex flex-col flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-medium text-sm truncate">
-                                                    {event.title}
-                                                </span>
-                                                {selectedEvent?._id === event._id && (
-                                                    <CheckIcon className="ml-auto h-4 w-4 text-primary" />
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-3 mt-1">
-                                                <Badge
-                                                    variant={event.user_role === 'creator' ? 'default' : 'secondary'}
-                                                    className="text-xs h-4"
-                                                >
-                                                    {event.user_role}
-                                                </Badge>
-                                            </div>
-                                        </div>
-                                    </CommandItem>
-                                ))}
+                                <CommandItem
+                                    onSelect={() => {
+                                        setOpen(false);
+                                        setShowCreateEventDialogue(true);
+                                    }}
+                                    className="flex items-center gap-3 p-3 text-primary"
+                                >
+                                    <div className="bg-primary/10 p-1.5">
+                                        <PlusIcon size={14} className="text-primary" />
+                                    </div>
+                                    <span className="font-medium">Create New Event</span>
+                                </CommandItem>
                             </CommandGroup>
-                        )}
-                        <Separator />
-                        <CommandGroup>
-                            <CommandItem
-                                onSelect={() => {
-                                    setOpen(false);
-                                    router.push('/events/create');
-                                }}
-                                className="flex items-center gap-3 p-3 text-primary"
-                            >
-                                <div className="bg-primary/10 p-1.5">
-                                    <PlusIcon size={14} className="text-primary" />
-                                </div>
-                                <span className="font-medium">Create New Event</span>
-                            </CommandItem>
-                        </CommandGroup>
-                    </CommandList>
-                </Command>
-            </PopoverContent>
-        </Popover>
+                        </CommandList>
+                    </Command>
+                </PopoverContent>
+            </Popover>
+
+            <EventCreateModal
+                open={showCreateEventDialogue}
+                onOpenChange={setShowCreateEventDialogue}
+                onCreated={(created) => {
+                    const updated = [...events as StoreEvent[], created as unknown as StoreEvent];
+                    setEvents(updated);
+                    setSelectedEvent(created as unknown as StoreEvent, created.user_role);
+                    setShowCreateEventDialogue(false);
+                }}
+            />
+        </>
     );
 }

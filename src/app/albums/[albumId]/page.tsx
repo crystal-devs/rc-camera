@@ -2,7 +2,7 @@
 'use client';
 
 import AlbumHeader from '@/components/album/AlbumHeader';
-import PhotoGallery from '@/components/album/PhotoGallery';
+import PhotoGallery from '@/components/photo/PhotoGallery';
 import { CameraCapture } from '@/components/camera/CameraCapture';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';

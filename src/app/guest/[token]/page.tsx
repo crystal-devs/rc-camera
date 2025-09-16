@@ -16,7 +16,7 @@ import { useSimpleWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
-import { FullscreenPhotoViewer } from '@/components/album/FullscreenPhotoViewer';
+import { FullscreenPhotoViewer } from '@/components/photo/FullscreenPhotoViewer';
 import { BulkDownloadButton } from './BulkDownloadButton';
 
 import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
@@ -698,14 +698,20 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         <FullscreenPhotoViewer
           selectedPhoto={{
             ...selectedPhoto,
-            takenBy: (selectedPhoto as any).takenBy ?? '',
+            albumId: null,
+            eventId: eventDetails?._id || '',
+            takenBy: Number((selectedPhoto as any).takenBy) || 0,
             imageUrl: (selectedPhoto as any).imageUrl ?? selectedPhoto.src ?? '',
+            createdAt: new Date((selectedPhoto as any).createdAt || Date.now()),
           }}
           selectedPhotoIndex={selectedPhotoIndex}
           photos={photos.map(photo => ({
             ...photo,
-            takenBy: (photo as any).takenBy ?? '',
+            albumId: null,
+            eventId: eventDetails?._id || '',
+            takenBy: Number((photo as any).takenBy) || 0,
             imageUrl: (photo as any).imageUrl ?? photo.src ?? '',
+            createdAt: new Date((photo as any).createdAt || Date.now()),
           }))}
           onClose={() => setPhotoViewerOpen(false)}
           onPrev={() => navigatePhoto('prev')}

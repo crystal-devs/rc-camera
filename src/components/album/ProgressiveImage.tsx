@@ -38,7 +38,8 @@ export const OptimizedProgressiveImage = ({
   const imgRef = useRef<HTMLImageElement>(null);
 
   // Intersection observer for lazy loading
-  const isInView = useIntersection(imgRef, {
+  // Fix: useIntersection expects RefObject<Element>, so cast imgRef appropriately
+  const isInView = useIntersection(imgRef as React.RefObject<Element>, {
     threshold: 0.1,
     rootMargin: '100px' // Increased for better UX
   });
@@ -222,7 +223,7 @@ export const OptimizedProgressiveImage = ({
   return (
     <div
       ref={imgRef}
-      className={`group relative aspect-square overflow-hidden rounded bg-card cursor-pointer transition-all duration-200 ${!isUploading ? 'hover:scale-[1.02] hover:shadow-md' : ''
+      className={`group relative aspect-square overflow-hidden rounded bg-card cursor-pointer transition-all duration-200 ${!isUploading ? 'hover:shadow-md' : ''
         } ${isUploading ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}`}
       onClick={() => !isUploading && onPhotoClick(photo, index)}
     >

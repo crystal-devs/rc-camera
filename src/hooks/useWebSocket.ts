@@ -214,10 +214,13 @@ export function useSimpleWebSocket(
 
   const socketRef = useRef<Socket | null>(null);
   const mountedRef = useRef(true);
-  const statusUpdateTimeoutRef = useRef<NodeJS.Timeout>();
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout>();
+  const statusUpdateTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const connectionSettingsRef = useRef<ConnectionSettings | null>(null);
+  const rateLimitedRef = useRef<boolean>(false);
+  const rateLimitResetTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const rateLimitBackoffMsRef = useRef<number>(30000); // start at 30s, cap later
 
   // Get the correct query key for guest media
   const getGuestQueryKey = useCallback(() => {
@@ -618,6 +621,11 @@ export function useSimpleWebSocket(
       return;
     }
 
+    if (rateLimitedRef.current) {
+      devLog.warn(`🛑 ${userType} reconnect blocked due to rate limiting`);
+      return;
+    }
+
     if (socketRef.current?.connected) {
       devLog.warn(`⚠️ ${userType} already connected`);
       return;
@@ -693,7 +701,40 @@ export function useSimpleWebSocket(
 
         if (!mountedRef.current) return;
 
-        setState(prev => ({ ...prev, connectionError: error.message }));
+        const message = error?.message || '';
+        setState(prev => ({ ...prev, connectionError: message }));
+
+        // Handle rate limiting from server
+        if (/rate limit/i.test(message)) {
+          rateLimitedRef.current = true;
+          // Disable built-in reconnection attempts
+          try {
+            const ioManager: any = (socketRef.current as any)?.io;
+            if (ioManager && typeof ioManager.reconnection === 'function') {
+              ioManager.reconnection(false);
+            }
+          } catch {}
+
+          clearTimeout(reconnectTimeoutRef.current);
+          clearTimeout(rateLimitResetTimeoutRef.current);
+
+          const delay = Math.min(rateLimitBackoffMsRef.current, 120000); // cap at 2m
+          devLog.warn(`⏳ Rate limited, retrying in ${Math.round(delay / 1000)}s`);
+
+          rateLimitResetTimeoutRef.current = setTimeout(() => {
+            if (!mountedRef.current) return;
+            rateLimitedRef.current = false;
+            rateLimitBackoffMsRef.current = Math.min(rateLimitBackoffMsRef.current * 2, 120000);
+            // Re-enable reconnection and try again once
+            try {
+              const ioManager: any = (socketRef.current as any)?.io;
+              if (ioManager && typeof ioManager.reconnection === 'function') {
+                ioManager.reconnection(true);
+              }
+            } catch {}
+            connect();
+          }, delay);
+        }
       });
 
       // Auth handlers
@@ -775,6 +816,32 @@ export function useSimpleWebSocket(
 
       socket.on('error', (error) => {
         devLog.error(`❌ ${userType} socket error:`, error);
+        const message = (error && (error.message || error.toString?.())) || '';
+        if (/rate limit/i.test(message)) {
+          // Mirror connect_error handling
+          rateLimitedRef.current = true;
+          try {
+            const ioManager: any = (socketRef.current as any)?.io;
+            if (ioManager && typeof ioManager.reconnection === 'function') {
+              ioManager.reconnection(false);
+            }
+          } catch {}
+          clearTimeout(reconnectTimeoutRef.current);
+          clearTimeout(rateLimitResetTimeoutRef.current);
+          const delay = Math.min(rateLimitBackoffMsRef.current, 120000);
+          rateLimitResetTimeoutRef.current = setTimeout(() => {
+            if (!mountedRef.current) return;
+            rateLimitedRef.current = false;
+            rateLimitBackoffMsRef.current = Math.min(rateLimitBackoffMsRef.current * 2, 120000);
+            try {
+              const ioManager: any = (socketRef.current as any)?.io;
+              if (ioManager && typeof ioManager.reconnection === 'function') {
+                ioManager.reconnection(true);
+              }
+            } catch {}
+            connect();
+          }, delay);
+        }
       });
 
     } catch (error: any) {
