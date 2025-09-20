@@ -1,368 +1,209 @@
-// hooks/useEventWebSocket.ts - Fixed for Socket.IO compatibility
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { io, Socket } from 'socket.io-client';
+// hooks/useEventWebSocket.ts - Updated for Subscription Pattern
+'use client';
+
+import { useEffect, useRef } from 'react';
+import { useWebSocketStore } from '@/stores/webSocketStore';
 import { useAuthToken } from '@/hooks/use-auth';
-import { queryKeys } from '@/lib/queryKeys';
-import { Photo } from '@/types/PhotoGallery.types';
 
-interface WebSocketUser {
-  id: string;
-  name: string;
-  type: 'admin' | 'moderator' | 'guest';
+interface UseEventWebSocketOptions {
+  userType?: 'admin' | 'guest' | 'photowall';
+  shareToken?: string;
+  enabled?: boolean;
 }
 
-interface WebSocketState {
-  isConnected: boolean;
-  isAuthenticated: boolean;
-  connectionError: string | null;
-  user: WebSocketUser | null;
-  reconnectAttempts: number;
-}
-
-interface WebSocketHook extends WebSocketState {
-  connect: () => void;
-  disconnect: () => void;
-  sendMessage: (event: string, data: any) => void;
-}
+// Global flag to prevent multiple hooks from running simultaneously
+let globalInitializationInProgress = false;
+let globalInitializationPromise: Promise<void> | null = null;
 
 export function useEventWebSocket(
   eventId: string,
-  shareToken?: string,
-  setActiveTab?: (tab: 'approved' | 'pending' | 'rejected' | 'hidden') => void
-): WebSocketHook {
+  options: UseEventWebSocketOptions = {}
+) {
+  const {
+    userType = 'admin',
+    shareToken,
+    enabled = true
+  } = options;
+
   const token = useAuthToken();
-  const queryClient = useQueryClient();
-
-  // WebSocket state
-  const [state, setState] = useState<WebSocketState>({
-    isConnected: false,
-    isAuthenticated: false,
-    connectionError: null,
-    user: null,
-    reconnectAttempts: 0
-  });
-
-  // Socket.IO reference
-  const socketRef = useRef<Socket | null>(null);
+  const webSocketStore = useWebSocketStore();
   const mountedRef = useRef(true);
+  const currentSubscriptionRef = useRef<string | null>(null);
+  const hasInitializedRef = useRef(false);
 
-  // Get Socket.IO server URL
-  const getSocketIOUrl = useCallback(() => {
-    return process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3000';
-  }, []);
-
-  // Handle media status updates from admin actions
-  const handleMediaStatusUpdate = useCallback((payload: any) => {
-    console.log('📸 Admin received media status update:', payload);
-
-    const { mediaId, previousStatus, newStatus, updatedBy } = payload;
-
-    // Show toast notification
-    const statusActions = {
-      approved: '✅ approved',
-      rejected: '❌ rejected',
-      hidden: '👁️ hidden',
-      pending: '⏳ moved to pending',
-      auto_approved: '✅ auto-approved'
-    };
-
-    const action = statusActions[newStatus as keyof typeof statusActions] || 'updated';
-    toast.success(`Photo ${action} by ${updatedBy.name}`, {
-      duration: 3000,
-      position: 'bottom-right'
-    });
-
-    // Invalidate ALL relevant queries across ALL tabs
-    const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
-
-    statuses.forEach(status => {
-      // Regular queries
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.eventPhotos(eventId, status),
-        exact: false
-      });
-
-      // Infinite queries
-      queryClient.invalidateQueries({
-        queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite'],
-        exact: false
-      });
-    });
-
-    // Invalidate counts
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.eventCounts(eventId),
-      exact: false
-    });
-
-    // Force refetch to ensure all tabs get updated
-    queryClient.refetchQueries({
-      queryKey: queryKeys.eventPhotos(eventId, newStatus),
-      exact: false
-    });
-
-    queryClient.refetchQueries({
-      queryKey: queryKeys.eventPhotos(eventId, previousStatus),
-      exact: false
-    });
-
-  }, [eventId, queryClient]);
-
-  const handleNewMediaUpload = useCallback((payload: any) => {
-    console.log('📤 Admin received new media upload:', payload);
-
-    const { uploadedBy, media, status } = payload;
-
-    toast.success(`📸 New photo uploaded by ${uploadedBy.name}`, {
-      description: status === 'pending' ? 'Waiting for approval' : 'Auto-approved',
-      duration: 4000
-    });
-
-    // Invalidate and refetch queries
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.eventPhotos(eventId, status),
-      exact: false
-    });
-
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.eventCounts(eventId),
-      exact: false
-    });
-
-    // Force refetch
-    queryClient.refetchQueries({
-      queryKey: queryKeys.eventPhotos(eventId, status),
-      exact: false
-    });
-
-  }, [eventId, queryClient]);
-
-  const handleBulkMediaUpdate = useCallback((payload: any) => {
-    console.log('📦 Admin received bulk media update:', payload);
-
-    const { action, count, updatedBy } = payload;
-
-    toast.success(`${updatedBy.name} ${action} ${count} photos`, {
-      duration: 4000
-    });
-
-    // Invalidate all queries
-    const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
-
-    statuses.forEach(status => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.eventPhotos(eventId, status),
-        exact: false
-      });
-
-      queryClient.refetchQueries({
-        queryKey: queryKeys.eventPhotos(eventId, status),
-        exact: false
-      });
-    });
-
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.eventCounts(eventId),
-      exact: false
-    });
-
-  }, [eventId, queryClient]);
-
-  // Connect function
-  const connect = useCallback(() => {
-    if (!eventId || !token) {
-      console.log('⚠️ Admin WebSocket: Cannot connect - missing eventId or token');
-      return;
-    }
-
-    if (socketRef.current?.connected) {
-      console.log('⚠️ Admin Socket.IO already connected');
-      return;
-    }
-
-    try {
-      console.log('🔌 Admin connecting to Socket.IO...', getSocketIOUrl());
-
-      // Create Socket.IO connection
-      const socket = io(getSocketIOUrl(), {
-        autoConnect: false,
-        transports: ['websocket', 'polling'],
-        timeout: 10000,
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 2000,
-        reconnectionDelayMax: 10000,
-        forceNew: true
-      });
-
-      socketRef.current = socket;
-
-      // Connection event handlers
-      socket.on('connect', () => {
-        console.log('✅ Admin Socket.IO connected:', socket.id);
-        setState(prev => ({
-          ...prev,
-          isConnected: true,
-          connectionError: null,
-          reconnectAttempts: 0
-        }));
-
-        // Send admin authentication
-        const authData = {
-          token: shareToken || token,
-          eventId: eventId,
-          userType: 'admin'
-        };
-
-        console.log('🔐 Sending admin authentication');
-        socket.emit('authenticate', authData);
-      });
-
-      socket.on('disconnect', (reason) => {
-        console.log('🔌 Admin Socket.IO disconnected:', reason);
-        setState(prev => ({
-          ...prev,
-          isConnected: false,
-          isAuthenticated: false
-        }));
-
-        // Don't attempt reconnection for manual disconnects
-        if (reason === 'io client disconnect') {
-          return;
-        }
-
-        // Attempt reconnection with exponential backoff
-        if (state.reconnectAttempts < 5 && mountedRef.current) {
-          const delay = Math.min(1000 * Math.pow(2, state.reconnectAttempts), 30000);
-
-          setState(prev => ({
-            ...prev,
-            reconnectAttempts: prev.reconnectAttempts + 1
-          }));
-
-          setTimeout(() => {
-            if (mountedRef.current && !socket.connected) {
-              console.log(`🔄 Admin reconnection attempt ${state.reconnectAttempts + 1}`);
-              socket.connect();
-            }
-          }, delay);
-        }
-      });
-
-      socket.on('connect_error', (error) => {
-        console.error('❌ Admin Socket.IO connection error:', error);
-        setState(prev => ({
-          ...prev,
-          connectionError: error.message
-        }));
-      });
-
-      // Authentication event handlers
-      socket.on('auth_success', (data) => {
-        console.log('✅ Admin Socket.IO authenticated:', data);
-        setState(prev => ({
-          ...prev,
-          isAuthenticated: true,
-          user: data.data?.user,
-          connectionError: null
-        }));
-
-        // Join the event room
-        socket.emit('join_event', eventId);
-        console.log('🏠 Admin joining event room:', eventId);
-      });
-
-      socket.on('auth_error', (error) => {
-        console.error('❌ Admin Socket.IO authentication failed:', error);
-        setState(prev => ({
-          ...prev,
-          connectionError: error.message || 'Authentication failed',
-          isAuthenticated: false
-        }));
-      });
-
-      // Real-time event handlers
-      socket.on('media_status_updated', handleMediaStatusUpdate);
-      socket.on('new_media_uploaded', handleNewMediaUpload);
-      socket.on('bulk_media_update', handleBulkMediaUpdate);
-
-      socket.on('error', (error) => {
-        console.error('❌ Admin Socket.IO error:', error);
-        toast.error(`Connection error: ${error.message}`);
-      });
-
-      // Connect to Socket.IO server
-      socket.connect();
-
-    } catch (error) {
-      console.error('❌ Failed to create admin Socket.IO connection:', error);
-      setState(prev => ({
-        ...prev,
-        connectionError: 'Failed to connect'
-      }));
-    }
-  }, [eventId, token, shareToken, getSocketIOUrl, handleMediaStatusUpdate, handleNewMediaUpload, handleBulkMediaUpdate, state.reconnectAttempts]);
-
-  // Disconnect function
-  const disconnect = useCallback(() => {
-    console.log('🔌 Disconnecting admin Socket.IO...');
-
-    mountedRef.current = false;
-
-    if (socketRef.current) {
-      socketRef.current.removeAllListeners();
-      socketRef.current.disconnect();
-      socketRef.current = null;
-    }
-
-    setState({
-      isConnected: false,
-      isAuthenticated: false,
-      connectionError: null,
-      user: null,
-      reconnectAttempts: 0
-    });
-  }, []);
-
-  // Send message function
-  const sendMessage = useCallback((event: string, data: any) => {
-    if (socketRef.current?.connected) {
-      socketRef.current.emit(event, data);
-      console.log('📤 Admin sent Socket.IO message:', { event, data });
-    } else {
-      console.warn('⚠️ Cannot send message: Socket.IO not connected');
-    }
-  }, []);
-
-  // Setup and cleanup
   useEffect(() => {
     mountedRef.current = true;
-    connect();
-
     return () => {
-      disconnect();
+      mountedRef.current = false;
     };
-  }, [connect, disconnect]);
+  }, []);
 
-  // Handle visibility change to reconnect when tab becomes active
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && !state.isConnected && mountedRef.current) {
-        console.log('👁️ Admin tab became visible, reconnecting...');
-        connect();
+    const hasRequiredAuth = userType === 'admin' ? !!token : !!shareToken;
+
+    if (!enabled || !eventId || !hasRequiredAuth) {
+      console.log('Missing requirements:', { enabled, eventId, hasRequiredAuth, userType, token: !!token, shareToken: !!shareToken });
+      return;
+    }
+
+    console.log(`🎯 useEventWebSocket hook called for event: ${eventId}`);
+
+    const initializeConnection = async () => {
+      // Prevent multiple hooks from initializing simultaneously
+      if (globalInitializationInProgress && globalInitializationPromise) {
+        console.log('⏳ Global initialization in progress, waiting...');
+        try {
+          await globalInitializationPromise;
+        } catch (error) {
+          console.warn('⚠️ Global initialization failed:', error);
+        }
+      }
+
+      if (!mountedRef.current) return;
+
+      // Check if we already have the right subscription
+      if (webSocketStore.isSubscribed(eventId) && currentSubscriptionRef.current === eventId) {
+        console.log(`✅ Already subscribed to event: ${eventId}`);
+        return;
+      }
+
+      globalInitializationInProgress = true;
+
+      try {
+        const authToken = userType === 'admin' ? token : (shareToken || eventId);
+
+        if (!authToken) {
+          throw new Error(`No auth token available for ${userType}`);
+        }
+
+        console.log(`🔍 Current WebSocket state:`, {
+          isConnected: webSocketStore.isConnected,
+          isAuthenticated: webSocketStore.isAuthenticated,
+          isConnecting: webSocketStore.isConnecting,
+          currentSubscriptions: Array.from(webSocketStore.subscriptions),
+          isSubscribedToEvent: webSocketStore.isSubscribed(eventId)
+        });
+
+        // Step 1: Ensure WebSocket is connected and authenticated
+        if (!webSocketStore.isConnected || !webSocketStore.isAuthenticated) {
+          console.log('📡 WebSocket not ready, establishing connection...');
+
+          globalInitializationPromise = webSocketStore.connect(authToken, userType, eventId);
+          await globalInitializationPromise;
+
+          console.log('✅ WebSocket connection established');
+        } else {
+          console.log('✅ WebSocket already ready');
+        }
+
+        // Step 2: Subscribe to the event if not already subscribed
+        if (mountedRef.current && eventId && !webSocketStore.isSubscribed(eventId)) {
+          console.log(`📝 Subscribing to event ${eventId}...`);
+
+          // If we have a different subscription, switch to the new one
+          if (currentSubscriptionRef.current && currentSubscriptionRef.current !== eventId) {
+            await webSocketStore.switchSubscription(
+              currentSubscriptionRef.current,
+              eventId,
+              shareToken
+            );
+          } else {
+            // Just subscribe to the new event
+            await webSocketStore.subscribe(eventId, shareToken);
+          }
+
+          currentSubscriptionRef.current = eventId;
+          console.log(`✅ Successfully subscribed to event ${eventId}`);
+        } else if (webSocketStore.isSubscribed(eventId)) {
+          console.log(`✅ Already subscribed to event ${eventId}`);
+          currentSubscriptionRef.current = eventId;
+        }
+
+        hasInitializedRef.current = true;
+
+      } catch (error) {
+        console.error(`❌ Failed to initialize WebSocket for event ${eventId}:`, error);
+
+        if (error instanceof Error) {
+          const errorMessage = error.message.toLowerCase();
+
+          // Handle rate limiting
+          if (errorMessage.includes('rate limit')) {
+            console.log('🛑 Rate limited, will not retry automatically');
+            return;
+          }
+
+          // Handle auth errors
+          if (errorMessage.includes('auth') || errorMessage.includes('token')) {
+            console.error('🔒 Authentication issue, check your token');
+            return;
+          }
+
+          // Handle subscription errors
+          if (errorMessage.includes('subscription') || errorMessage.includes('timeout')) {
+            console.warn('📝 Subscription issue, marking as not initialized for retry');
+            hasInitializedRef.current = false;
+            return;
+          }
+        }
+
+        // For other errors, mark as not initialized so it can retry
+        hasInitializedRef.current = false;
+      } finally {
+        globalInitializationInProgress = false;
+        globalInitializationPromise = null;
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [state.isConnected, connect]);
+    // Only initialize if we haven't already or if the eventId changed
+    if (!hasInitializedRef.current || currentSubscriptionRef.current !== eventId) {
+      initializeConnection();
+    }
+
+    return () => {
+      // Unsubscribe when component unmounts or eventId changes
+      if (currentSubscriptionRef.current && webSocketStore.isSubscribed && mountedRef.current) {
+        console.log(`📝 Unsubscribing from ${currentSubscriptionRef.current} due to cleanup`);
+
+        // Only unsubscribe if we're switching to a different event, not on unmount
+        if (eventId !== currentSubscriptionRef.current) {
+          webSocketStore.unsubscribe(currentSubscriptionRef.current);
+        }
+
+        currentSubscriptionRef.current = null;
+      }
+      hasInitializedRef.current = false;
+    };
+  }, [eventId, token, userType, shareToken, enabled]);
+
+  // Provide additional subscription utilities
+  const subscriptionUtils = {
+    isSubscribedToEvent: webSocketStore.isSubscribed(eventId),
+    isSubscriptionPending: webSocketStore.pendingSubscriptions.has(eventId),
+    hasSubscriptionFailed: webSocketStore.failedSubscriptions.has(eventId),
+    currentSubscriptions: Array.from(webSocketStore.subscriptions),
+    retrySubscription: async () => {
+      if (eventId && !webSocketStore.isSubscribed(eventId)) {
+        try {
+          await webSocketStore.subscribe(eventId, shareToken);
+          console.log(`✅ Retry subscription successful for ${eventId}`);
+        } catch (error) {
+          console.error(`❌ Retry subscription failed for ${eventId}:`, error);
+        }
+      }
+    }
+  };
 
   return {
-    ...state,
-    connect,
-    disconnect,
-    sendMessage
+    // Original WebSocket state
+    socket: webSocketStore.socket,
+    isConnected: webSocketStore.isConnected,
+    isAuthenticated: webSocketStore.isAuthenticated,
+    connectionError: webSocketStore.connectionError,
+    userInfo: webSocketStore.userInfo,
+    isConnecting: webSocketStore.isConnecting,
+
+    // New subscription-specific state
+    ...subscriptionUtils
   };
 }

@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useSimpleWebSocket } from '@/hooks/useWebSocket';
+import { useEventWebSocket } from './useEventWebSocket';
 
 interface ProgressUpdate {
   mediaId: string;
@@ -41,10 +41,10 @@ export function useWebSocketUploadProgress(
   } = {}
 ) {
   const queryClient = useQueryClient();
-  const webSocket = useSimpleWebSocket(eventId, undefined, 'admin');
+  const webSocket = useEventWebSocket(eventId, { userType: 'admin' });
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState>({});
   const [isMonitoring, setIsMonitoring] = useState(false);
-  
+
   // Use refs to prevent recreating listeners
   const completedIds = useRef(new Set<string>());
   const failedIds = useRef(new Set<string>());
@@ -56,7 +56,7 @@ export function useWebSocketUploadProgress(
   // Stable callback references
   const onCompleteRef = useRef(options.onComplete);
   const onFailedRef = useRef(options.onFailed);
-  
+
   useEffect(() => {
     onCompleteRef.current = options.onComplete;
     onFailedRef.current = options.onFailed;
@@ -65,13 +65,13 @@ export function useWebSocketUploadProgress(
   // Helper function to update photo in cache - make it stable
   const updatePhotoInCache = useCallback((mediaId: string, updates: Partial<any>) => {
     const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
-    
+
     statuses.forEach(status => {
       queryClient.setQueryData(
         ['eventPhotos', eventId, status],
         (oldData: any) => {
           if (!oldData) return oldData;
-          return oldData.map((photo: any) => 
+          return oldData.map((photo: any) =>
             photo.id === mediaId ? { ...photo, ...updates } : photo
           );
         }
@@ -85,7 +85,7 @@ export function useWebSocketUploadProgress(
             ...oldData,
             pages: oldData.pages.map((page: any) => ({
               ...page,
-              data: page.data?.map((photo: any) => 
+              data: page.data?.map((photo: any) =>
                 photo.id === mediaId ? { ...photo, ...updates } : photo
               )
             }))
@@ -100,12 +100,12 @@ export function useWebSocketUploadProgress(
     // Check if this is a duplicate update
     const lastUpdate = lastProgressUpdate.current.get(data.mediaId);
     const currentTime = Date.now();
-    
+
     // Prevent rapid duplicate updates (less than 100ms apart)
     if (lastUpdate && (currentTime - lastUpdate) < 100) {
       return;
     }
-    
+
     lastProgressUpdate.current.set(data.mediaId, currentTime);
 
     console.log('WebSocket progress update:', data.mediaId.substring(0, 8), data.stage, data.percentage + '%');
@@ -113,10 +113,10 @@ export function useWebSocketUploadProgress(
     setUploadProgress(prev => {
       // Don't update if it's the same data
       const existing = prev[data.mediaId];
-      if (existing && 
-          existing.percentage === data.percentage && 
-          existing.stage === data.stage && 
-          existing.status === data.status) {
+      if (existing &&
+        existing.percentage === data.percentage &&
+        existing.stage === data.stage &&
+        existing.status === data.status) {
         return prev;
       }
 
@@ -128,8 +128,8 @@ export function useWebSocketUploadProgress(
           stage: data.stage,
           percentage: data.percentage,
           message: data.message,
-          status: data.status === 'completed' ? 'completed' : 
-                  data.status === 'failed' ? 'failed' : 'processing',
+          status: data.status === 'completed' ? 'completed' :
+            data.status === 'failed' ? 'failed' : 'processing',
           startTime: existing?.startTime || new Date(),
           lastUpdate: new Date(),
           error: data.error
@@ -142,7 +142,7 @@ export function useWebSocketUploadProgress(
     // Handle completion - only once per media
     if (data.status === 'completed' && !completedIds.current.has(data.mediaId)) {
       completedIds.current.add(data.mediaId);
-      
+
       updatePhotoInCache(data.mediaId, {
         processing: false,
         hasVariants: true,
@@ -171,7 +171,7 @@ export function useWebSocketUploadProgress(
     // Handle failure - only once per media
     if (data.status === 'failed' && !failedIds.current.has(data.mediaId)) {
       failedIds.current.add(data.mediaId);
-      
+
       updatePhotoInCache(data.mediaId, {
         processing: false,
         error: true,
@@ -229,7 +229,7 @@ export function useWebSocketUploadProgress(
   // Start monitoring function
   const startMonitoring = useCallback((mediaIds: string[], filenames: string[]) => {
     console.log('Starting upload monitoring for:', mediaIds.length, 'files');
-    
+
     const initialProgress: UploadProgressState = {};
     mediaIds.forEach((mediaId, index) => {
       initialProgress[mediaId] = {
@@ -291,9 +291,9 @@ export function useWebSocketUploadProgress(
     processing: Object.values(uploadProgress).filter(p => p.status === 'processing').length,
     completed: Object.values(uploadProgress).filter(p => p.status === 'completed').length,
     failed: Object.values(uploadProgress).filter(p => p.status === 'failed').length,
-    overallProgress: Object.keys(uploadProgress).length > 0 ? 
+    overallProgress: Object.keys(uploadProgress).length > 0 ?
       Math.round(
-        Object.values(uploadProgress).reduce((sum, p) => sum + p.percentage, 0) / 
+        Object.values(uploadProgress).reduce((sum, p) => sum + p.percentage, 0) /
         Object.keys(uploadProgress).length
       ) : 0
   };
@@ -305,7 +305,7 @@ export function useWebSocketUploadProgress(
     startMonitoring,
     stopMonitoring,
     clearAll,
-    
+
     // WebSocket connection info
     isConnected: webSocket.isConnected,
     isAuthenticated: webSocket.isAuthenticated,

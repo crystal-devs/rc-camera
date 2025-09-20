@@ -23,9 +23,9 @@ import PhotoUploadDialog from '../album/PhotoUploadDialog';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
 import { OptimizedPhotoGrid } from './PhotoGrid';
-import { useSimpleWebSocket } from '@/hooks/useWebSocket';
 import { UploadProgressPanel } from '../album/UploadProgressPanel';
 import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
+import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
@@ -57,8 +57,7 @@ export default function OptimizedPhotoGallery({
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // WebSocket connection for admin features
-  const webSocket = useSimpleWebSocket(eventId, shareToken, 'admin');
-
+  const webSocket = useEventWebSocket(eventId, { userType: 'admin' });
   // Quality management: Use thumbnail for grid, full for viewer
   const gridQuality = 'thumbnail';
 

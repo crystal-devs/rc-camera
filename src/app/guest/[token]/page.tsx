@@ -1,33 +1,30 @@
-// app/guest/[token]/page.tsx - Updated with Dynamic Styling
+// app/guest/[token]/page.tsx - COMPLETE OPTIMIZED VERSION
 'use client';
 
-import React, { useState, useCallback, use, useEffect, memo } from 'react';
+import React, { useState, useCallback, use, useEffect, memo, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WifiIcon, WifiOffIcon, SparklesIcon, UploadIcon, TrashIcon, Camera, X, Loader2, Plus, Download, Users, Calendar, MapPin, Upload } from 'lucide-react';
+import { WifiIcon, WifiOffIcon, Camera, X, Loader2, Plus, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TransformedPhoto } from '@/types/events';
 import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
-import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
 import { notFound } from 'next/navigation';
-import { useSimpleWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
 import { FullscreenPhotoViewer } from '@/components/photo/FullscreenPhotoViewer';
 import { BulkDownloadButton } from './BulkDownloadButton';
-
 import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
-import { generateEventCSS } from '@/constants/styling.constant';
+import { useEventWebSocket } from '@/hooks/useEventWebSocket';
+import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
 
-// Create a query client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
+      staleTime: 0, // Match the hook configuration
+      gcTime: 5 * 60 * 1000, // Match the hook configuration
       refetchOnWindowFocus: false,
       retry: (failureCount, error: any) => {
         if (error?.status === 404 || error?.status === 403) {
@@ -54,24 +51,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     total?: number;
   }>({});
 
-  // Real-time activity state
-  const [realtimeActivity, setRealtimeActivity] = useState<{
-    isNewMediaUploading: boolean;
-    isProcessingComplete: boolean;
-    isMediaBeingRemoved: boolean;
-    newMediaCount: number;
-    removedMediaCount: number;
-    lastActivityTime: number;
-  }>({
-    isNewMediaUploading: false,
-    isProcessingComplete: false,
-    isMediaBeingRemoved: false,
-    newMediaCount: 0,
-    removedMediaCount: 0,
-    lastActivityTime: Date.now()
-  });
-
-  // Upload functionality states
+  // Upload states
   const [showUploadDialog, setShowUploadDialog] = useState<boolean>(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState<boolean>(false);
@@ -88,46 +68,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     return null;
   });
 
-  console.log('🎯 ShareToken in GuestPageContent:', shareToken);
+  // INDUSTRY STANDARD: Event deduplication tracking
+  const processedEventsRef = useRef<Set<string>>(new Set());
+  const eventCleanupTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
-  // Fetch event details
-  const fetchEventDetails = async (shareToken: string) => {
-    try {
-      const response = await getTokenInfo(shareToken, auth);
-      console.log('🔍 Full response:', response);
-
-      if (response && response.status === true && response.data) {
-        setEventDetails(response.data.event);
-        setAccessDetails(response.data.access);
-      } else {
-        console.warn("⚠️ Unexpected response format", response);
-      }
-    } catch (err) {
-      console.error('❌ Error fetching event details:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (shareToken) {
-      fetchEventDetails(shareToken);
-    }
-  }, [shareToken]);
-
-  // Apply dynamic styling to the document when eventDetails change
-  useEffect(() => {
-    if (eventDetails && document.documentElement) {
-      const cssVars = generateEventCSS(eventDetails);
-      
-      Object.entries(cssVars).forEach(([key, value]) => {
-        document.documentElement.style.setProperty(key, value);
-      });
-    }
-  }, [eventDetails]);
-
-  // WebSocket connection - Guest mode
-  // const webSocket = {};
-  const webSocket = useSimpleWebSocket(shareToken, shareToken, 'guest');
-
+  // Use optimized infinite query
   const {
     photos,
     totalPhotos,
@@ -138,106 +83,200 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     error,
     loadMore,
     refresh,
+    webSocketHandlers,
+    cleanup
   } = useInfiniteMediaQuery({
     shareToken,
     auth,
-    limit: 10,
+    limit: 20,
   });
 
+  // Fetch event details
+  const fetchEventDetails = async (shareToken: string) => {
+    try {
+      const response = await getTokenInfo(shareToken, auth);
+      if (response && response.status === true && response.data) {
+        setEventDetails(response.data.event);
+        setAccessDetails(response.data.access);
+      }
+    } catch (err) {
+      console.error('Error fetching event details:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (shareToken) {
+      fetchEventDetails(shareToken);
+    }
+  }, [shareToken]);
+
+  // WebSocket connection
+  const webSocket = useEventWebSocket(eventDetails?._id || '', {
+    userType: 'guest',
+    shareToken: shareToken,
+    enabled: !!eventDetails?._id && !!shareToken
+  });
+
+  // INDUSTRY STANDARD: Event signature creation for deduplication
+  const createEventSignature = useCallback((eventType: string, payload: any): string => {
+    const mediaId = payload.mediaId || payload._id || payload.id || 'unknown';
+    const timestamp = payload.timestamp || Date.now();
+    // Create signature with 2-second window to catch rapid duplicates
+    const timeWindow = Math.floor(timestamp / 2000) * 2000;
+    return `${eventType}:${mediaId}:${timeWindow}`;
+  }, []);
+
+  // INDUSTRY STANDARD: Deduplication check
+  const shouldProcessEvent = useCallback((eventType: string, payload: any): boolean => {
+    const signature = createEventSignature(eventType, payload);
+
+    if (processedEventsRef.current.has(signature)) {
+      console.log(`⏭️ Skipping duplicate ${eventType} event:`, signature);
+      return false;
+    }
+
+    // Add to processed events
+    processedEventsRef.current.add(signature);
+
+    // Clean up old signatures after 10 seconds
+    const timeoutId = setTimeout(() => {
+      processedEventsRef.current.delete(signature);
+      eventCleanupTimeoutsRef.current.delete(signature);
+    }, 10000);
+
+    eventCleanupTimeoutsRef.current.set(signature, timeoutId);
+    return true;
+  }, [createEventSignature]);
+
+  // INDUSTRY STANDARD: Optimized WebSocket event handlers with deduplication
   useEffect(() => {
     if (!webSocket.socket) return;
 
-    // Handle new media uploaded
+    const handleMediaApproved = (payload: any) => {
+      if (!shouldProcessEvent('media_approved', payload)) return;
+
+      console.log('✅ Processing media approved:', payload.mediaId);
+      webSocketHandlers.handleMediaApproved(payload);
+
+      toast.success('New photos approved!', {
+        duration: 3000,
+        position: 'bottom-center'
+      });
+    };
+
+    const handleMediaStatusUpdated = (payload: any) => {
+      if (!shouldProcessEvent('media_status_updated', payload)) return;
+
+      console.log('📝 Processing status update:', payload.mediaId, payload.previousStatus, '→', payload.newStatus);
+      webSocketHandlers.handleMediaStatusUpdated(payload);
+
+      // Smart notifications based on status change
+      const items = Array.isArray(payload) ? payload : [payload];
+      items.forEach(item => {
+        if (item.newStatus === 'approved' && item.previousStatus !== 'approved') {
+          // Only show approval toast if we haven't already shown it via media_approved event
+          const approvalSignature = createEventSignature('media_approved', item);
+          if (!processedEventsRef.current.has(approvalSignature)) {
+            toast.success('Photo approved!', {
+              duration: 2000,
+              position: 'bottom-center'
+            });
+          }
+        } else if (item.newStatus === 'hidden' || item.newStatus === 'rejected') {
+          toast.info('Photo was removed', {
+            duration: 3000,
+            position: 'bottom-center'
+          });
+        }
+      });
+    };
+
     const handleNewMediaUploaded = (payload: any) => {
-      console.log('📸 New media uploaded in guest page:', payload);
+      if (!shouldProcessEvent('new_media_uploaded', payload)) return;
 
-      setRealtimeActivity(prev => ({
-        ...prev,
-        isNewMediaUploading: true,
-        newMediaCount: prev.newMediaCount + 1,
-        lastActivityTime: Date.now()
-      }));
+      console.log('📸 Processing new media upload');
+      webSocketHandlers.handleNewMediaUploaded(payload);
 
-      setTimeout(() => {
-        setRealtimeActivity(prev => ({
-          ...prev,
-          isNewMediaUploading: false
-        }));
-      }, 3000);
+      toast.success('New photos added!', {
+        duration: 3000,
+        position: 'bottom-center'
+      });
     };
 
-    const handleProcessingComplete = (payload: any) => {
-      console.log('✨ Processing completed in guest page:', payload);
+    const handleMediaRemoved = (payload: any) => {
+      if (!shouldProcessEvent('media_removed', payload)) return;
 
-      setRealtimeActivity(prev => ({
-        ...prev,
-        isProcessingComplete: true,
-        lastActivityTime: Date.now()
-      }));
+      console.log('🗑️ Processing media removal');
+      webSocketHandlers.handleMediaRemoved(payload);
 
-      setTimeout(() => {
-        setRealtimeActivity(prev => ({
-          ...prev,
-          isProcessingComplete: false
-        }));
-      }, 2000);
+      const count = payload.mediaIds?.length || 1;
+      toast.info(`${count} photo${count > 1 ? 's' : ''} removed`, {
+        duration: 3000,
+        position: 'bottom-center'
+      });
     };
 
-    const handleEventStatsUpdate = (payload: any) => {
-      console.log('📊 Event stats updated in guest page:', payload);
+    const handleMediaProcessingComplete = (payload: any) => {
+      if (!shouldProcessEvent('media_processing_complete', payload)) return;
+
+      console.log('⚡ Processing completion event');
+      webSocketHandlers.handleMediaProcessingComplete(payload);
+
+      toast.success('High-quality version ready!', {
+        duration: 2000,
+        position: 'bottom-center'
+      });
     };
 
-    const handleGuestMediaRemovedUI = (payload: any) => {
-      console.log('🗑️ Media removed in guest page (UI update):', payload);
-
-      setRealtimeActivity(prev => ({
-        ...prev,
-        isMediaBeingRemoved: true,
-        removedMediaCount: prev.removedMediaCount + 1,
-        lastActivityTime: Date.now()
-      }));
-
-      setTimeout(() => {
-        setRealtimeActivity(prev => ({
-          ...prev,
-          isMediaBeingRemoved: false
-        }));
-      }, 3000);
-    };
-
+    // Set up event listeners
+    webSocket.socket.on('media_approved', handleMediaApproved);
+    webSocket.socket.on('media_status_updated', handleMediaStatusUpdated);
     webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
-    webSocket.socket.on('media_processing_complete', handleProcessingComplete);
-    webSocket.socket.on('event_stats_update', handleEventStatsUpdate);
-    webSocket.socket.on('guest_media_removed', handleGuestMediaRemovedUI);
-    webSocket.socket.on('media_removed', handleGuestMediaRemovedUI);
+    webSocket.socket.on('media_removed', handleMediaRemoved);
+    webSocket.socket.on('guest_media_removed', handleMediaRemoved);
+    webSocket.socket.on('media_processing_complete', handleMediaProcessingComplete);
 
     return () => {
-      webSocket.socket?.off('new_media_uploaded', handleNewMediaUploaded);
-      webSocket.socket?.off('media_processing_complete', handleProcessingComplete);
-      webSocket.socket?.off('event_stats_update', handleEventStatsUpdate);
-      webSocket.socket?.off('guest_media_removed', handleGuestMediaRemovedUI);
-      webSocket.socket?.off('media_removed', handleGuestMediaRemovedUI);
+      if (webSocket.socket) {
+        webSocket.socket.off('media_approved', handleMediaApproved);
+        webSocket.socket.off('media_status_updated', handleMediaStatusUpdated);
+        webSocket.socket.off('new_media_uploaded', handleNewMediaUploaded);
+        webSocket.socket.off('media_removed', handleMediaRemoved);
+        webSocket.socket.off('guest_media_removed', handleMediaRemoved);
+        webSocket.socket.off('media_processing_complete', handleMediaProcessingComplete);
+      }
     };
-  }, [webSocket.socket]);
+  }, [webSocket.socket, webSocketHandlers, shouldProcessEvent, createEventSignature]);
 
+  // Room stats handler
   const handleRoomStats = useCallback((payload: any) => {
-    console.log('📊 Room stats update:', payload);
     setRoomStats(payload);
   }, []);
 
   useEffect(() => {
     if (!webSocket.socket) return;
-
     webSocket.socket.on('room_user_counts', handleRoomStats);
     return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
   }, [webSocket.socket, handleRoomStats]);
+
+  // INDUSTRY STANDARD: Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all event cleanup timeouts
+      eventCleanupTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      eventCleanupTimeoutsRef.current.clear();
+      processedEventsRef.current.clear();
+
+      // Call hook cleanup
+      cleanup();
+    };
+  }, [cleanup]);
 
   // Upload functionality
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
       setSelectedFiles(files);
-      console.log('📁 Files selected:', files.map(f => f.name));
     }
   };
 
@@ -249,21 +288,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     try {
       setUploading(true);
-      console.log('🔍 Starting upload:', {
-        fileCount: selectedFiles.length,
-        shareToken: shareToken.substring(0, 8) + '...',
-        hasAuth: !!auth,
-        guestInfo
-      });
-
       const result = await uploadGuestPhotos(
         shareToken,
         selectedFiles,
         guestInfo,
         auth || undefined
       );
-
-      console.log('✅ Upload result:', result);
 
       if (result.status) {
         const { summary } = result.data;
@@ -277,16 +307,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           setSelectedFiles([]);
           setGuestInfo({ name: '', email: '' });
           setShowUploadDialog(false);
-          refresh();
         } else {
           toast.error('All uploads failed. Please try again.');
         }
       } else {
         toast.error(result.message || 'Upload failed');
       }
-
     } catch (error: any) {
-      console.error('❌ Upload error:', error);
+      console.error('Upload error:', error);
       toast.error(error.message || 'Upload failed. Please try again.');
     } finally {
       setUploading(false);
@@ -297,17 +325,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     setSelectedFiles(files => files.filter((_, i) => i !== index));
   };
 
-  const downloadPhoto = useCallback((photo: TransformedPhoto) => {
-    const link = document.createElement('a');
-    link.href = photo.src;
-    link.download = `photo-${photo.id}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, []);
-
-  // Enhanced Connection Status Component
-  const ConnectionStatus = () => {
+  // Connection Status Component
+  const ConnectionStatus = memo(() => {
     if (!webSocket.isConnected) {
       return (
         <Badge variant="outline" className="flex items-center gap-1">
@@ -330,51 +349,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       <Badge variant="default" className="flex items-center gap-1 bg-green-500">
         <WifiIcon className="h-3 w-3" />
         Live
-        {realtimeActivity.isNewMediaUploading && (
-          <UploadIcon className="h-3 w-3 animate-pulse" />
-        )}
-        {realtimeActivity.isProcessingComplete && (
-          <SparklesIcon className="h-3 w-3 animate-pulse" />
-        )}
       </Badge>
-    );
-  };
-
-  // Real-time Activity Indicator
-  const RealtimeActivityIndicator = memo(() => {
-    if (!webSocket.isAuthenticated) return null;
-
-    return (
-      <div className="flex items-center gap-2 text-xs">
-        {realtimeActivity.isNewMediaUploading && (
-          <div className="flex items-center gap-1 text-blue-600 animate-pulse">
-            <UploadIcon className="h-3 w-3" />
-            <span>New photos uploading...</span>
-          </div>
-        )}
-        {realtimeActivity.isProcessingComplete && (
-          <div className="flex items-center gap-1 text-green-600 animate-pulse">
-            <SparklesIcon className="h-3 w-3" />
-            <span>High-quality versions ready!</span>
-          </div>
-        )}
-        {realtimeActivity.isMediaBeingRemoved && (
-          <div className="flex items-center gap-1 text-orange-600 animate-pulse">
-            <TrashIcon className="h-3 w-3" />
-            <span>Photos being removed...</span>
-          </div>
-        )}
-        {realtimeActivity.newMediaCount > 0 && !realtimeActivity.isNewMediaUploading && (
-          <div className="flex items-center gap-1 text-green-600">
-            <span>+{realtimeActivity.newMediaCount} new photos</span>
-          </div>
-        )}
-        {realtimeActivity.removedMediaCount > 0 && !realtimeActivity.isMediaBeingRemoved && (
-          <div className="flex items-center gap-1 text-orange-600">
-            <span>-{realtimeActivity.removedMediaCount} photos removed</span>
-          </div>
-        )}
-      </div>
     );
   });
 
@@ -415,12 +390,18 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     );
   });
 
+  // Content rendering
   const renderContent = useCallback(() => {
     if (isInitialLoading) {
       return (
         <div className="text-center py-16">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Loading photos...</p>
+          {webSocket.isAuthenticated && (
+            <p className="text-sm text-green-600 mt-2">
+              ✓ Real-time updates enabled
+            </p>
+          )}
         </div>
       );
     }
@@ -461,7 +442,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           )}
           {webSocket.isAuthenticated && (
             <span className="block mt-2 text-sm text-green-600">
-              ✓ You'll see new photos in real-time
+              ✓ You'll see new photos automatically
             </span>
           )}
         </div>
@@ -469,46 +450,33 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     }
 
     return (
-      <div className="space-y-6">
-        {/* Real-time activity banner */}
-        {webSocket.isAuthenticated && (
-          realtimeActivity.isNewMediaUploading ||
-          realtimeActivity.isProcessingComplete ||
-          realtimeActivity.isMediaBeingRemoved
-        ) && (
-            <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <RealtimeActivityIndicator />
-                <button
-                  onClick={refresh}
-                  className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  Refresh Now
-                </button>
-              </div>
-            </div>
-          )}
-
-        {/* Use the integrated pinterest grid */}
-        <PinterestPhotoGrid
-          photos={photos}
-          onPhotoClick={handlePhotoClick}
-          hasNextPage={hasNextPage}
-          isLoadingMore={isLoadingMore}
-          onLoadMore={loadMore}
-          eventStyling={eventDetails?.styling_config}
-        />
-      </div>
+      <PinterestPhotoGrid
+        photos={photos}
+        onPhotoClick={handlePhotoClick}
+        hasNextPage={hasNextPage}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={loadMore}
+        eventStyling={eventDetails?.styling_config}
+      />
     );
-  }, [photos, isInitialLoading, isLoadingMore, hasNextPage, isError, error, handlePhotoClick, loadMore, refresh, webSocket.isAuthenticated, realtimeActivity, eventDetails]);
+  }, [
+    photos,
+    isInitialLoading,
+    isLoadingMore,
+    hasNextPage,
+    isError,
+    error,
+    handlePhotoClick,
+    loadMore,
+    refresh,
+    webSocket.isAuthenticated,
+    eventDetails
+  ]);
 
-  // Handle missing shareToken
   if (!shareToken) {
     notFound();
   }
 
-  console.log(eventDetails, 'eventDetailseventDetails')
-  
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
       {/* Dynamic Event Cover */}
@@ -516,45 +484,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         eventDetails={eventDetails}
         photoCount={photos.length}
         totalPhotos={totalPhotos}
-      >
-      </DynamicEventCover>
-        {/* Action buttons in the cover */}
-        {/* <div className="flex items-center gap-4 mt-6">
-          <ConnectionStatus />
-          <RoomStatsDisplay roomStats={roomStats} />
-
-          {eventDetails?.permissions?.can_upload && (
-            <Button
-              onClick={() => setShowUploadDialog(true)}
-              className="text-white flex items-center gap-2"
-              style={{ backgroundColor: 'var(--color-accent, #007bff)' }}
-            >
-              <Upload className="w-4 h-4" />
-              Upload Photos
-            </Button>
-          )}
-
-          {eventDetails?.permissions?.can_download && (
-            <BulkDownloadButton
-              shareToken={shareToken}
-              eventTitle={eventDetails?.title}
-              totalPhotos={totalPhotos}
-              authToken={auth}
-              guestId={`guest_${Date.now()}`}
-              guestName={guestInfo.name}
-              guestEmail={guestInfo.email}
-              disabled={isInitialLoading || photos.length === 0}
-            />
-          )}
-
-          <button
-            onClick={refresh}
-            disabled={isInitialLoading || isLoadingMore}
-            className="px-4 py-2 bg-white/20 text-white rounded hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors backdrop-blur-sm"
-          >
-            Refresh
-          </button>
-        </div> */}
+      />
 
       {/* Photo Gallery Section */}
       <div className="max-w-full mx-auto px-0 pb-8">
@@ -694,6 +624,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         </div>
       )}
 
+      {/* Photo Viewer */}
       {photoViewerOpen && selectedPhoto && (
         <FullscreenPhotoViewer
           selectedPhoto={{

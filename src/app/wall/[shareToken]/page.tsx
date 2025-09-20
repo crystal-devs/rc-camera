@@ -1,8 +1,7 @@
-// app/wall/[shareToken]/page.tsx - Fixed with Real-time Image Count
-
+// app/wall/[shareToken]/page.tsx - UPDATED WITH SUBSCRIPTION PATTERN
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import {
     PhotoWallItem,
@@ -10,7 +9,6 @@ import {
     PhotoWallResponse
 } from '@/services/apis/photowall.api';
 import { getPhotoWallData } from '@/services/apis/photowall.api';
-import { useSimpleWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
 import { LoadingScreen } from '@/components/photo-wall/LoadingScreen';
 import { Header } from '@/components/photo-wall/Header';
@@ -19,8 +17,8 @@ import { ErrorScreen } from '@/components/photo-wall/ErrorScreen';
 import { GridDisplay } from '@/components/photo-wall/DisplayModes/GridDisplay';
 import { Controls } from '@/components/photo-wall/Controls';
 import { ProgressBar } from '@/components/photo-wall/ProgressBar';
-// import { SettingsSheet } from '@/components/photo-wall/SettingsSheet';
 import { Button } from '@/components/ui/button';
+import { usePhotoWallWebSocket } from '@/hooks/usePhotoWallWebSocket';
 
 export default function PhotoWallPage() {
     const params = useParams();
@@ -38,7 +36,7 @@ export default function PhotoWallPage() {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [showSettings, setShowSettings] = useState(false);
 
-    // 🚀 NEW: Real-time stats tracking
+    // Real-time stats tracking
     const [realtimeStats, setRealtimeStats] = useState({
         totalImages: 0,
         viewerCount: 0,
@@ -68,213 +66,174 @@ export default function PhotoWallPage() {
         lastActivityTime: Date.now()
     });
 
-    // 🚀 USE SAME WEBSOCKET AS GUEST PAGE
-    const webSocket = useSimpleWebSocket(shareToken, shareToken, 'photowall');
+    // INDUSTRY STANDARD: WebSocket handlers with proper callbacks
+    const webSocketHandlers = {
+        onNewMedia: useCallback((newItem: PhotoWallItem) => {
+            console.log('📺 New media received in photo wall:', newItem);
 
-    // 🚀 ENHANCED: Handle new media with count updates
-    const handleNewMediaForPhotoWall = useCallback((data: any) => {
-        console.log('📺 New media received in photo wall:', data);
+            // Show toast notification
+            toast.success(`📺 New photo from ${newItem.uploaderName || 'someone'}!`);
 
-        // Show toast notification
-        toast.success(`📺 New photo from ${data.uploadedBy?.name || 'someone'}!`);
+            // Add to slideshow with insertion strategy
+            setImages(prevImages => {
+                const newImages = [...prevImages];
+                const strategy = wallData?.settings?.newImageInsertion || 'after_current';
 
-        // Create photo wall compatible item
-        const newItem: PhotoWallItem = {
-            id: data.mediaId || data.media?.id || `temp_${Date.now()}`,
-            imageUrl: data.media?.url || data.media?.thumbnailUrl || '',
-            uploaderName: wallData?.settings?.showUploaderNames ? (data.uploadedBy?.name || 'Anonymous') : null,
-            uploadedAt: data.uploadedAt || new Date().toISOString(),
-            isNew: true
-        };
-
-        // Add to slideshow with insertion strategy
-        setImages(prevImages => {
-            const newImages = [...prevImages];
-            const strategy = wallData?.settings?.newImageInsertion || 'after_current';
-
-            switch (strategy) {
-                case 'immediate':
-                    newImages.unshift(newItem);
-                    setCurrentIndex(0);
-                    break;
-                case 'after_current':
-                    const insertIndex = Math.min(currentIndex + 3, newImages.length);
-                    newImages.splice(insertIndex, 0, newItem);
-                    break;
-                case 'end_of_queue':
-                    newImages.push(newItem);
-                    break;
-                case 'smart_priority':
-                    const smartIndex = Math.min(
-                        currentIndex + Math.floor(Math.random() * 5) + 1,
-                        newImages.length
-                    );
-                    newImages.splice(smartIndex, 0, newItem);
-                    break;
-                default:
-                    newImages.push(newItem);
-            }
-
-            // 🚀 UPDATE REAL-TIME STATS
-            setRealtimeStats(prev => ({
-                ...prev,
-                totalImages: newImages.length,
-                lastUpdated: Date.now()
-            }));
-
-            return newImages;
-        });
-
-        // Update activity state
-        setRealtimeActivity(prev => ({
-            ...prev,
-            isNewMediaUploading: true,
-            newMediaCount: prev.newMediaCount + 1,
-            lastActivityTime: Date.now()
-        }));
-
-        // Reset activity state after delay
-        setTimeout(() => {
-            setRealtimeActivity(prev => ({
-                ...prev,
-                isNewMediaUploading: false
-            }));
-        }, 3000);
-
-        // Remove "new" flag after delay
-        setTimeout(() => {
-            setImages(prevImages =>
-                prevImages.map(img =>
-                    img.id === newItem.id ? { ...img, isNew: false } : img
-                )
-            );
-        }, 10000);
-    }, [currentIndex, wallData?.settings]);
-
-    const handleProcessingComplete = useCallback((data: any) => {
-        console.log('📺 Processing completed in photo wall:', data);
-
-        // Update the image with higher quality version
-        setImages(prevImages =>
-            prevImages.map(img => {
-                if (img.id === data.mediaId) {
-                    return {
-                        ...img,
-                        imageUrl: data.variants?.display || data.variants?.full || img.imageUrl
-                    };
+                switch (strategy) {
+                    case 'immediate':
+                        newImages.unshift(newItem);
+                        setCurrentIndex(0);
+                        break;
+                    case 'after_current':
+                        const insertIndex = Math.min(currentIndex + 3, newImages.length);
+                        newImages.splice(insertIndex, 0, newItem);
+                        break;
+                    case 'end_of_queue':
+                        newImages.push(newItem);
+                        break;
+                    case 'smart_priority':
+                        const smartIndex = Math.min(
+                            currentIndex + Math.floor(Math.random() * 5) + 1,
+                            newImages.length
+                        );
+                        newImages.splice(smartIndex, 0, newItem);
+                        break;
+                    default:
+                        newImages.push(newItem);
                 }
-                return img;
-            })
-        );
 
-        // Update activity state
-        setRealtimeActivity(prev => ({
-            ...prev,
-            isProcessingComplete: true,
-            lastActivityTime: Date.now()
-        }));
+                // Update real-time stats
+                setRealtimeStats(prev => ({
+                    ...prev,
+                    totalImages: newImages.length,
+                    lastUpdated: Date.now()
+                }));
 
-        // Reset activity state after delay
-        setTimeout(() => {
+                return newImages;
+            });
+
+            // Update activity state
             setRealtimeActivity(prev => ({
                 ...prev,
-                isProcessingComplete: false
+                isNewMediaUploading: true,
+                newMediaCount: prev.newMediaCount + 1,
+                lastActivityTime: Date.now()
             }));
-        }, 2000);
 
-        toast.info('✨ Higher quality version ready!');
-    }, []);
+            // Reset activity state after delay
+            setTimeout(() => {
+                setRealtimeActivity(prev => ({
+                    ...prev,
+                    isNewMediaUploading: false
+                }));
+            }, 3000);
 
-    // 🚀 ENHANCED: Handle media removal with count updates
-    const handleMediaRemoved = useCallback((data: any) => {
-        console.log('📺 Media removed in photo wall:', data);
+            // Remove "new" flag after delay
+            setTimeout(() => {
+                setImages(prevImages =>
+                    prevImages.map(img =>
+                        img.id === newItem.id ? { ...img, isNew: false } : img
+                    )
+                );
+            }, 10000);
+        }, [currentIndex, wallData?.settings]),
 
-        // Remove from slideshow
-        setImages(prevImages => {
-            const newImages = prevImages.filter(img => img.id !== data.mediaId);
-            
-            // Adjust current index if needed
-            if (currentIndex >= newImages.length && newImages.length > 0) {
-                setCurrentIndex(newImages.length - 1);
-            }
+        onMediaRemoved: useCallback((mediaId: string) => {
+            console.log('📺 Media removed in photo wall:', mediaId);
 
-            // 🚀 UPDATE REAL-TIME STATS
-            setRealtimeStats(prev => ({
-                ...prev,
-                totalImages: newImages.length,
-                lastUpdated: Date.now()
-            }));
-            
-            return newImages;
-        });
+            // Remove from slideshow
+            setImages(prevImages => {
+                const newImages = prevImages.filter(img => img.id !== mediaId);
+                
+                // Adjust current index if needed
+                if (currentIndex >= newImages.length && newImages.length > 0) {
+                    setCurrentIndex(newImages.length - 1);
+                }
 
-        // Update activity state
-        setRealtimeActivity(prev => ({
-            ...prev,
-            isMediaBeingRemoved: true,
-            removedMediaCount: prev.removedMediaCount + 1,
-            lastActivityTime: Date.now()
-        }));
+                // Update real-time stats
+                setRealtimeStats(prev => ({
+                    ...prev,
+                    totalImages: newImages.length,
+                    lastUpdated: Date.now()
+                }));
+                
+                return newImages;
+            });
 
-        // Reset activity state after delay
-        setTimeout(() => {
+            // Update activity state
             setRealtimeActivity(prev => ({
                 ...prev,
-                isMediaBeingRemoved: false
+                isMediaBeingRemoved: true,
+                removedMediaCount: prev.removedMediaCount + 1,
+                lastActivityTime: Date.now()
             }));
-        }, 3000);
 
-        toast.warning(`📺 Photo removed: ${data.guest_context?.reason_display || 'Content moderated'}`);
-    }, [currentIndex]);
+            // Reset activity state after delay
+            setTimeout(() => {
+                setRealtimeActivity(prev => ({
+                    ...prev,
+                    isMediaBeingRemoved: false
+                }));
+            }, 3000);
 
-    // 🚀 NEW: Handle event stats updates for real-time counts
-    const handleEventStatsUpdate = useCallback((data: any) => {
-        console.log('📺 Event stats update in photo wall:', data);
-        
-        if (data.stats) {
-            setRealtimeStats(prev => ({
+            toast.warning('📺 Photo removed from display');
+        }, [currentIndex]),
+
+        onProcessingComplete: useCallback((data: any) => {
+            console.log('📺 Processing completed in photo wall:', data);
+
+            // Update the image with higher quality version
+            setImages(prevImages =>
+                prevImages.map(img => {
+                    if (img.id === data.mediaId) {
+                        return {
+                            ...img,
+                            imageUrl: data.variants?.display || data.variants?.full || img.imageUrl
+                        };
+                    }
+                    return img;
+                })
+            );
+
+            // Update activity state
+            setRealtimeActivity(prev => ({
                 ...prev,
-                totalImages: data.stats.approved || data.stats.totalMedia || prev.totalImages,
+                isProcessingComplete: true,
+                lastActivityTime: Date.now()
+            }));
+
+            // Reset activity state after delay
+            setTimeout(() => {
+                setRealtimeActivity(prev => ({
+                    ...prev,
+                    isProcessingComplete: false
+                }));
+            }, 2000);
+
+            toast.info('✨ Higher quality version ready!');
+        }, []),
+
+        onStatsUpdate: useCallback((stats: { totalImages: number; viewerCount: number }) => {
+            console.log('📺 Stats update in photo wall:', stats);
+            
+            setRealtimeStats(prev => ({
+                totalImages: stats.totalImages || prev.totalImages,
+                viewerCount: stats.viewerCount || prev.viewerCount,
                 lastUpdated: Date.now()
             }));
-        }
-    }, []);
+        }, [])
+    };
 
-    // 🚀 NEW: Handle room stats for viewer count
-    const handleRoomStats = useCallback((data: any) => {
-        console.log('📺 Room stats update:', data);
-        
-        setRealtimeStats(prev => ({
-            ...prev,
-            viewerCount: data.guestCount || data.total || 0,
-            lastUpdated: Date.now()
-        }));
-    }, []);
+    // INDUSTRY STANDARD: Use the new WebSocket hook
+    const webSocketConnection = usePhotoWallWebSocket(
+        {
+            shareToken,
+            enabled: !!shareToken
+        },
+        webSocketHandlers
+    );
 
-    // 🚀 SAME EVENT LISTENERS AS GUEST PAGE
-    useEffect(() => {
-        if (!webSocket.socket) return;
-
-        // Use the SAME events as guest page
-        webSocket.socket.on('new_media_uploaded', handleNewMediaForPhotoWall);
-        webSocket.socket.on('media_processing_complete', handleProcessingComplete);
-        webSocket.socket.on('event_stats_update', handleEventStatsUpdate);
-        webSocket.socket.on('guest_media_removed', handleMediaRemoved);
-        webSocket.socket.on('media_removed', handleMediaRemoved);
-        webSocket.socket.on('room_user_counts', handleRoomStats);
-
-        // Cleanup
-        return () => {
-            webSocket.socket?.off('new_media_uploaded', handleNewMediaForPhotoWall);
-            webSocket.socket?.off('media_processing_complete', handleProcessingComplete);
-            webSocket.socket?.off('event_stats_update', handleEventStatsUpdate);
-            webSocket.socket?.off('guest_media_removed', handleMediaRemoved);
-            webSocket.socket?.off('media_removed', handleMediaRemoved);
-            webSocket.socket?.off('room_user_counts', handleRoomStats);
-        };
-    }, [webSocket.socket, handleNewMediaForPhotoWall, handleProcessingComplete, handleEventStatsUpdate, handleMediaRemoved, handleRoomStats]);
-
-    // FIXED: Prevent infinite API calls with throttling
+    // INDUSTRY STANDARD: Prevent infinite API calls with throttling
     const refreshPhotoWallData = useCallback(async (reason: string = 'manual') => {
         const now = Date.now();
         
@@ -309,7 +268,7 @@ export default function PhotoWallPage() {
                     console.log(`📸 Updating images: ${currentImageCount} → ${newImageCount}`);
                     setImages(response.data.items);
 
-                    // 🚀 UPDATE REAL-TIME STATS
+                    // Update real-time stats
                     setRealtimeStats(prev => ({
                         ...prev,
                         totalImages: newImageCount,
@@ -336,7 +295,7 @@ export default function PhotoWallPage() {
         }
     }, [shareToken, images.length]);
 
-    // FIXED: Initial data loading (only once)
+    // Initial data loading (only once)
     const loadWallData = useCallback(async () => {
         if (!shareToken || initialLoadCompleteRef.current) return;
 
@@ -356,7 +315,7 @@ export default function PhotoWallPage() {
                 setDisplayMode(response.data.settings.displayMode);
                 setIsPlaying(response.data.settings.autoAdvance);
 
-                // 🚀 INITIALIZE REAL-TIME STATS
+                // Initialize real-time stats
                 setRealtimeStats({
                     totalImages: response.data.items.length,
                     viewerCount: 0,
@@ -378,19 +337,20 @@ export default function PhotoWallPage() {
 
     // Connection status monitoring
     useEffect(() => {
-        console.log('🔌 WebSocket Status:', { 
-            isConnected: webSocket.isConnected, 
-            isAuthenticated: webSocket.isAuthenticated 
+        console.log('🔌 PhotoWall WebSocket Status:', { 
+            isConnected: webSocketConnection.isConnected, 
+            isAuthenticated: webSocketConnection.isAuthenticated,
+            isSubscribed: webSocketConnection.isSubscribed,
         });
 
-        if (webSocket.isConnected && webSocket.isAuthenticated) {
+        if (webSocketConnection.isConnected && webSocketConnection.isAuthenticated) {
             toast.success('📺 Connected to live updates', { duration: 2000 });
-        } else if (webSocket.isConnected && !webSocket.isAuthenticated) {
+        } else if (webSocketConnection.isConnected && !webSocketConnection.isAuthenticated) {
             toast.info('🔄 Connecting...', { duration: 2000 });
-        } else if (!webSocket.isConnected) {
+        } else if (!webSocketConnection.isConnected) {
             toast.error('📺 Disconnected from live updates', { duration: 2000 });
         }
-    }, [webSocket.isConnected, webSocket.isAuthenticated]);
+    }, [webSocketConnection.isConnected, webSocketConnection.isAuthenticated, webSocketConnection.isSubscribed]);
 
     // Optimized periodic refresh (only when needed)
     useEffect(() => {
@@ -398,13 +358,13 @@ export default function PhotoWallPage() {
 
         const refreshInterval = setInterval(async () => {
             // Only refresh if disconnected from real-time updates
-            if (!webSocket.isConnected || !webSocket.isAuthenticated) {
+            if (!webSocketConnection.isConnected || !webSocketConnection.isAuthenticated) {
                 await refreshPhotoWallData('periodic_fallback');
             }
         }, 60000); // Every 60 seconds
 
         return () => clearInterval(refreshInterval);
-    }, [shareToken, webSocket.isConnected, webSocket.isAuthenticated, refreshPhotoWallData]);
+    }, [shareToken, webSocketConnection.isConnected, webSocketConnection.isAuthenticated, refreshPhotoWallData]);
 
     // Slideshow control with proper cleanup
     const startSlideshow = useCallback(() => {
@@ -565,20 +525,8 @@ export default function PhotoWallPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 text-white overflow-hidden">
-            {/* <Header
-                wallData={wallData}
-                displayMode={displayMode}
-                isConnected={webSocket.isConnected}
-                isAuthenticated={webSocket.isAuthenticated}
-                imageCount={realtimeStats.totalImages} // 🚀 USE REAL-TIME COUNT
-                viewerCount={realtimeStats.viewerCount} // 🚀 USE REAL-TIME COUNT
-                showControls={showControls}
-                onToggleSettings={() => setShowSettings(true)}
-                onRefresh={handleManualRefresh}
-            /> */}
-
             {/* Real-time activity indicator */}
-            {webSocket.isAuthenticated && (
+            {webSocketConnection.isAuthenticated && (
                 realtimeActivity.isNewMediaUploading ||
                 realtimeActivity.isProcessingComplete ||
                 realtimeActivity.isMediaBeingRemoved
@@ -632,18 +580,6 @@ export default function PhotoWallPage() {
                 onToggleFullscreen={toggleFullscreen}
                 onToggleSettings={() => setShowSettings(true)}
             />
-
-            {/* {displayMode === 'slideshow' && isPlaying && wallData?.settings?.transitionDuration && (
-                <ProgressBar duration={wallData.settings.transitionDuration} />
-            )} */}
-
-            {/* <SettingsSheet
-                isOpen={showSettings}
-                onClose={() => setShowSettings(false)}
-                settings={wallData.settings}
-                shareToken={shareToken}
-                onSettingsChange={handleLocalSettingsChange}
-            /> */}
         </div>
     );
 }
