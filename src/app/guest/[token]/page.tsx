@@ -1,4 +1,4 @@
-// app/guest/[token]/page.tsx - COMPLETE OPTIMIZED VERSION
+// app/guest/[token]/page.tsx - FIXED VERSION (infinite re-render resolved)
 'use client';
 
 import React, { useState, useCallback, use, useEffect, memo, useRef } from 'react';
@@ -19,12 +19,13 @@ import { BulkDownloadButton } from './BulkDownloadButton';
 import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
+import { NotificationBanner } from '@/components/guest/NotificationBanner';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0, // Match the hook configuration
-      gcTime: 5 * 60 * 1000, // Match the hook configuration
+      staleTime: 0,
+      gcTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       retry: (failureCount, error: any) => {
         if (error?.status === 404 || error?.status === 403) {
@@ -61,6 +62,9 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [eventDetails, setEventDetails] = useState<any>(null);
   const [accessDetails, setAccessDetails] = useState<any>(null);
 
+  // Notification banner state
+  const [showNotificationBanner, setShowNotificationBanner] = useState<boolean>(false);
+
   const [auth] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('authToken');
@@ -68,11 +72,17 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     return null;
   });
 
-  // INDUSTRY STANDARD: Event deduplication tracking
+  // Event deduplication tracking
   const processedEventsRef = useRef<Set<string>>(new Set());
   const eventCleanupTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
-  // Use optimized infinite query
+  // FIXED: Stable callback for viewport state change
+  const handleViewportStateChange = useCallback((viewportInfo: any) => {
+    // This callback is now stable and won't cause re-renders
+    console.log('📐 Viewport changed:', viewportInfo);
+  }, []);
+
+  // Use infinite media query with buffering
   const {
     photos,
     totalPhotos,
@@ -84,11 +94,18 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     loadMore,
     refresh,
     webSocketHandlers,
-    cleanup
+    cleanup,
+    // Buffering functionality
+    bufferedChanges,
+    bufferedCount,
+    applyBufferedChanges,
+    clearBufferedChanges,
+    updateViewportInfo
   } = useInfiniteMediaQuery({
     shareToken,
     auth,
     limit: 20,
+    onViewportStateChange: handleViewportStateChange // FIXED: Use stable callback
   });
 
   // Fetch event details
@@ -117,16 +134,15 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     enabled: !!eventDetails?._id && !!shareToken
   });
 
-  // INDUSTRY STANDARD: Event signature creation for deduplication
+  // Event signature creation for deduplication
   const createEventSignature = useCallback((eventType: string, payload: any): string => {
     const mediaId = payload.mediaId || payload._id || payload.id || 'unknown';
     const timestamp = payload.timestamp || Date.now();
-    // Create signature with 2-second window to catch rapid duplicates
     const timeWindow = Math.floor(timestamp / 2000) * 2000;
     return `${eventType}:${mediaId}:${timeWindow}`;
   }, []);
 
-  // INDUSTRY STANDARD: Deduplication check
+  // Deduplication check
   const shouldProcessEvent = useCallback((eventType: string, payload: any): boolean => {
     const signature = createEventSignature(eventType, payload);
 
@@ -135,10 +151,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       return false;
     }
 
-    // Add to processed events
     processedEventsRef.current.add(signature);
 
-    // Clean up old signatures after 10 seconds
     const timeoutId = setTimeout(() => {
       processedEventsRef.current.delete(signature);
       eventCleanupTimeoutsRef.current.delete(signature);
@@ -148,7 +162,40 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     return true;
   }, [createEventSignature]);
 
-  // INDUSTRY STANDARD: Optimized WebSocket event handlers with deduplication
+  // Show/hide notification banner based on buffered changes
+  useEffect(() => {
+    setShowNotificationBanner(bufferedCount > 0);
+  }, [bufferedCount]);
+
+  // FIXED: Handle viewport changes from PinterestPhotoGrid
+  const handleViewportChange = useCallback((viewportInfo: any) => {
+    updateViewportInfo(viewportInfo);
+  }, [updateViewportInfo]);
+
+  // Apply buffered changes and show success feedback
+  const handleApplyBufferedChanges = useCallback(() => {
+    applyBufferedChanges();
+    toast.success(`Applied ${bufferedCount} new photos!`, {
+      duration: 3000,
+      position: 'bottom-center'
+    });
+  }, [applyBufferedChanges, bufferedCount]);
+
+  // Dismiss notification banner
+  const handleDismissNotification = useCallback(() => {
+    clearBufferedChanges();
+    setShowNotificationBanner(false);
+    toast.info('Pending changes cleared', {
+      duration: 2000,
+      position: 'bottom-center'
+    });
+  }, [clearBufferedChanges]);
+
+  // FIXED: Stable reference for bufferedChanges to prevent unnecessary re-renders
+  const bufferedChangesRef = useRef(bufferedChanges);
+  bufferedChangesRef.current = bufferedChanges;
+
+  // Optimized WebSocket event handlers with deduplication
   useEffect(() => {
     if (!webSocket.socket) return;
 
@@ -158,10 +205,13 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       console.log('✅ Processing media approved:', payload.mediaId);
       webSocketHandlers.handleMediaApproved(payload);
 
-      toast.success('New photos approved!', {
-        duration: 3000,
-        position: 'bottom-center'
-      });
+      // Only show toast if not buffering (immediate insertion)
+      if (!bufferedChangesRef.current.some((change: any) => change.photo.id === payload.mediaId)) {
+        toast.success('New photos approved!', {
+          duration: 3000,
+          position: 'bottom-center'
+        });
+      }
     };
 
     const handleMediaStatusUpdated = (payload: any) => {
@@ -176,7 +226,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         if (item.newStatus === 'approved' && item.previousStatus !== 'approved') {
           // Only show approval toast if we haven't already shown it via media_approved event
           const approvalSignature = createEventSignature('media_approved', item);
-          if (!processedEventsRef.current.has(approvalSignature)) {
+          if (!processedEventsRef.current.has(approvalSignature) &&
+            !bufferedChangesRef.current.some((change: any) => change.photo.id === item.mediaId)) {
             toast.success('Photo approved!', {
               duration: 2000,
               position: 'bottom-center'
@@ -197,10 +248,13 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       console.log('📸 Processing new media upload');
       webSocketHandlers.handleNewMediaUploaded(payload);
 
-      toast.success('New photos added!', {
-        duration: 3000,
-        position: 'bottom-center'
-      });
+      // Only show toast if not buffering (immediate insertion)
+      if (!bufferedChangesRef.current.some((change: any) => change.reason.includes('upload'))) {
+        toast.success('New photos added!', {
+          duration: 3000,
+          position: 'bottom-center'
+        });
+      }
     };
 
     const handleMediaRemoved = (payload: any) => {
@@ -259,15 +313,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
   }, [webSocket.socket, handleRoomStats]);
 
-  // INDUSTRY STANDARD: Cleanup on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      // Clear all event cleanup timeouts
       eventCleanupTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
       eventCleanupTimeoutsRef.current.clear();
       processedEventsRef.current.clear();
-
-      // Call hook cleanup
       cleanup();
     };
   }, [cleanup]);
@@ -436,7 +487,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               onClick={() => setShowUploadDialog(true)}
               className="bg-blue-500 hover:bg-blue-600 text-white"
             >
-              <Upload className="w-4 h-4 mr-2" />
+              <Upload className="w-4 w-4 mr-2" />
               Upload First Photo
             </Button>
           )}
@@ -456,6 +507,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         hasNextPage={hasNextPage}
         isLoadingMore={isLoadingMore}
         onLoadMore={loadMore}
+        onViewportChange={handleViewportChange}
         eventStyling={eventDetails?.styling_config}
       />
     );
@@ -470,7 +522,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     loadMore,
     refresh,
     webSocket.isAuthenticated,
-    eventDetails
+    eventDetails,
+    handleViewportChange
   ]);
 
   if (!shareToken) {
@@ -479,6 +532,18 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
+      {/* Notification Banner for buffered changes */}
+      <NotificationBanner
+        isVisible={showNotificationBanner}
+        message={`${bufferedCount} new photo${bufferedCount > 1 ? 's' : ''} available`}
+        count={bufferedCount}
+        type="info"
+        onAction={handleApplyBufferedChanges}
+        onDismiss={handleDismissNotification}
+        actionLabel="View Now"
+        position="top"
+      />
+
       {/* Dynamic Event Cover */}
       <DynamicEventCover
         eventDetails={eventDetails}
@@ -491,7 +556,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         {renderContent()}
       </div>
 
-      {/* Guest Upload Dialog */}
+      {/* Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -502,7 +567,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           </DialogHeader>
 
           <div className="space-y-4 p-4">
-            {/* Guest info form for non-authenticated users */}
             {!auth && (
               <div className="space-y-3">
                 <p className="text-sm text-gray-600 mb-3">Tell us who you are (optional)</p>
@@ -524,7 +588,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               </div>
             )}
 
-            {/* File selection */}
             <div className="space-y-3">
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
                 <input
@@ -542,7 +605,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
                 </label>
               </div>
 
-              {/* Selected files preview */}
               {selectedFiles.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">{selectedFiles.length} file(s) selected:</p>
@@ -565,7 +627,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               )}
             </div>
 
-            {/* Upload guidelines */}
             <div className="bg-blue-50 p-3 rounded-lg">
               <div className="text-xs text-blue-700 space-y-1">
                 <p>• Photos will be {eventDetails?.permissions?.require_approval ? 'reviewed before appearing' : 'visible immediately'}</p>
@@ -574,7 +635,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               </div>
             </div>
 
-            {/* Action buttons */}
             <div className="flex gap-2 pt-4">
               <Button
                 variant="outline"

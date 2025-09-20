@@ -1,4 +1,4 @@
-// Enhanced Gallery component with WebSocket-based upload progress
+// components/photo/PhotoGallery.tsx - UPDATED with bulk operations
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
@@ -58,7 +58,6 @@ export default function OptimizedPhotoGallery({
 
   // WebSocket connection for admin features
   const webSocket = useEventWebSocket(eventId, { userType: 'admin' });
-  // Quality management: Use thumbnail for grid, full for viewer
   const gridQuality = 'thumbnail';
 
   // Data fetching hooks with thumbnail quality for grid
@@ -123,39 +122,34 @@ export default function OptimizedPhotoGallery({
   } = useWebSocketUploadProgress(eventId, {
     onComplete: (mediaId, data) => {
       console.log('Upload completed:', mediaId, data);
-      // Refresh data to show new photos
       refetchPhotos();
       refetchCounts();
     },
     onFailed: (mediaId, data) => {
       console.log('Upload failed:', mediaId, data);
-      // Still refresh in case partial data was saved
       refetchPhotos();
     },
     showToasts: true
   });
 
-  // Mutations
+  // UPDATED: Use bulk operations mutation
   const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
     onSuccess: (result) => {
       const { data } = result;
       setUploadDialogOpen(false);
 
-      // Clear file inputs
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
 
-      // Start WebSocket monitoring for uploaded files
       if (data?.uploads && Array.isArray(data.uploads)) {
         const successfulUploads = data.uploads.filter((upload: any) => upload.status !== 'failed');
-        
+
         if (successfulUploads.length > 0) {
           const mediaIds = successfulUploads.map((upload: any) => upload.id);
           const filenames = successfulUploads.map((upload: any) => upload.filename || 'Unknown');
-          
-          // Start WebSocket monitoring
+
           startMonitoring(mediaIds, filenames);
-          
+
           toast.success(`${successfulUploads.length} file${successfulUploads.length > 1 ? 's' : ''} uploaded successfully!`, {
             description: 'Processing has started - you\'ll see progress updates below',
             duration: 4000
@@ -168,7 +162,6 @@ export default function OptimizedPhotoGallery({
         }
       }
 
-      // Refresh data
       refetchCounts();
       refetchPhotos();
     },
@@ -182,6 +175,7 @@ export default function OptimizedPhotoGallery({
     }
   });
 
+  // UPDATED: Use bulk operations for status updates
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
   const { getCachedPhotoCount } = useGalleryUtils(eventId);
@@ -195,8 +189,6 @@ export default function OptimizedPhotoGallery({
     clearAll();
   }, [clearAll]);
 
-  // Since we're using WebSocket for progress, these queue management functions
-  // can be simplified or removed if you don't have the backend queue endpoints
   const handleRetryUpload = useCallback((mediaId: string) => {
     console.log('Retry upload not implemented yet:', mediaId);
     toast.info('Retry feature will be available when queue management is implemented');
@@ -269,12 +261,32 @@ export default function OptimizedPhotoGallery({
     setUseInfiniteScroll(false);
   }, [activeTab]);
 
-  const handleStatusUpdate = useCallback((photoId: string, status: string, reason?: string) => {
+  // UPDATED: Use bulk operations for status updates
+  const handleStatusUpdate = useCallback((photoId: string | string[], status: string, reason?: string) => {
+    console.log('Status update requested:', { photoId, status, reason });
+
     updateStatusMutation.mutate({
       mediaId: photoId,
-      status: status as 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved',
+      status: status as 'approved' | 'pending' | 'rejected' | 'hidden',
       reason
     });
+  }, [updateStatusMutation]);
+
+  // NEW: Bulk status update handler
+  const handleBulkStatusUpdate = useCallback((photoIds: string[], status: string, reason?: string) => {
+    console.log('Bulk status update requested:', { count: photoIds.length, status, reason });
+
+    if (photoIds.length === 0) {
+      toast.error('No photos selected for bulk update');
+      return;
+    }
+
+    // Use the bulk-specific method
+    updateStatusMutation.updateMultiple(
+      photoIds,
+      status as 'approved' | 'pending' | 'rejected' | 'hidden',
+      reason
+    );
   }, [updateStatusMutation]);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -307,15 +319,11 @@ export default function OptimizedPhotoGallery({
       return;
     }
 
-    // Show immediate feedback
     toast.success(`Starting upload of ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}...`);
-
     uploadMutation.mutate(validFiles);
   }, [canUserUpload, uploadMutation]);
 
-  // Photo viewer with full quality loading
   const openPhotoViewer = useCallback((photo: Photo, index: number) => {
-    // Don't open viewer for uploading photos
     if (photo.status === 'uploading' || photo.isTemporary) return;
 
     console.log('Opening photo viewer with full quality for:', photo.id);
@@ -387,6 +395,13 @@ export default function OptimizedPhotoGallery({
     }
   }, [wsConnected, wsAuthenticated]);
 
+  // Cleanup bulk operations on unmount
+  useEffect(() => {
+    return () => {
+      updateStatusMutation.cleanup?.();
+    };
+  }, [updateStatusMutation]);
+
   // Error handling
   if (photosError) {
     return (
@@ -442,6 +457,11 @@ export default function OptimizedPhotoGallery({
               >
                 Refresh
               </Button>
+              {updateStatusMutation.isPending && (
+                <Badge variant="secondary" className="text-xs">
+                  Processing {updateStatusMutation.queueLength || 0} operations
+                </Badge>
+              )}
             </>
           )}
 
@@ -459,7 +479,6 @@ export default function OptimizedPhotoGallery({
         </div>
       </div>
 
-      {/* WebSocket-based upload progress panel */}
       <UploadProgressPanel
         uploadProgress={uploadProgress}
         isMonitoring={isMonitoring}
@@ -476,7 +495,7 @@ export default function OptimizedPhotoGallery({
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-blue-700 dark:text-blue-300">
-            {uploadMutation.isPending ? 'Starting upload...' : 'Updating status...'}
+            {uploadMutation.isPending ? 'Starting upload...' : 'Processing status updates...'}
           </span>
         </div>
       )}
@@ -502,6 +521,7 @@ export default function OptimizedPhotoGallery({
             userPermissions={userPermissions}
             currentTab={activeTab}
             onStatusUpdate={handleStatusUpdate}
+            onBulkStatusUpdate={handleBulkStatusUpdate} // NEW: Pass bulk handler
             onDownload={handleDownload}
             onDelete={handleDelete}
           />
@@ -518,7 +538,6 @@ export default function OptimizedPhotoGallery({
             </div>
           )}
 
-          {/* Photo viewer with full quality support */}
           {photoViewerOpen && selectedPhoto && (
             <FullscreenPhotoViewer
               selectedPhoto={selectedPhoto}

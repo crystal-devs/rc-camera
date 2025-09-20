@@ -1,7 +1,7 @@
-// hooks/useInfiniteMediaQuery.ts - COMPLETE OPTIMIZED VERSION
+// hooks/useInfiniteMediaQuery.ts - UPDATED with buffering logic
 'use client';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { getEventMediaWithGuestToken } from '@/services/apis/media.api';
 import { MediaFetchOptions } from '@/types/events';
 
@@ -10,6 +10,14 @@ interface UseOptimizedInfiniteMediaQueryProps {
     auth: string | null;
     limit?: number;
     enabled?: boolean;
+    onViewportStateChange?: (state: ViewportInfo) => void; // NEW: Callback for viewport changes
+}
+
+interface ViewportInfo {
+    visibleStartIndex: number;
+    visibleEndIndex: number;
+    bufferStartIndex: number;
+    bufferEndIndex: number;
 }
 
 interface TransformedPhoto {
@@ -57,6 +65,15 @@ interface MediaPage {
     hasNext: boolean;
     total: number;
     page: number;
+}
+
+// NEW: Buffered change structure
+interface BufferedChange {
+    id: string;
+    type: 'approval' | 'new_upload';
+    photo: TransformedPhoto;
+    timestamp: number;
+    reason: string;
 }
 
 interface ApiMediaItem {
@@ -256,7 +273,8 @@ export const useInfiniteMediaQuery = ({
     shareToken,
     auth,
     limit = 20,
-    enabled = true
+    enabled = true,
+    onViewportStateChange
 }: UseOptimizedInfiniteMediaQueryProps) => {
     const queryClient = useQueryClient();
     const queryKey = ['guest-media', shareToken];
@@ -265,7 +283,109 @@ export const useInfiniteMediaQuery = ({
     const invalidationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const pendingEventsRef = useRef<Set<string>>(new Set());
 
-    // Fetch function
+    // NEW: Buffering state for real-time changes
+    const [bufferedChanges, setBufferedChanges] = useState<BufferedChange[]>([]);
+    const [viewportInfo, setViewportInfo] = useState<ViewportInfo>({
+        visibleStartIndex: 0,
+        visibleEndIndex: 0,
+        bufferStartIndex: 0,
+        bufferEndIndex: 20
+    });
+
+    // NEW: Update viewport info and notify parent
+    const updateViewportInfo = useCallback((newInfo: Partial<ViewportInfo>) => {
+        setViewportInfo(prev => {
+            const updated = { ...prev, ...newInfo };
+            onViewportStateChange?.(updated);
+            return updated;
+        });
+    }, [onViewportStateChange]);
+
+    // NEW: Check if index is within buffer zone (visible + 20 items)
+    const isWithinBufferZone = useCallback((targetIndex: number): boolean => {
+        return targetIndex >= viewportInfo.bufferStartIndex && 
+               targetIndex <= viewportInfo.bufferEndIndex;
+    }, [viewportInfo]);
+
+    // NEW: Find the index where a new photo should be inserted
+    const findInsertionIndex = useCallback((newPhoto: TransformedPhoto, allPhotos: TransformedPhoto[]): number => {
+        // Insert by timestamp (newest first)
+        const newTimestamp = new Date(newPhoto.createdAt).getTime();
+        
+        for (let i = 0; i < allPhotos.length; i++) {
+            const photoTimestamp = new Date(allPhotos[i].createdAt).getTime();
+            if (newTimestamp > photoTimestamp) {
+                return i;
+            }
+        }
+        
+        return allPhotos.length; // Insert at end if oldest
+    }, []);
+
+    // NEW: Apply buffered changes to the photo list
+    const applyBufferedChanges = useCallback(() => {
+        if (bufferedChanges.length === 0) return;
+
+        console.log(`📋 Applying ${bufferedChanges.length} buffered changes`);
+        
+        queryClient.setQueryData(queryKey, (oldData: any) => {
+            if (!oldData?.pages) return oldData;
+
+            let updatedPages = [...oldData.pages];
+            
+            bufferedChanges.forEach(change => {
+                if (change.type === 'approval' || change.type === 'new_upload') {
+                    // Find all photos across pages
+                    const allPhotos = updatedPages.flatMap(page => page.photos);
+                    
+                    // Check if photo already exists (avoid duplicates)
+                    const existingIndex = allPhotos.findIndex(p => p.id === change.photo.id);
+                    if (existingIndex !== -1) {
+                        console.log(`⚠️ Photo ${change.photo.id} already exists, skipping`);
+                        return;
+                    }
+                    
+                    // Find insertion point
+                    const insertionIndex = findInsertionIndex(change.photo, allPhotos);
+                    
+                    // Insert the photo at the correct position
+                    const itemsPerPage = limit;
+                    const targetPageIndex = Math.floor(insertionIndex / itemsPerPage);
+                    const positionInPage = insertionIndex % itemsPerPage;
+                    
+                    if (targetPageIndex < updatedPages.length) {
+                        // Insert in existing page
+                        const updatedPage = { ...updatedPages[targetPageIndex] };
+                        updatedPage.photos = [...updatedPage.photos];
+                        updatedPage.photos.splice(positionInPage, 0, change.photo);
+                        updatedPage.total += 1;
+                        updatedPages[targetPageIndex] = updatedPage;
+                    } else {
+                        // Create new page if needed
+                        const newPage = {
+                            photos: [change.photo],
+                            hasNext: false,
+                            total: allPhotos.length + 1,
+                            page: targetPageIndex + 1
+                        };
+                        updatedPages.push(newPage);
+                    }
+                }
+            });
+
+            return { ...oldData, pages: updatedPages };
+        });
+
+        // Clear buffered changes
+        setBufferedChanges([]);
+    }, [bufferedChanges, queryClient, queryKey, limit, findInsertionIndex]);
+
+    // NEW: Clear specific buffered changes
+    const clearBufferedChanges = useCallback(() => {
+        setBufferedChanges([]);
+    }, []);
+
+    // Fetch function (unchanged)
     const fetchMediaPage = useCallback(async ({ pageParam = 1 }): Promise<MediaPage> => {
         if (!shareToken) {
             throw new Error('Share token is required');
@@ -419,7 +539,61 @@ export const useInfiniteMediaQuery = ({
         });
     }, [queryClient, queryKey]);
 
-    // Individual handler callbacks - FIXED: Moved outside of useMemo to maintain hook order
+    // UPDATED: Smart insertion with buffering logic
+    const handleSmartInsertion = useCallback((newPhoto: TransformedPhoto, reason: string) => {
+        const allPhotos = infiniteQuery.data?.pages.flatMap(page => page.photos) || [];
+        const insertionIndex = findInsertionIndex(newPhoto, allPhotos);
+        
+        // Check if insertion point is within buffer zone
+        if (isWithinBufferZone(insertionIndex)) {
+            console.log(`📸 Inserting photo immediately at index ${insertionIndex} (within buffer zone)`);
+            
+            // Insert immediately
+            queryClient.setQueryData(queryKey, (oldData: any) => {
+                if (!oldData?.pages) return oldData;
+
+                const allPhotos = oldData.pages.flatMap((page: any) => page.photos);
+                const targetIndex = findInsertionIndex(newPhoto, allPhotos);
+                
+                // Insert at correct position
+                const itemsPerPage = limit;
+                const targetPageIndex = Math.floor(targetIndex / itemsPerPage);
+                const positionInPage = targetIndex % itemsPerPage;
+                
+                const updatedPages = [...oldData.pages];
+                
+                if (targetPageIndex < updatedPages.length) {
+                    const updatedPage = { ...updatedPages[targetPageIndex] };
+                    updatedPage.photos = [...updatedPage.photos];
+                    updatedPage.photos.splice(positionInPage, 0, newPhoto);
+                    updatedPage.total += 1;
+                    updatedPages[targetPageIndex] = updatedPage;
+                }
+                
+                return { ...oldData, pages: updatedPages };
+            });
+        } else {
+            console.log(`📋 Buffering photo at index ${insertionIndex} (outside buffer zone)`);
+            
+            // Buffer the change
+            setBufferedChanges(prev => {
+                // Avoid duplicates
+                if (prev.some(change => change.photo.id === newPhoto.id)) {
+                    return prev;
+                }
+                
+                return [...prev, {
+                    id: newPhoto.id,
+                    type: reason.includes('upload') ? 'new_upload' : 'approval',
+                    photo: newPhoto,
+                    timestamp: Date.now(),
+                    reason
+                }];
+            });
+        }
+    }, [infiniteQuery.data?.pages, isWithinBufferZone, findInsertionIndex, queryClient, queryKey, limit]);
+
+    // Individual handler callbacks - UPDATED with buffering logic
     const handleMediaStatusUpdated = useCallback((payload: any) => {
         console.log('📝 Media status updated:', payload.mediaId, payload.previousStatus, '→', payload.newStatus);
         
@@ -429,33 +603,79 @@ export const useInfiniteMediaQuery = ({
                 // Remove from UI immediately
                 handleOptimisticRemoval([payload.mediaId]);
             } else if (payload.newStatus === 'approved' && payload.previousStatus !== 'approved') {
-                // Don't add optimistically - let refetch handle it properly since we need full data
-                // Just mark this event for potential deduplication
-                pendingEventsRef.current.add(`approval:${payload.mediaId}`);
+                // EDGE CASE SOLUTION: If previously hidden and now approved, use smart insertion
+                if (payload.previousStatus === 'hidden' || payload.previousStatus === 'rejected') {
+                    // For hide→approve scenario, we need the full photo data
+                    // Mark for potential smart insertion, but we need full photo data from refetch
+                    pendingEventsRef.current.add(`smart_approval:${payload.mediaId}`);
+                    debouncedInvalidate('status_update_approval', payload.mediaId);
+                } else {
+                    // Regular approval, mark for deduplication
+                    pendingEventsRef.current.add(`approval:${payload.mediaId}`);
+                    debouncedInvalidate('status_update', payload.mediaId);
+                }
+            } else {
+                // Other status changes
+                debouncedInvalidate('status_update', payload.mediaId);
             }
         }
-
-        // Debounced refetch for data consistency
-        debouncedInvalidate('status_update', payload.mediaId);
-    }, [debouncedInvalidate, handleOptimisticRemoval]);
+    }, [handleOptimisticRemoval, debouncedInvalidate]);
 
     const handleMediaApproved = useCallback((payload: any) => {
         // Check if we already handled this as a status update
         const approvalKey = `approval:${payload.mediaId}`;
+        const smartApprovalKey = `smart_approval:${payload.mediaId}`;
+        
         if (pendingEventsRef.current.has(approvalKey)) {
             console.log('⏭️ Skipping duplicate approval event for:', payload.mediaId, '(already handled by status update)');
             return;
         }
         
+        if (pendingEventsRef.current.has(smartApprovalKey)) {
+            console.log('⚡ Processing smart approval for:', payload.mediaId, '(hide→approve scenario)');
+            
+            // For hide→approve, we have full photo data in the payload
+            if (payload.mediaData) {
+                const transformedPhoto = transformApiPhoto(payload.mediaData);
+                if (transformedPhoto) {
+                    handleSmartInsertion(transformedPhoto, 'hide_then_approve');
+                }
+            } else {
+                // Fallback to refetch if no media data
+                debouncedInvalidate('smart_approval', payload.mediaId);
+            }
+            return;
+        }
+        
         console.log('✅ Media approved:', payload.mediaId);
-        debouncedInvalidate('approved', payload.mediaId);
-    }, [debouncedInvalidate]);
+        
+        // NEW: Use smart insertion for new approvals
+        if (payload.mediaData) {
+            const transformedPhoto = transformApiPhoto(payload.mediaData);
+            if (transformedPhoto) {
+                handleSmartInsertion(transformedPhoto, 'approval');
+            }
+        } else {
+            // Fallback to refetch if no media data
+            debouncedInvalidate('approved', payload.mediaId);
+        }
+    }, [debouncedInvalidate, handleSmartInsertion]);
 
     const handleNewMediaUploaded = useCallback((payload: any) => {
         console.log('📸 New media uploaded');
-        // Always refetch for new uploads since we need complete data
-        debouncedInvalidate('new_upload');
-    }, [debouncedInvalidate]);
+        
+        // NEW: Use smart insertion for new uploads
+        if (payload.media || payload.mediaData) {
+            const mediaData = payload.media || payload.mediaData;
+            const transformedPhoto = transformApiPhoto(mediaData);
+            if (transformedPhoto) {
+                handleSmartInsertion(transformedPhoto, 'new_upload');
+            }
+        } else {
+            // Fallback to refetch if no media data
+            debouncedInvalidate('new_upload');
+        }
+    }, [handleSmartInsertion, debouncedInvalidate]);
 
     const handleMediaRemoved = useCallback((payload: any) => {
         console.log('🗑️ Media removed');
@@ -464,13 +684,18 @@ export const useInfiniteMediaQuery = ({
         const mediaIds = payload.mediaIds || (payload.mediaId ? [payload.mediaId] : []);
         
         if (mediaIds.length > 0) {
-            // Remove from UI immediately
+            // Remove from UI immediately (always immediate for removals)
             handleOptimisticRemoval(mediaIds);
+            
+            // Also remove from buffered changes if present
+            setBufferedChanges(prev => 
+                prev.filter(change => !mediaIds.includes(change.photo.id))
+            );
         }
 
         // Debounced refetch for count accuracy
         debouncedInvalidate('removed');
-    }, [debouncedInvalidate, handleOptimisticRemoval]);
+    }, [handleOptimisticRemoval, debouncedInvalidate]);
 
     const handleMediaProcessingComplete = useCallback((payload: any) => {
         console.log('⚡ Processing complete:', payload.mediaId);
@@ -491,7 +716,7 @@ export const useInfiniteMediaQuery = ({
         debouncedInvalidate('processing', payload.mediaId);
     }, [debouncedInvalidate, handleOptimisticUpdate]);
 
-    // WebSocket event handlers object - FIXED: Simple object creation, no nested callbacks
+    // WebSocket event handlers object
     const webSocketHandlers = useMemo(() => ({
         handleMediaStatusUpdated,
         handleMediaApproved,
@@ -533,6 +758,7 @@ export const useInfiniteMediaQuery = ({
             invalidationTimeoutRef.current = null;
         }
         pendingEventsRef.current.clear();
+        setBufferedChanges([]);
         console.log('🧹 WebSocket query cleanup completed');
     }, []);
 
@@ -548,5 +774,12 @@ export const useInfiniteMediaQuery = ({
         refresh: infiniteQuery.refetch,
         webSocketHandlers,
         cleanup,
+        // NEW: Buffering functionality
+        bufferedChanges,
+        bufferedCount: bufferedChanges.length,
+        applyBufferedChanges,
+        clearBufferedChanges,
+        updateViewportInfo, // For external viewport tracking
+        viewportInfo
     };
 };

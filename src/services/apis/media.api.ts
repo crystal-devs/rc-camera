@@ -225,42 +225,166 @@ export const updateMediaStatus = async (
 };
 
 // NEW: Bulk update media status
-export const bulkUpdateMediaStatus = async (
+export async function bulkUpdateMediaStatus(
     eventId: string,
     mediaIds: string[],
-    status: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved',
-    authToken: string,
+    status: 'approved' | 'pending' | 'rejected' | 'hidden',
+    token: string,
     options: {
         reason?: string;
         hideReason?: string;
     } = {}
-): Promise<any> => {
-    try {
-        const endpoint = `${API_BASE_URL}/media/event/${eventId}/bulk-status`;
+): Promise<any> {
+    // Use your existing API_BASE_URL constant and VERSION
+    const url = `${API_BASE_URL}/bulk/media/event/${eventId}/status`;
 
-        const response = await axios.patch(endpoint, {
-            media_ids: mediaIds,
-            status,
-            reason: options.reason,
-            hide_reason: options.hideReason
-        }, {
+    console.log('🔄 Bulk updating media status via dedicated endpoint:', {
+        eventId,
+        count: mediaIds.length,
+        status,
+        reason: options.reason,
+        endpoint: 'bulk-operations'
+    });
+
+    try {
+        const response = await fetch(url, {
+            method: 'PATCH',
             headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
             },
-            timeout: 30000,
+            body: JSON.stringify({
+                media_ids: mediaIds, // Match your backend field name
+                status,
+                reason: options.reason,
+                hide_reason: options.hideReason
+            }),
         });
 
-        if (response.data && response.data.status === true) {
-            return response.data.data;
+        if (!response.ok) {
+            if (response.status === 429) {
+                const errorData = await response.json().catch(() => ({}));
+                const retryAfter = response.headers.get('Retry-After') || '120';
+                throw new Error(`Too many bulk operations. Please wait ${retryAfter} seconds and try again.`);
+            }
+
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
         }
 
-        throw new Error(response.data?.message || 'Failed to bulk update media status');
+        const result = await response.json();
+
+        console.log('✅ Bulk status update completed via dedicated endpoint:', {
+            successful: result.data?.modifiedCount || mediaIds.length,
+            requested: result.data?.requestedCount || mediaIds.length,
+            endpoint: 'bulk-operations'
+        });
+
+        return result;
     } catch (error) {
-        console.error('Error bulk updating media status:', error);
+        console.error('❌ Bulk status update failed:', error);
         throw error;
     }
-};
+}
+
+export async function bulkApproveMedia(
+    eventId: string,
+    mediaIds: string[],
+    token: string,
+    reason?: string
+): Promise<any> {
+    const url = `${API_BASE_URL}/bulk/media/event/${eventId}/approve`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                media_ids: mediaIds,
+                reason
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Bulk approve failed: ${response.statusText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('❌ Bulk approve failed:', error);
+        throw error;
+    }
+}
+
+export async function bulkRejectMedia(
+    eventId: string,
+    mediaIds: string[],
+    token: string,
+    reason?: string
+): Promise<any> {
+    const url = `${API_BASE_URL}/bulk/media/event/${eventId}/reject`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                media_ids: mediaIds,
+                reason
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Bulk reject failed: ${response.statusText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('❌ Bulk reject failed:', error);
+        throw error;
+    }
+}
+
+export async function bulkHideMedia(
+    eventId: string,
+    mediaIds: string[],
+    token: string,
+    reason?: string
+): Promise<any> {
+    const url = `${API_BASE_URL}/api/v1/bulk/media/event/${eventId}/hide`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                media_ids: mediaIds,
+                reason
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Bulk hide failed: ${response.statusText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('❌ Bulk hide failed:', error);
+        throw error;
+    }
+}
 
 
 export const getEventMediaCounts = async (
