@@ -1,5 +1,5 @@
 import axios from "axios"
-import { LOGIN_ROUTE, VERIFY_USER_ROUTE } from "./z.all-routes"
+import { CREATE_GUEST_SESSION_ROUTE, LOGIN_ROUTE, VERIFY_USER_ROUTE } from "./z.all-routes"
 import { setHeader } from "../common/api.fetch";
 
 export interface UserData {
@@ -65,7 +65,7 @@ export const logout = () => {
     localStorage.removeItem("userData");
 }
 
-export const verifyUser = async (router: any) => {
+export const verifyUser = async (router?: any) => {
     try{
         await axios.get(VERIFY_USER_ROUTE, {
             headers: setHeader()
@@ -75,6 +75,25 @@ export const verifyUser = async (router: any) => {
         console.log(error)
         // router.push('/login')
         return false
+    }
+}
+
+export const createGuestSession = async () => {
+    try{
+        const guest_session_id = localStorage.getItem("guest_session_id")
+        if(guest_session_id){
+            return guest_session_id
+        }
+        const { data } = await axios.post(CREATE_GUEST_SESSION_ROUTE, {
+            headers: setHeader()
+        })
+        if(data?.data){
+            localStorage.setItem("guest_session_id", data.data)
+        }
+        return data
+    }catch(error){
+        console.log(error)
+        return null
     }
 }
 

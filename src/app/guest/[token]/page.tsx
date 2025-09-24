@@ -114,19 +114,19 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   }, [shareToken]);
 
   // Apply dynamic styling to the document when eventDetails change
-  useEffect(() => {
-    if (eventDetails && document.documentElement) {
-      const cssVars = generateEventCSS(eventDetails);
+  // useEffect(() => {
+  //   if (eventDetails && document.documentElement) {
+  //     const cssVars = generateEventCSS(eventDetails);
       
-      Object.entries(cssVars).forEach(([key, value]) => {
-        document.documentElement.style.setProperty(key, value);
-      });
-    }
-  }, [eventDetails]);
+  //     Object.entries(cssVars).forEach(([key, value]) => {
+  //       document.documentElement.style.setProperty(key, value);
+  //     });
+  //   }
+  // }, [eventDetails]);
 
   // WebSocket connection - Guest mode
-  const webSocket = {};
-  // const webSocket = useSimpleWebSocket(shareToken, shareToken, 'guest');
+  // const webSocket = {};
+  const webSocket = useSimpleWebSocket(shareToken, shareToken, 'guest');
 
   const {
     photos,
@@ -512,12 +512,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
       {/* Dynamic Event Cover */}
-      <DynamicEventCover
+      {/* <DynamicEventCover
         eventDetails={eventDetails}
         photoCount={photos.length}
         totalPhotos={totalPhotos}
       >
-      </DynamicEventCover>
+      </DynamicEventCover> */}
         {/* Action buttons in the cover */}
         {/* <div className="flex items-center gap-4 mt-6">
           <ConnectionStatus />

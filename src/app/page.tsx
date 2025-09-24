@@ -13,7 +13,7 @@ import {
 import { FolderPlus, PlusCircle, ScanLineIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { verifyUser } from '@/services/apis/auth.api';
+import { createGuestSession, verifyUser } from '@/services/apis/auth.api';
 
 export default function HomePage() {
   const router = useRouter();
@@ -25,7 +25,9 @@ export default function HomePage() {
     (async () => {
       const ok = await verifyUser();
       if (!ok) {
-        router.push('/login');
+        // continue as guest.
+        createGuestSession()
+        // router.push('/login');
       }
     })();
   }, []);
