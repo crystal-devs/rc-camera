@@ -64,6 +64,7 @@ export function EventSelector() {
     const [isLoadingEvents, setIsLoadingEvents] = React.useState(false);
     const [authToken, setAuthToken] = React.useState('');
     const [showCreateEventDialogue, setShowCreateEventDialogue] = React.useState(false);
+    const [hasInitialized, setHasInitialized] = React.useState(false);
 
     // Initialize auth token
     React.useEffect(() => {
@@ -79,61 +80,72 @@ export function EventSelector() {
         };
 
         const initializeEvent = async () => {
-            if (!authToken) return; // wait until token is available
-            if (selectedEvent) return; // already selected
-            if (isLoadingEvents) return; // avoid duplicate loads
+            // Guard conditions - prevent multiple initializations
+            if (!authToken) return;
+            if (hasInitialized) return;
+            if (isLoadingEvents) return;
+            if (selectedEvent) return;
 
+            console.log('🔄 Initializing events...');
             setIsLoadingEvents(true);
+            setHasInitialized(true);
+
             try {
-                let fetched: StoreEvent[] = events as StoreEvent[];
-                if (!fetched || fetched.length === 0) {
-                    const apiEvents = await fetchEvents();
-                    setEvents(apiEvents as unknown as StoreEvent[]);
-                    fetched = (apiEvents as unknown as StoreEvent[]) || [];
+                // Always fetch fresh events on initialization
+                const apiEvents = await fetchEvents();
+                console.log('📦 Fetched events:', apiEvents.length);
+
+                setEvents(apiEvents as unknown as StoreEvent[]);
+
+                // Handle empty events array
+                if (!apiEvents || apiEvents.length === 0) {
+                    console.log('⚠️ No events available');
+                    setIsLoadingEvents(false);
+                    return;
                 }
 
-                if (fetched && fetched.length > 0) {
-                    const urlEventId = extractEventIdFromPath(pathname || '');
-                    const preferredId = urlEventId || lastEventId || null;
+                // Select appropriate event
+                const urlEventId = extractEventIdFromPath(pathname || '');
+                const preferredId = urlEventId || lastEventId || null;
 
-                    let eventToSelect = fetched[0];
-                    if (preferredId) {
-                        const found = fetched.find(e => e._id === preferredId);
-                        if (found) eventToSelect = found;
+                let eventToSelect = apiEvents[0];
+                if (preferredId) {
+                    const found = apiEvents.find(e => e._id === preferredId);
+                    if (found) eventToSelect = found;
+                }
+
+                // Update the store first
+                setSelectedEvent(eventToSelect as unknown as StoreEvent, eventToSelect.user_role);
+
+                // If we're not already on this event's route, navigate
+                const alreadyOnEvent = pathname?.includes(`/events/${eventToSelect._id}`);
+                if (!alreadyOnEvent) {
+                    const currentPageType = getCurrentPageType(pathname || '');
+                    let targetRoute = '';
+
+                    switch (currentPageType) {
+                        case 'settings':
+                            targetRoute = `/events/${eventToSelect._id}/settings`;
+                            break;
+                        case 'templates':
+                            targetRoute = `/events/${eventToSelect._id}/templates`;
+                            break;
+                        case 'highlights':
+                            targetRoute = `/events/${eventToSelect._id}/highlights`;
+                            break;
+                        case 'shop':
+                            targetRoute = `/events/${eventToSelect._id}/shop`;
+                            break;
+                        case 'media':
+                            targetRoute = `/events/${eventToSelect._id}/media`;
+                            break;
+                        default:
+                            targetRoute = `/events/${eventToSelect._id}`;
+                            break;
                     }
 
-                    // Update the store first
-                    setSelectedEvent(eventToSelect, eventToSelect.user_role);
-
-                    // If we're not already on this event's route, navigate
-                    const alreadyOnEvent = pathname?.includes(`/events/${eventToSelect._id}`);
-                    if (!alreadyOnEvent) {
-                        const currentPageType = getCurrentPageType(pathname || '');
-                        let targetRoute = '';
-
-                        switch (currentPageType) {
-                            case 'settings':
-                                targetRoute = `/events/${eventToSelect._id}/settings`;
-                                break;
-                            case 'templates':
-                                targetRoute = `/events/${eventToSelect._id}/templates`;
-                                break;
-                            case 'highlights':
-                                targetRoute = `/events/${eventToSelect._id}/highlights`;
-                                break;
-                            case 'shop':
-                                targetRoute = `/events/${eventToSelect._id}/shop`;
-                                break;
-                            case 'media':
-                                targetRoute = `/events/${eventToSelect._id}/media`;
-                                break;
-                            default:
-                                targetRoute = `/events/${eventToSelect._id}`;
-                                break;
-                        }
-
-                        router.replace(targetRoute);
-                    }
+                    console.log(`🔄 Navigating to ${targetRoute}`);
+                    router.replace(targetRoute);
                 }
             } catch (error) {
                 console.error('❌ Failed to initialize events:', error);
@@ -143,7 +155,7 @@ export function EventSelector() {
         };
 
         initializeEvent();
-    }, [authToken, selectedEvent, events, pathname, lastEventId, setEvents, setSelectedEvent, isLoadingEvents, router]);
+    }, [authToken, hasInitialized]); // Removed problematic dependencies
 
     // Fetch events when dropdown opens and we don't have events yet
     React.useEffect(() => {
@@ -164,7 +176,7 @@ export function EventSelector() {
         };
 
         loadEvents();
-    }, [open, events.length, authToken, isLoadingEvents, setEvents]);
+    }, [open, authToken]); // Removed events.length and isLoadingEvents from dependencies
 
     const handleEventSelect = (event: any) => {
         console.log('🎯 Selecting event:', event.title);
@@ -218,7 +230,7 @@ export function EventSelector() {
                             <span className="font-medium text-sm truncate text-left">
                                 {selectedEvent
                                     ? selectedEvent.title
-                                    : (isLoadingEvent ? 'Loading...' : 'Select an event')
+                                    : (isLoadingEvent ? 'Loading...' : 'No events available')
                                 }
                             </span>
                         </div>

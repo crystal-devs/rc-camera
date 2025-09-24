@@ -150,13 +150,13 @@ const EventSettingsPage = () => {
               <span className="text-base">🔒</span>
               <span className="hidden sm:inline font-medium text-xs lg:text-sm truncate">Permissions</span>
             </TabsTrigger>
-            {/* <TabsTrigger
+            <TabsTrigger
               value="team"
               className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"
             >
               <span className="text-base">👥</span>
               <span className="hidden sm:inline font-medium text-xs lg:text-sm truncate">Team</span>
-            </TabsTrigger> */}
+            </TabsTrigger>
             <TabsTrigger
               value="design"
               className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"
@@ -198,16 +198,15 @@ const EventSettingsPage = () => {
             />
           </TabsContent>
 
-          {/* <TabsContent value="team" className="mt-0">
+          <TabsContent value="team" className="mt-0">
             {eventId && authToken && (
               <TeamTab
                 eventId={eventId as string}
                 authToken={authToken}
                 isEventCreator={isEventCreator as boolean}
-                formData={formData}
               />
             )}
-          </TabsContent> */}
+          </TabsContent>
           <TabsContent value="design" className="mt-0">
             {eventId && authToken && (
               <DesignTab

@@ -30,40 +30,44 @@ import {
   Loader2,
   Check,
   Copy,
-  UserPlus
+  UserPlus,
+  Plus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getEventCoHosts,
   manageCoHost,
+  createCoHostInvite,
+  getCoHostInviteDetails,
   type CoHostData
 } from '@/services/apis/cohost.api';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
-import { EventFormData } from '@/types/events';
 
 interface TeamTabProps {
   eventId: string;
   authToken: string;
   isEventCreator: boolean;
-  formData: EventFormData;
 }
 
-const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, formData }) => {
+const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator }) => {
   const [coHostData, setCoHostData] = useState<CoHostData | null>(null);
+  const [inviteDetails, setInviteDetails] = useState<any>(null);
   const [isLoadingCoHosts, setIsLoadingCoHosts] = useState(true);
+  const [isLoadingInvite, setIsLoadingInvite] = useState(false);
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState('');
 
-  // Load co-host data
+  // Load data on mount
   useEffect(() => {
     loadCoHostData();
+    loadInviteDetails();
   }, [eventId, authToken]);
 
   const loadCoHostData = async () => {
     try {
       setIsLoadingCoHosts(true);
-
       const response = await getEventCoHosts(eventId, authToken);
 
       if (response.status) {
@@ -73,10 +77,7 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
       }
     } catch (error: any) {
       console.error('Error loading co-host data:', error);
-
-      if (error.response?.status === 404) {
-        toast.error('Team endpoint not found');
-      } else if (error.response?.status === 403) {
+      if (error.response?.status === 403) {
         toast.error('You don\'t have permission to view team members');
       } else {
         toast.error('Failed to load team members');
@@ -86,15 +87,60 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
     }
   };
 
+  const loadInviteDetails = async () => {
+    try {
+      setIsLoadingInvite(true);
+      const response = await getCoHostInviteDetails(eventId, authToken);
+
+      if (response.status && response.data?.has_invites) {
+        // Get the first active invitation
+        const activeInvite = response.data.invitations?.[0];
+        setInviteDetails(activeInvite);
+      } else {
+        setInviteDetails(null);
+      }
+    } catch (error: any) {
+      console.error('Error loading invite details:', error);
+      setInviteDetails(null);
+    } finally {
+      setIsLoadingInvite(false);
+    }
+  };
+
+  const handleCreateInvite = async () => {
+    try {
+      setIsCreatingInvite(true);
+      const response = await createCoHostInvite(
+        eventId,
+        {
+          maxUses: 10,
+          expiresInHours: 168 // 7 days
+        },
+        authToken
+      );
+
+      if (response.status) {
+        toast.success('Co-host invite created successfully!');
+        await loadInviteDetails(); // Reload invite details
+      } else {
+        toast.error(response.message || 'Failed to create invite');
+      }
+    } catch (error: any) {
+      console.error('Error creating invite:', error);
+      toast.error('Failed to create co-host invite');
+    } finally {
+      setIsCreatingInvite(false);
+    }
+  };
+
   const handleRemoveCoHost = async (userId: string, userName: string) => {
     try {
       setRemovingUserId(userId);
-
       const response = await manageCoHost(eventId, userId, 'remove', authToken);
 
       if (response.status) {
         toast.success(`${userName} removed successfully! They can rejoin using the invite link.`);
-        await loadCoHostData(); // Reload data
+        await loadCoHostData();
       } else {
         toast.error(response.message || 'Failed to remove co-host');
       }
@@ -109,12 +155,11 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
   const handleBlockCoHost = async (userId: string, userName: string) => {
     try {
       setRemovingUserId(userId);
-
       const response = await manageCoHost(eventId, userId, 'block', authToken);
 
       if (response.status) {
         toast.success(`${userName} blocked successfully! They cannot rejoin via invite link.`);
-        await loadCoHostData(); // Reload data
+        await loadCoHostData();
       } else {
         toast.error(response.message || 'Failed to block co-host');
       }
@@ -129,12 +174,11 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
   const handleUnblockCoHost = async (userId: string, userName: string) => {
     try {
       setRemovingUserId(userId);
-
       const response = await manageCoHost(eventId, userId, 'unblock', authToken);
 
       if (response.status) {
         toast.success(`${userName} unblocked and restored as co-host!`);
-        await loadCoHostData(); // Reload data
+        await loadCoHostData();
       } else {
         toast.error(response.message || 'Failed to unblock co-host');
       }
@@ -156,45 +200,30 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
     return <Badge variant="outline" className="text-xs"><UserCheck className="w-3 h-3 mr-1" />Co-host</Badge>;
   };
 
-  // Get all team members (creator + approved co-hosts + blocked co-hosts for creator to manage)
   const getAllTeamMembers = () => {
     if (!coHostData) return [];
 
     const members = [];
 
-    // Add creator first
-    if (coHostData.event_creator) {
-      members.push({
-        id: coHostData.event_creator._id,
-        name: coHostData.event_creator.name,
-        email: coHostData.event_creator.email,
-        isCreator: true,
-        status: 'creator'
-      });
-    }
+    // Add creator first - assuming it's from your user context
+    // You may need to adjust this based on how you get creator info
+    members.push({
+      id: coHostData.event_creator,
+      name: 'Event Creator', // You may need to fetch creator details separately
+      email: '', // You may need to fetch creator details separately
+      isCreator: true,
+      status: 'creator'
+    });
 
-    // Add approved co-hosts
-    if (coHostData.co_hosts_by_status?.approved) {
-      coHostData.co_hosts_by_status.approved.forEach(coHost => {
+    // Add co-hosts
+    if (coHostData.co_hosts) {
+      coHostData.co_hosts.forEach(coHost => {
         members.push({
-          id: coHost.user_id._id,
-          name: coHost.user_id.name,
-          email: coHost.user_id.email,
+          id: coHost.user_id,
+          name: coHost.user_info.name,
+          email: coHost.user_info.email,
           isCreator: false,
-          status: 'approved'
-        });
-      });
-    }
-
-    // Add blocked co-hosts (only visible to creator for management)
-    if (isEventCreator && coHostData.co_hosts_by_status?.blocked) {
-      coHostData.co_hosts_by_status?.blocked.forEach(coHost => {
-        members.push({
-          id: coHost.user_id._id,
-          name: coHost.user_id.name,
-          email: coHost.user_id.email,
-          isCreator: false,
-          status: 'blocked'
+          status: coHost.status
         });
       });
     }
@@ -203,8 +232,8 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
   };
 
   const getCoHostInviteUrl = () => {
-    if (!formData.co_host_invite_token.token) return '';
-    return `${window.location.origin}/join-cohost/${formData.co_host_invite_token.token}`;
+    if (!inviteDetails?.invite_link) return '';
+    return inviteDetails.invite_link;
   };
 
   const copyToClipboard = async (text: string, type: string) => {
@@ -224,7 +253,6 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
     <div className="space-y-12">
       {/* Co-host Invitation Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column - Info */}
         <div className="space-y-3">
           <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
             <UserPlus className="h-5 w-5 text-muted-foreground" />
@@ -235,7 +263,6 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
           </p>
         </div>
 
-        {/* Right Column - Invite Link */}
         <div className="lg:col-span-2">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -244,25 +271,47 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                 Team Access
               </Badge>
             </div>
-            <div className="flex gap-2">
-              <Input
-                value={getCoHostInviteUrl()}
-                readOnly
-                className="font-mono text-sm bg-muted/50 h-11"
-              />
-              <Button
-                onClick={() => copyToClipboard(getCoHostInviteUrl(), 'cohost')}
-                variant="outline"
-                size="sm"
-                className="px-3 h-11"
-              >
-                {copiedLink === 'cohost' ? (
-                  <Check className="h-4 w-4 text-primary" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
+
+            {inviteDetails ? (
+              <div className="flex gap-2">
+                <Input
+                  value={getCoHostInviteUrl()}
+                  readOnly
+                  className="font-mono text-sm bg-muted/50 h-11"
+                />
+                <Button
+                  onClick={() => copyToClipboard(getCoHostInviteUrl(), 'cohost')}
+                  variant="outline"
+                  size="sm"
+                  className="px-3 h-11"
+                >
+                  {copiedLink === 'cohost' ? (
+                    <Check className="h-4 w-4 text-primary" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <div className="flex-1 h-11 bg-muted/30 border rounded-md flex items-center px-3 text-sm text-muted-foreground">
+                  No active invite link
+                </div>
+                <Button
+                  onClick={handleCreateInvite}
+                  disabled={isCreatingInvite}
+                  size="sm"
+                  className="px-3 h-11"
+                >
+                  {isCreatingInvite ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            )}
+
             <p className="text-xs text-muted-foreground">
               Co-hosts can manage the event, approve photos, and invite team members
             </p>
@@ -270,12 +319,10 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
         </div>
       </div>
 
-      {/* Divider */}
       <div className="border-t border-border"></div>
 
       {/* Team Members Section */}
       <div className="grid grid-cols-1 lg:grid-cols-1 gap-8">
-        {/* Left Column - Info */}
         <div className="space-y-3">
           <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
             <Users className="h-5 w-5 text-muted-foreground" />
@@ -286,7 +333,6 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
           </p>
         </div>
 
-        {/* Right Column - Team Table */}
         <div className="lg:col-span-2">
           {isLoadingCoHosts ? (
             <div className="flex items-center justify-center py-12 border rounded-lg bg-card">
@@ -344,7 +390,6 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                           {member.isCreator ? (
                             <span className="text-xs text-muted-foreground">Event Owner</span>
                           ) : member.status === 'blocked' ? (
-                            // Blocked co-host - show unblock option
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button
@@ -381,7 +426,6 @@ const TeamTab: React.FC<TeamTabProps> = ({ eventId, authToken, isEventCreator, f
                               </AlertDialogContent>
                             </AlertDialog>
                           ) : (
-                            // Active co-host - show remove and block options
                             <div className="flex gap-1 justify-end">
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
