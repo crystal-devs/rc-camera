@@ -40,7 +40,7 @@ export const fetchEvents = async (): Promise<Event[]> => {
       console.log(response.data.data, 'apiEventsapiEvents')
       const apiEvents: ApiEvent[] = response.data.data.events; // Adjusted to match the API response structure
       // return apiEvents.map(mapApiEventToEvent);
-      return response.data.data.events ?? [] ;
+      return response.data.data.events ?? [];
     }
 
     return [];
@@ -289,24 +289,29 @@ const updateGuestsInProgress = new Set<string>();
  * @param authToken Authentication token
  * @returns Array of guest objects
  */
-export const getEventGuests = async (eventId: string, authToken: string): Promise<any[]> => {
+export const getEventGuests = async (
+  eventId: string,
+  authToken: string
+): Promise<any[]> => {
   try {
     console.log(`Fetching guest list for event: ${eventId}`);
-    const url = `${API_BASE_URL}/event/${eventId}/guests`;
+    const url = `${API_BASE_URL}/event/${eventId}/participants`;
     console.log(`Making API request to: ${url}`);
 
     const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${authToken}`,
       },
-      timeout: 10000 // 10 seconds timeout for better UX
+      timeout: 10000,
     });
 
-    console.log(`API response status: ${response.status}`);
+    console.log('Full API response:', response.data);
 
-    if (response.data && Array.isArray(response.data.data)) {
-      console.log('Guest data received:', response.data.data);
-      return response.data.data;
+    const participants = response.data?.data?.participants;
+
+    if (Array.isArray(participants)) {
+      console.log('Guest data received:', participants);
+      return participants;
     }
 
     console.warn('No guest data found in API response:', response.data);
@@ -316,6 +321,7 @@ export const getEventGuests = async (eventId: string, authToken: string): Promis
     throw error;
   }
 };
+
 
 /**
  * Update the invited guests for an event
