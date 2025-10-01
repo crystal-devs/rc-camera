@@ -1,4 +1,4 @@
-// hooks/useWebSocketUploadProgress.ts - Fixed to prevent infinite loops
+// hooks/useWebSocketUploadProgress.ts - FIXED EVENT NAMES
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -10,12 +10,56 @@ interface ProgressUpdate {
   mediaId: string;
   eventId: string;
   filename: string;
-  stage: 'uploading' | 'processing' | 'variants_creating' | 'finalizing' | 'completed';
+  stage: string;
   percentage: number;
   status: 'processing' | 'completed' | 'failed';
   message: string;
   error?: string;
   timestamp: string;
+}
+
+interface MediaProcessingProgressEvent {
+  mediaId: string;
+  eventId: string;
+  filename: string;
+  status: 'processing' | 'completed' | 'failed';
+  processingStage: string;
+  progressPercentage: number;
+  message?: string;
+  uploadedBy: {
+    id: string;
+    name: string;
+    type: 'admin' | 'guest';
+  };
+}
+
+interface NewMediaUploadedEvent {
+  mediaId: string;
+  eventId: string;
+  media: {
+    url: string;
+    thumbnailUrl: string;
+    filename: string;
+  };
+  uploadedBy: {
+    id: string;
+    name: string;
+    type: 'admin' | 'guest';
+  };
+  processingStatus: 'optimistic' | 'processing';
+  isInstantPreview?: boolean;
+}
+
+interface MediaProcessingCompleteEvent {
+  mediaId: string;
+  eventId: string;
+  processingStatus: 'completed';
+  progress: number;
+  stage: 'completed';
+  variantsGenerated: boolean;
+  finalUrl: string;
+  variants?: any;
+  processingTime?: number;
 }
 
 interface UploadProgressState {
@@ -45,7 +89,6 @@ export function useWebSocketUploadProgress(
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState>({});
   const [isMonitoring, setIsMonitoring] = useState(false);
 
-  // Use refs to prevent recreating listeners
   const completedIds = useRef(new Set<string>());
   const failedIds = useRef(new Set<string>());
   const listenersSetup = useRef(false);
@@ -53,7 +96,6 @@ export function useWebSocketUploadProgress(
 
   const { showToasts = true } = options;
 
-  // Stable callback references
   const onCompleteRef = useRef(options.onComplete);
   const onFailedRef = useRef(options.onFailed);
 
@@ -62,7 +104,6 @@ export function useWebSocketUploadProgress(
     onFailedRef.current = options.onFailed;
   }, [options.onComplete, options.onFailed]);
 
-  // Helper function to update photo in cache - make it stable
   const updatePhotoInCache = useCallback((mediaId: string, updates: Partial<any>) => {
     const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
 
@@ -95,27 +136,56 @@ export function useWebSocketUploadProgress(
     });
   }, [queryClient, eventId]);
 
-  // Handle progress updates - prevent infinite updates
-  const handleProgressUpdate = useCallback((data: ProgressUpdate) => {
-    // Check if this is a duplicate update
+  // FIXED: Handle new_media_uploaded event (optimistic preview)
+  const handleNewMediaUploaded = useCallback((data: NewMediaUploadedEvent) => {
+    console.log('📸 New media uploaded (optimistic):', data.mediaId.substring(0, 8));
+    
+    // Initialize progress tracking with optimistic state
+    setUploadProgress(prev => ({
+      ...prev,
+      [data.mediaId]: {
+        mediaId: data.mediaId,
+        filename: data.media.filename,
+        stage: 'uploading',
+        percentage: 10,
+        message: 'Preview ready, processing...',
+        status: 'processing',
+        startTime: new Date(),
+        lastUpdate: new Date()
+      }
+    }));
+
+    // Update cache with temp preview
+    updatePhotoInCache(data.mediaId, {
+      url: data.media.thumbnailUrl,
+      thumbnailUrl: data.media.thumbnailUrl,
+      processing: true,
+      processingStatus: 'processing'
+    });
+
+    setIsMonitoring(true);
+  }, [updatePhotoInCache]);
+
+  // FIXED: Handle media_processing_progress event (not processing_progress)
+  const handleMediaProcessingProgress = useCallback((data: MediaProcessingProgressEvent) => {
     const lastUpdate = lastProgressUpdate.current.get(data.mediaId);
     const currentTime = Date.now();
 
-    // Prevent rapid duplicate updates (less than 100ms apart)
     if (lastUpdate && (currentTime - lastUpdate) < 100) {
       return;
     }
 
     lastProgressUpdate.current.set(data.mediaId, currentTime);
 
-    console.log('WebSocket progress update:', data.mediaId.substring(0, 8), data.stage, data.percentage + '%');
+    console.log('🔄 Processing progress:', data.mediaId.substring(0, 8), `${data.progressPercentage}%`, data.processingStage);
 
     setUploadProgress(prev => {
-      // Don't update if it's the same data
       const existing = prev[data.mediaId];
+      
+      // Skip if same data
       if (existing &&
-        existing.percentage === data.percentage &&
-        existing.stage === data.stage &&
+        existing.percentage === data.progressPercentage &&
+        existing.stage === data.processingStage &&
         existing.status === data.status) {
         return prev;
       }
@@ -124,101 +194,166 @@ export function useWebSocketUploadProgress(
         ...prev,
         [data.mediaId]: {
           mediaId: data.mediaId,
-          filename: data.filename,
-          stage: data.stage,
-          percentage: data.percentage,
-          message: data.message,
+          filename: existing?.filename || data.filename || 'Unknown file',
+          stage: data.processingStage,
+          percentage: data.progressPercentage,
+          message: data.message || `${data.processingStage} - ${data.progressPercentage}%`,
           status: data.status === 'completed' ? 'completed' :
             data.status === 'failed' ? 'failed' : 'processing',
           startTime: existing?.startTime || new Date(),
-          lastUpdate: new Date(),
-          error: data.error
+          lastUpdate: new Date()
         }
       };
     });
 
     setIsMonitoring(true);
+  }, []);
 
-    // Handle completion - only once per media
-    if (data.status === 'completed' && !completedIds.current.has(data.mediaId)) {
-      completedIds.current.add(data.mediaId);
-
-      updatePhotoInCache(data.mediaId, {
-        processing: false,
-        hasVariants: true,
-        processingStatus: 'completed'
-      });
-
-      if (showToasts) {
-        toast.success(`"${data.filename}" processed successfully!`, {
-          description: 'High-quality version is now available',
-          duration: 3000,
-        });
-      }
-
-      onCompleteRef.current?.(data.mediaId, data);
-
-      // Remove from progress after delay
-      setTimeout(() => {
-        setUploadProgress(prev => {
-          const newState = { ...prev };
-          delete newState[data.mediaId];
-          return newState;
-        });
-      }, 3000);
+  // FIXED: Handle media_processing_complete event (not processing_complete)
+  const handleMediaProcessingComplete = useCallback((data: MediaProcessingCompleteEvent) => {
+    if (completedIds.current.has(data.mediaId)) {
+      console.log('⏭️ Skipping duplicate completion for:', data.mediaId.substring(0, 8));
+      return;
     }
 
-    // Handle failure - only once per media
-    if (data.status === 'failed' && !failedIds.current.has(data.mediaId)) {
-      failedIds.current.add(data.mediaId);
+    completedIds.current.add(data.mediaId);
+    console.log('✅ Processing complete:', data.mediaId.substring(0, 8));
 
-      updatePhotoInCache(data.mediaId, {
-        processing: false,
-        error: true,
-        errorMessage: data.error || 'Processing failed'
+    // Update progress to 100%
+    setUploadProgress(prev => {
+      const existing = prev[data.mediaId];
+      if (!existing) return prev;
+
+      return {
+        ...prev,
+        [data.mediaId]: {
+          ...existing,
+          percentage: 100,
+          stage: 'completed',
+          message: 'Processing complete!',
+          status: 'completed',
+          lastUpdate: new Date()
+        }
+      };
+    });
+
+    // Update cache with final URL
+    updatePhotoInCache(data.mediaId, {
+      url: data.finalUrl,
+      thumbnailUrl: data.finalUrl,
+      processing: false,
+      hasVariants: true,
+      processingStatus: 'completed'
+    });
+
+    if (showToasts) {
+      toast.success('Processing completed!', {
+        description: 'High-quality version is now available',
+        duration: 3000,
       });
-
-      if (showToasts) {
-        toast.error(`"${data.filename}" processing failed`, {
-          description: data.error || 'Unknown error occurred',
-          duration: 5000,
-        });
-      }
-
-      onFailedRef.current?.(data.mediaId, data);
     }
-  }, [updatePhotoInCache, showToasts]);
 
-  // Handle completion updates
-  const handleCompletionUpdate = useCallback((data: any) => {
-    console.log('WebSocket completion update:', data.mediaId?.substring(0, 8));
-    queryClient.invalidateQueries({ queryKey: ['eventPhotos', eventId] });
-  }, [queryClient, eventId]);
+    // Get filename from progress state
+    const progressItem = uploadProgress[data.mediaId];
+    onCompleteRef.current?.(data.mediaId, {
+      mediaId: data.mediaId,
+      eventId: data.eventId,
+      filename: progressItem?.filename || 'Unknown',
+      stage: 'completed',
+      percentage: 100,
+      status: 'completed',
+      message: 'Complete',
+      timestamp: new Date().toISOString()
+    });
 
-  // Set up WebSocket listeners ONLY ONCE
+    // Remove from progress after delay
+    setTimeout(() => {
+      setUploadProgress(prev => {
+        const newState = { ...prev };
+        delete newState[data.mediaId];
+        return newState;
+      });
+    }, 3000);
+  }, [uploadProgress, updatePhotoInCache, showToasts]);
+
+  // FIXED: Handle media_upload_failed event
+  const handleMediaUploadFailed = useCallback((data: any) => {
+    if (failedIds.current.has(data.mediaId)) {
+      console.log('⏭️ Skipping duplicate failure for:', data.mediaId.substring(0, 8));
+      return;
+    }
+
+    failedIds.current.add(data.mediaId);
+    console.log('❌ Processing failed:', data.mediaId.substring(0, 8));
+
+    const progressItem = uploadProgress[data.mediaId];
+
+    setUploadProgress(prev => ({
+      ...prev,
+      [data.mediaId]: {
+        mediaId: data.mediaId,
+        filename: progressItem?.filename || 'Unknown file',
+        stage: 'failed',
+        percentage: 0,
+        message: data.error?.message || 'Processing failed',
+        status: 'failed',
+        startTime: progressItem?.startTime || new Date(),
+        lastUpdate: new Date(),
+        error: data.error?.message
+      }
+    }));
+
+    updatePhotoInCache(data.mediaId, {
+      processing: false,
+      error: true,
+      errorMessage: data.error?.message || 'Processing failed'
+    });
+
+    if (showToasts) {
+      toast.error('Processing failed', {
+        description: data.error?.message || 'Please try uploading again',
+        duration: 5000,
+      });
+    }
+
+    onFailedRef.current?.(data.mediaId, {
+      mediaId: data.mediaId,
+      eventId: data.eventId,
+      filename: progressItem?.filename || 'Unknown',
+      stage: 'failed',
+      percentage: 0,
+      status: 'failed',
+      message: data.error?.message || 'Processing failed',
+      error: data.error?.message,
+      timestamp: new Date().toISOString()
+    });
+  }, [uploadProgress, updatePhotoInCache, showToasts]);
+
+  // Set up WebSocket listeners ONLY ONCE with CORRECT event names
   useEffect(() => {
     if (!webSocket.socket || listenersSetup.current) return;
 
-    console.log('Setting up WebSocket upload progress listeners - ONE TIME ONLY');
+    console.log('🎧 Setting up WebSocket upload progress listeners');
     listenersSetup.current = true;
 
-    webSocket.socket.on('upload_progress', handleProgressUpdate);
-    webSocket.socket.on('upload_completed', handleCompletionUpdate);
-    webSocket.socket.on('media_ready', handleCompletionUpdate);
+    // FIXED: Listen to the ACTUAL events your backend emits
+    webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
+    webSocket.socket.on('media_processing_progress', handleMediaProcessingProgress);
+    webSocket.socket.on('media_processing_complete', handleMediaProcessingComplete);
+    webSocket.socket.on('media_upload_failed', handleMediaUploadFailed);
 
-    // Cleanup function
     return () => {
       if (webSocket.socket) {
-        console.log('Cleaning up WebSocket upload progress listeners');
-        webSocket.socket.off('upload_progress', handleProgressUpdate);
-        webSocket.socket.off('upload_completed', handleCompletionUpdate);
-        webSocket.socket.off('media_ready', handleCompletionUpdate);
+        console.log('🔌 Cleaning up WebSocket upload progress listeners');
+        webSocket.socket.off('new_media_uploaded', handleNewMediaUploaded);
+        webSocket.socket.off('media_processing_progress', handleMediaProcessingProgress);
+        webSocket.socket.off('media_processing_complete', handleMediaProcessingComplete);
+        webSocket.socket.off('media_upload_failed', handleMediaUploadFailed);
       }
       listenersSetup.current = false;
     };
-  }, [webSocket.socket]); // Only depend on socket, not the handlers
+  }, [webSocket.socket, handleNewMediaUploaded, handleMediaProcessingProgress, handleMediaProcessingComplete, handleMediaUploadFailed]);
 
-  // Monitor if we have active uploads
   useEffect(() => {
     const hasActiveUploads = Object.values(uploadProgress).some(
       progress => progress.status === 'processing' || progress.status === 'uploading'
@@ -226,9 +361,8 @@ export function useWebSocketUploadProgress(
     setIsMonitoring(hasActiveUploads);
   }, [uploadProgress]);
 
-  // Start monitoring function
   const startMonitoring = useCallback((mediaIds: string[], filenames: string[]) => {
-    console.log('Starting upload monitoring for:', mediaIds.length, 'files');
+    console.log('📊 Starting upload monitoring for:', mediaIds.length, 'files');
 
     const initialProgress: UploadProgressState = {};
     mediaIds.forEach((mediaId, index) => {
@@ -250,14 +384,11 @@ export function useWebSocketUploadProgress(
     }));
 
     setIsMonitoring(true);
-
-    // Clear previous tracking
     completedIds.current.clear();
     failedIds.current.clear();
     lastProgressUpdate.current.clear();
   }, []);
 
-  // Stop monitoring function
   const stopMonitoring = useCallback((mediaIds?: string[]) => {
     if (mediaIds) {
       setUploadProgress(prev => {
@@ -275,7 +406,6 @@ export function useWebSocketUploadProgress(
     }
   }, []);
 
-  // Clear all progress
   const clearAll = useCallback(() => {
     setUploadProgress({});
     setIsMonitoring(false);
@@ -284,7 +414,6 @@ export function useWebSocketUploadProgress(
     lastProgressUpdate.current.clear();
   }, []);
 
-  // Calculate summary
   const summary = {
     total: Object.keys(uploadProgress).length,
     uploading: Object.values(uploadProgress).filter(p => p.status === 'uploading').length,
@@ -305,8 +434,6 @@ export function useWebSocketUploadProgress(
     startMonitoring,
     stopMonitoring,
     clearAll,
-
-    // WebSocket connection info
     isConnected: webSocket.isConnected,
     isAuthenticated: webSocket.isAuthenticated,
     connectionError: webSocket.connectionError

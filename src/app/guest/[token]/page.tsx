@@ -530,6 +530,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     notFound();
   }
 
+  console.log(eventDetails, 'eventDetailseventDetails')
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
       {/* Notification Banner for buffered changes */}
