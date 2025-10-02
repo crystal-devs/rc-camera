@@ -37,7 +37,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fetchEvents } from '@/services/apis/events.api';
 import { Event } from '@/types/backend-types/event.type';
 import { toast } from "sonner";
-import SimpleEventCreateForm from './create/page';
+import EventCreateModal from '@/components/event/CreateEventModel';
 
 
 export default function EventsPage() {
@@ -126,8 +126,10 @@ export default function EventsPage() {
 
 
         {/* here  */}
-        <Dialog open={showCreateEventDialogue} onOpenChange={setShowCreateEventDialogue}>
-          <DialogTrigger asChild>
+        <EventCreateModal
+          open={showCreateEventDialogue}
+          onOpenChange={setShowCreateEventDialogue}
+          trigger={
             <Button
               onClick={() => setShowCreateEventDialogue(true)}
               className="mt-4 md:mt-0"
@@ -135,19 +137,11 @@ export default function EventsPage() {
               <PlusIcon className="h-4 w-4 mr-2" />
               Create New Event
             </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>
-                <div className="text-center">
-                  <h1 className="text-2xl font-semibold ">Create Event</h1>
-                  <p className="text-gray-600 text-sm">share photos with your gang</p>
-                </div>
-              </DialogTitle>
-            </DialogHeader>
-            <SimpleEventCreateForm />
-          </DialogContent>
-        </Dialog>
+          }
+          onCreated={(created) => {
+            setEvents(prev => [created, ...prev]);
+          }}
+        />
       </div>
 
       {/* Single line filter controls that work on all screen sizes */}

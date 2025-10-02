@@ -1,10 +1,11 @@
-// stores/eventStore.ts
+// stores/eventStore.ts - Updated for Subscription Pattern
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { getEventById, updateEvent, deleteEvent } from '@/services/apis/events.api'
 import { fetchEventAlbums } from '@/services/apis/albums.api'
+import { useWebSocketStore } from '@/stores/webSocketStore'
 
-// 🚀 UPDATED: Event interface with PhotoWall settings
+// Event interface remains the same
 interface Event {
   _id: string
   title: string
@@ -62,7 +63,6 @@ interface Event {
     uploaded_by: string | null
     thumbnail_url: string
   }
-  // 🚀 NEW: PhotoWall settings
   photowall_settings: {
     isEnabled: boolean
     displayMode: 'slideshow' | 'grid' | 'mosaic'
@@ -148,7 +148,7 @@ interface EventStore {
   setError: (error: string | null) => void
 }
 
-// 🚀 Default PhotoWall settings factory
+// Default PhotoWall settings factory
 const createDefaultPhotowallSettings = () => ({
   isEnabled: false,
   displayMode: 'slideshow' as const,
@@ -158,11 +158,10 @@ const createDefaultPhotowallSettings = () => ({
   newImageInsertion: 'after_current' as const
 })
 
-// 🚀 Helper function to ensure event has complete photowall_settings
+// Helper function to ensure event has complete photowall_settings
 const ensurePhotowallSettings = (event: any): Event => {
   if (!event) return event
 
-  // If photowall_settings is completely missing, add it
   if (!event.photowall_settings) {
     console.log('Adding missing photowall_settings to event:', event._id)
     return {
@@ -171,14 +170,12 @@ const ensurePhotowallSettings = (event: any): Event => {
     }
   }
 
-  // If photowall_settings exists but is incomplete, merge with defaults
   const defaults = createDefaultPhotowallSettings()
   const currentSettings = event.photowall_settings
 
   let needsUpdate = false
   const mergedSettings = { ...defaults }
 
-  // Check each property and preserve existing values
   Object.keys(defaults).forEach(key => {
     if (currentSettings.hasOwnProperty(key)) {
       mergedSettings[key] = currentSettings[key]
@@ -198,13 +195,11 @@ const ensurePhotowallSettings = (event: any): Event => {
   return event
 }
 
-// 🚀 Migration function to handle version changes
+// Migration function to handle version changes
 const migrateEventStore = (persistedState: any, version: number) => {
-  console.log(`Migrating event store from version ${version} to version 2`)
+  console.log(`Migrating event store from version ${version} to version 4`)
 
-  // Handle migration from any version to version 2
-  if (version < 2) {
-    // Ensure selectedEvent has proper photowall_settings
+  if (version < 4) {
     if (persistedState.selectedEvent) {
       persistedState.selectedEvent = ensurePhotowallSettings(persistedState.selectedEvent)
       console.log('Migrated selectedEvent photowall_settings')
@@ -234,9 +229,51 @@ const useEventStore = create<EventStore>()(
       isLoadingAlbums: false,
       error: null,
 
-      // Basic setters
+      // UPDATED: Enhanced setSelectedEvent with WebSocket subscription management
       setSelectedEvent: (event: Event, role = 'participant') => {
         console.log('Setting selected event:', event.title, 'Role:', role)
+
+        const previousEvent = get().selectedEvent;
+
+        // NEW: Handle WebSocket subscription switching
+        if (typeof window !== 'undefined') {
+          const webSocketStore = useWebSocketStore.getState();
+
+          // Only handle subscription switching if WebSocket is connected and authenticated
+          if (webSocketStore.isAuthenticated && webSocketStore.isConnected && previousEvent?._id !== event._id) {
+            // In your eventStore.ts setSelectedEvent method, add this before switchSubscription:
+            console.log('🔍 SUBSCRIPTION DEBUG:', {
+              previousEventId: previousEvent?._id,
+              newEventId: event._id,
+              shareToken: event.share_token,
+              userInfo: webSocketStore.userInfo,
+              isAuthenticated: webSocketStore.isAuthenticated
+            });
+            // Use the new subscription pattern instead of room switching
+            webSocketStore.switchSubscription(
+              previousEvent?._id || '',
+              event._id,
+              event.share_token
+            )
+              .then(() => {
+                console.log(`✅ Switched WebSocket subscriptions: ${previousEvent?.title || 'none'} → ${event.title}`);
+              })
+              .catch((error) => {
+                console.error('❌ Failed to switch WebSocket subscriptions:', error);
+                // Don't block the UI update on subscription failure
+              });
+          } else if (webSocketStore.isAuthenticated && webSocketStore.isConnected && !previousEvent) {
+            // First time selecting an event - just subscribe
+            console.log('Initial WebSocket subscription...');
+            webSocketStore.subscribe(event._id, event.share_token)
+              .then(() => {
+                console.log(`✅ Initial WebSocket subscription: ${event.title}`);
+              })
+              .catch((error) => {
+                console.error('❌ Failed initial WebSocket subscription:', error);
+              });
+          }
+        }
 
         // Ensure complete photowall_settings
         const eventWithSettings = ensurePhotowallSettings(event)
@@ -254,8 +291,27 @@ const useEventStore = create<EventStore>()(
         set({ eventsCache: cache })
       },
 
+      // UPDATED: Enhanced clearSelectedEvent with WebSocket subscription cleanup
       clearSelectedEvent: () => {
         console.log('Clearing selected event')
+
+        const currentEvent = get().selectedEvent;
+
+        // NEW: Unsubscribe from WebSocket when clearing selected event
+        if (currentEvent && typeof window !== 'undefined') {
+          const webSocketStore = useWebSocketStore.getState();
+
+          if (webSocketStore.isAuthenticated && webSocketStore.isSubscribed(currentEvent._id)) {
+            webSocketStore.unsubscribe(currentEvent._id)
+              .then(() => {
+                console.log(`✅ Unsubscribed from WebSocket for: ${currentEvent.title}`);
+              })
+              .catch((error) => {
+                console.error('❌ Failed to unsubscribe from WebSocket:', error);
+              });
+          }
+        }
+
         set({
           selectedEvent: null,
           lastEventId: null,
@@ -265,16 +321,14 @@ const useEventStore = create<EventStore>()(
       },
 
       setEvents: (events: Event[]) => {
-        // Ensure all events have complete photowall_settings
         const eventsWithSettings = events.map(ensurePhotowallSettings)
         set({ events: eventsWithSettings, error: null })
       },
 
-      // 🚀 FIXED: Cache-first event fetching with proper error handling
+      // Cache-first event fetching with proper error handling
       getEventFromCacheOrFetch: async (eventId: string, authToken: string): Promise<Event | null> => {
         const { eventsCache, CACHE_DURATION } = get()
 
-        // Validate inputs
         if (!eventId || !authToken) {
           console.error('Invalid parameters: eventId or authToken missing')
           set({ error: 'Invalid request parameters', isLoadingEvent: false })
@@ -283,32 +337,25 @@ const useEventStore = create<EventStore>()(
 
         const cached = eventsCache.get(eventId)
 
-        // Check if cache is valid
         if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
           console.log(`Using cached event data for ${eventId}`)
           return cached.data
         }
 
-        // Fetch from API
         console.log(`Fetching fresh event data for ${eventId}`)
         set({ isLoadingEvent: true, error: null })
 
         try {
           const event = await getEventById(eventId, authToken)
-
-          // CRITICAL: Always set loading to false
           set({ isLoadingEvent: false })
 
           if (event) {
-            // Ensure complete photowall_settings
             const eventWithSettings = ensurePhotowallSettings(event)
 
-            // Update cache
             const newCache = new Map(eventsCache)
             newCache.set(eventId, { data: eventWithSettings, timestamp: Date.now() })
             set({ eventsCache: newCache })
 
-            // Update selected event if it's the current one
             const currentSelected = get().selectedEvent
             if (currentSelected?._id === eventId) {
               set({ selectedEvent: eventWithSettings })
@@ -325,17 +372,16 @@ const useEventStore = create<EventStore>()(
           console.error('Error fetching event:', error)
           set({
             error: error instanceof Error ? error.message : 'Failed to fetch event',
-            isLoadingEvent: false // CRITICAL: Always set loading to false
+            isLoadingEvent: false
           })
           return null
         }
       },
 
-      // 🚀 FIXED: Cache-first albums fetching with proper error handling
+      // Cache-first albums fetching with proper error handling
       getAlbumsFromCacheOrFetch: async (eventId: string, authToken: string): Promise<any[]> => {
         const { albumsCache, CACHE_DURATION } = get()
 
-        // Validate inputs
         if (!eventId || !authToken) {
           console.error('Invalid parameters: eventId or authToken missing for albums')
           set({ error: 'Invalid request parameters', isLoadingAlbums: false })
@@ -344,32 +390,26 @@ const useEventStore = create<EventStore>()(
 
         const cached = albumsCache.get(eventId)
 
-        // Check if cache is valid
         if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
           console.log(`Using cached albums data for ${eventId}`)
           set({ currentEventAlbums: cached.data })
           return cached.data
         }
 
-        // Fetch from API
         console.log(`Fetching fresh albums data for ${eventId}`)
         set({ isLoadingAlbums: true, error: null })
 
         try {
           const albums = await fetchEventAlbums(eventId, authToken)
-
-          // CRITICAL: Always set loading to false
           set({ isLoadingAlbums: false })
 
           if (albums && Array.isArray(albums)) {
-            // Sort albums - default album first, then by creation date
             albums.sort((a, b) => {
               if (a.isDefault && !b.isDefault) return -1
               if (!a.isDefault && b.isDefault) return 1
               return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
             })
 
-            // Update cache
             const newCache = new Map(albumsCache)
             newCache.set(eventId, { data: albums, timestamp: Date.now() })
 
@@ -389,7 +429,7 @@ const useEventStore = create<EventStore>()(
           console.error('Error fetching albums:', error)
           set({
             error: error instanceof Error ? error.message : 'Failed to fetch albums',
-            isLoadingAlbums: false, // CRITICAL: Always set loading to false
+            isLoadingAlbums: false,
             currentEventAlbums: []
           })
           return []
@@ -401,18 +441,15 @@ const useEventStore = create<EventStore>()(
         console.log(`Updating event ${eventId} in store`)
         const { eventsCache, selectedEvent } = get()
 
-        // Update cache
         const cached = eventsCache.get(eventId)
         if (cached) {
           const updatedEvent = { ...cached.data, ...updates } as Event
-          // Ensure complete photowall_settings after update
           const eventWithSettings = ensurePhotowallSettings(updatedEvent)
 
           const newCache = new Map(eventsCache)
           newCache.set(eventId, { data: eventWithSettings, timestamp: Date.now() })
           set({ eventsCache: newCache })
 
-          // Update selected event if it's the current one
           if (selectedEvent?._id === eventId) {
             set({ selectedEvent: eventWithSettings })
           }
@@ -421,10 +458,25 @@ const useEventStore = create<EventStore>()(
         }
       },
 
-      // Delete event from store and cache
+      // UPDATED: Enhanced deleteEventFromStore with WebSocket cleanup
       deleteEventFromStore: (eventId: string) => {
         console.log(`Deleting event ${eventId} from store`)
         const { eventsCache, albumsCache, selectedEvent } = get()
+
+        // NEW: Unsubscribe from WebSocket if deleting the currently selected event
+        if (selectedEvent?._id === eventId && typeof window !== 'undefined') {
+          const webSocketStore = useWebSocketStore.getState();
+
+          if (webSocketStore.isAuthenticated && webSocketStore.isSubscribed(eventId)) {
+            webSocketStore.unsubscribe(eventId)
+              .then(() => {
+                console.log(`✅ Unsubscribed from WebSocket for deleted event: ${eventId}`);
+              })
+              .catch((error) => {
+                console.error('❌ Failed to unsubscribe from WebSocket for deleted event:', error);
+              });
+          }
+        }
 
         // Remove from caches
         const newEventsCache = new Map(eventsCache)
@@ -450,14 +502,13 @@ const useEventStore = create<EventStore>()(
         console.log(`Event ${eventId} deleted from store`)
       },
 
-      // 🚀 OPTIMIZED: Cache management utilities
+      // Cache management utilities
       clearExpiredCache: () => {
         const { eventsCache, albumsCache, CACHE_DURATION } = get()
         const now = Date.now()
         let eventsCleared = 0
         let albumsCleared = 0
 
-        // Clear expired event cache
         const newEventsCache = new Map()
         for (const [key, value] of eventsCache) {
           if ((now - value.timestamp) < CACHE_DURATION) {
@@ -467,7 +518,6 @@ const useEventStore = create<EventStore>()(
           }
         }
 
-        // Clear expired albums cache
         const newAlbumsCache = new Map()
         for (const [key, value] of albumsCache) {
           if ((now - value.timestamp) < CACHE_DURATION) {
@@ -510,10 +560,8 @@ const useEventStore = create<EventStore>()(
     }),
     {
       name: 'event-app-storage',
-      version: 2,
-      // Migration function to handle schema changes
+      version: 4, // UPDATED: Bumped version for subscription integration
       migrate: migrateEventStore,
-      // Only persist essential data - not cache or transient state
       partialize: (state) => ({
         selectedEvent: state.selectedEvent,
         lastEventId: state.lastEventId,
@@ -523,7 +571,6 @@ const useEventStore = create<EventStore>()(
         if (state?.selectedEvent) {
           console.log('Rehydrated event data:', state.selectedEvent.title)
 
-          // Double-check photowall_settings after rehydration
           if (state.selectedEvent) {
             state.selectedEvent = ensurePhotowallSettings(state.selectedEvent)
             console.log('Verified photowall_settings during rehydration')

@@ -1,4 +1,4 @@
-// components/photo/PinterestPhotoGrid.tsx - Integrated with Styling Constants
+// components/photo/PinterestPhotoGrid.tsx - UPDATED with viewport tracking
 import { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { PinterestPhotoCard } from "./PinterestPhotoCard";
 import { TransformedPhoto } from "@/types/events";
@@ -16,13 +16,22 @@ interface Position {
   width: number;
 }
 
+interface ViewportInfo {
+  visibleStartIndex: number;
+  visibleEndIndex: number;
+  bufferStartIndex: number;
+  bufferEndIndex: number;
+}
+
 export const PinterestPhotoGrid: React.FC<{
   photos: TransformedPhoto[];
   onPhotoClick: (photo: TransformedPhoto, index: number) => void;
   hasNextPage?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
-  // New styling config prop
+  // NEW: Viewport tracking callback
+  onViewportChange?: (viewportInfo: ViewportInfo) => void;
+  // Existing styling config prop
   eventStyling?: {
     gallery?: {
       layout_id: number;
@@ -40,6 +49,7 @@ export const PinterestPhotoGrid: React.FC<{
   hasNextPage = false,
   isLoadingMore = false,
   onLoadMore,
+  onViewportChange, // NEW
   eventStyling
 }) => {
     const [likedPhotos, setLikedPhotos] = useState<Set<string>>(new Set());
@@ -52,6 +62,11 @@ export const PinterestPhotoGrid: React.FC<{
     const observerRef = useRef<IntersectionObserver | null>(null);
     const loadingTriggerRef = useRef<HTMLDivElement | null>(null);
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
+    // NEW: Viewport tracking refs
+    const viewportObserverRef = useRef<IntersectionObserver | null>(null);
+    const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+    const [visibleIndices, setVisibleIndices] = useState<Set<number>>(new Set());
 
     // Get styling configuration from constants
     const stylingConfig = useMemo(() => {
@@ -151,6 +166,85 @@ export const PinterestPhotoGrid: React.FC<{
         };
       });
     }, [photos, containerWidth, getGridConfig]);
+
+    // NEW: Register item reference for viewport tracking
+    const registerItemRef = useCallback((index: number, element: HTMLDivElement | null) => {
+      if (element) {
+        itemRefs.current.set(index, element);
+      } else {
+        itemRefs.current.delete(index);
+      }
+    }, []);
+
+    // NEW: Calculate and report viewport info
+    const updateViewportInfo = useCallback(() => {
+      if (visibleIndices.size === 0 || !onViewportChange) return;
+
+      const sortedIndices = Array.from(visibleIndices).sort((a, b) => a - b);
+      const visibleStartIndex = sortedIndices[0];
+      const visibleEndIndex = sortedIndices[sortedIndices.length - 1];
+      const bufferSize = 20;
+
+      const viewportInfo: ViewportInfo = {
+        visibleStartIndex,
+        visibleEndIndex,
+        bufferStartIndex: Math.max(0, visibleStartIndex - bufferSize),
+        bufferEndIndex: Math.min(photos.length - 1, visibleEndIndex + bufferSize)
+      };
+
+      onViewportChange(viewportInfo);
+    }, [visibleIndices, onViewportChange, photos.length]);
+
+    // NEW: Set up viewport tracking observer
+    useEffect(() => {
+      if (!onViewportChange) return;
+
+      if (viewportObserverRef.current) {
+        viewportObserverRef.current.disconnect();
+      }
+
+      viewportObserverRef.current = new IntersectionObserver(
+        (entries) => {
+          setVisibleIndices(prev => {
+            const newVisible = new Set(prev);
+
+            entries.forEach(entry => {
+              // Find index for this element
+              for (const [index, element] of itemRefs.current.entries()) {
+                if (element === entry.target) {
+                  if (entry.isIntersecting) {
+                    newVisible.add(index);
+                  } else {
+                    newVisible.delete(index);
+                  }
+                  break;
+                }
+              }
+            });
+
+            return newVisible;
+          });
+        },
+        {
+          threshold: 0.1,
+          rootMargin: '100px 0px' // Track items slightly before they become visible
+        }
+      );
+
+      // Observe all current items
+      itemRefs.current.forEach(element => {
+        viewportObserverRef.current?.observe(element);
+      });
+
+      return () => {
+        viewportObserverRef.current?.disconnect();
+      };
+    }, [photos.length, onViewportChange]);
+
+    // NEW: Update viewport info when visible indices change
+    useEffect(() => {
+      updateViewportInfo();
+    }, [updateViewportInfo]);
 
     // Handle actual image load and get real dimensions
     const handleImageLoad = useCallback((photoId: string, actualHeight: number) => {
@@ -281,6 +375,7 @@ export const PinterestPhotoGrid: React.FC<{
             return (
               <div
                 key={photo.id}
+                ref={(el) => registerItemRef(index, el)} // NEW: Register for viewport tracking
                 className="absolute"
                 style={{
                   left: position.x,

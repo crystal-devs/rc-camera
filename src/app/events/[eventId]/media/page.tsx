@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 
 import AlbumManagement from '@/components/album/AlbumManagement';
-import PhotoGallery from '@/components/album/PhotoGallery';
+import PhotoGallery from '@/components/photo/PhotoGallery';
 import EventHeaderDetails from '@/components/event/EventDetailsHeader';
 import { format } from 'date-fns';
 
@@ -146,76 +146,6 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
             {/* <EventHeaderDetails event={event} /> */}
 
             <div className="mx-auto px-0 py-0 sm:px-2 sm:py-2">
-                {/* Event Info Section */}
-                {/* <div className="flex flex-wrap gap-3 mb-4 sm:mb-6">
-                    <div className="flex items-center text-sm">
-                        <CalendarIcon className="h-4 w-4 mr-1.5" />
-                        {format(new Date(event.start_date), 'MMM d, yyyy')}
-                    </div>
-
-                    {event.location?.address && (
-                        <div className="flex items-center text-sm text-gray-600">
-                            <MapPinIcon className="h-4 w-4 mr-1.5" />
-                            {event.location.name || event.location.address}
-                        </div>
-                    )}
-                </div>
-
-                {event.description && (
-                    <p className="text-gray-700 mb-4 sm:mb-6">{event.description}</p>
-                )} */}
-
-                {/* Quick Actions */}
-                {/* <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
-                    <Button onClick={quickShare} variant="outline" size="sm">
-                        <ShareIcon className="h-4 w-4 mr-2" />
-                        Share Event
-                    </Button>
-                </div> */}
-
-                {/* Tabs Section */}
-                {/* <Tabs
-                    value={activeTab}
-                    onValueChange={setActiveTab}
-                    className="w-full"
-                >
-                    <TabsList className="w-full mb-6">
-                        <TabsTrigger value="photos" className="flex-1">
-                            <CameraIcon className="h-4 w-4 mr-2" />
-                            Photos
-                        </TabsTrigger>
-                        <TabsTrigger value="albums" className="flex-1">
-                            <FolderIcon className="h-4 w-4 mr-2" />
-                            Albums ({albums.length})
-                        </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="photos">
-                        <PhotoGallery
-                            eventId={eventId}
-                            albumId={null}
-                            canUpload={true}
-                        />
-                    </TabsContent>
-
-                    <TabsContent value="albums">
-                        {isLoadingAlbums ? (
-                            <div className="space-y-4">
-                                {[1, 2, 3].map(i => (
-                                    <Skeleton key={i} className="h-24 w-full" />
-                                ))}
-                            </div>
-                        ) : (
-                            <AlbumManagement
-                                eventId={eventId}
-                                initialAlbums={albums}
-                                onAlbumCreated={updateAlbumsList}
-                                onRefresh={refreshAlbums}
-                            />
-                        )}
-                    </TabsContent>
-                </Tabs> */}
-
                 <PhotoGallery
                     eventId={eventId}
                     albumId={null}

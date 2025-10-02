@@ -28,7 +28,7 @@ const eventFormSchema = z.object({
   end_date: z.date().optional(),
 })
 
-const SimpleEventCreateForm = () => {
+const EventCreateForm = () => {
   const router = useRouter();
 
   const form = useForm<z.infer<typeof eventFormSchema>>({
@@ -204,4 +204,4 @@ const SimpleEventCreateForm = () => {
   );
 };
 
-export default SimpleEventCreateForm;
+export default EventCreateForm;

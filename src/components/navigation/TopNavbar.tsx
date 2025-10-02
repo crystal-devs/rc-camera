@@ -36,16 +36,17 @@ interface TopNavbarProps {
 export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarProps) {
     const router = useRouter();
 
-    // Get user info from localStorage or your auth context
-    const [userInfo, setUserInfo] = React.useState<any>(null);
+    // Pull user data from global store (same source as Profile page)
+    const userData = useStore(state => state.userData);
+    const hydrated = useStore(state => state.hydrated);
+    const isAuthenticated = useStore(state => state.isAuthenticated);
+    const fetchUserData = useStore(state => state.fetchUserData);
 
     React.useEffect(() => {
-        // Get user info from localStorage or your auth system
-        const user = localStorage.getItem('user');
-        if (user) {
-            setUserInfo(JSON.parse(user));
+        if (hydrated && isAuthenticated && !userData) {
+            fetchUserData().catch(() => {});
         }
-    }, []);
+    }, [hydrated, isAuthenticated, userData, fetchUserData]);
 
     const handleLogout = () => {
         const { logout } = useStore.getState();
@@ -94,11 +95,11 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
                             <Button variant="ghost" className="relative h-9 w-9">
                                 <Avatar className="h-9 w-9">
                                     <AvatarImage
-                                        src={userInfo?.profilePicture || userInfo?.avatar}
-                                        alt={userInfo?.name || 'User'}
+                                        src={userData?.avatar}
+                                        alt={userData?.name || 'User'}
                                     />
                                     <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                                        {getUserInitials(userInfo?.name || userInfo?.email)}
+                                        {getUserInitials(userData?.name || userData?.email)}
                                     </AvatarFallback>
                                 </Avatar>
                             </Button>
@@ -108,10 +109,10 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
                             <DropdownMenuLabel className="font-normal">
                                 <div className="flex flex-col space-y-1">
                                     <p className="text-sm font-medium leading-none">
-                                        {userInfo?.name || 'User'}
+                                        {userData?.name || 'User'}
                                     </p>
                                     <p className="text-xs leading-none text-muted-foreground">
-                                        {userInfo?.email}
+                                        {userData?.email}
                                     </p>
                                 </div>
                             </DropdownMenuLabel>
@@ -159,11 +160,11 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
                             <Button variant="ghost" className="relative h-8 w-8">
                                 <Avatar className="h-8 w-8">
                                     <AvatarImage
-                                        src={userInfo?.profilePicture || userInfo?.avatar}
-                                        alt={userInfo?.name || 'User'}
+                                        src={userData?.avatar}
+                                        alt={userData?.name || 'User'}
                                     />
                                     <AvatarFallback className="bg-primary/10 text-primary font-medium text-xs">
-                                        {getUserInitials(userInfo?.name || userInfo?.email)}
+                                        {getUserInitials(userData?.name || userData?.email)}
                                     </AvatarFallback>
                                 </Avatar>
                             </Button>
@@ -173,10 +174,10 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
                             <DropdownMenuLabel className="font-normal">
                                 <div className="flex flex-col space-y-1">
                                     <p className="text-sm font-medium leading-none">
-                                        {userInfo?.name || 'User'}
+                                        {userData?.name || 'User'}
                                     </p>
                                     <p className="text-xs leading-none text-muted-foreground">
-                                        {userInfo?.email}
+                                        {userData?.email}
                                     </p>
                                 </div>
                             </DropdownMenuLabel>

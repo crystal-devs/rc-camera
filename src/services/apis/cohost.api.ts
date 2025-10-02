@@ -1,95 +1,90 @@
-// services/apis/cohost.api.ts
+// services/apis/cohost.api.ts - Updated for EventParticipant system
 
 import axios from 'axios';
 import { API_BASE_URL } from '@/lib/api-config';
 
+// Updated interfaces to match new EventParticipant system
 export interface CoHost {
-  _id?: string;
-  user_id: {
-    _id: string;
+  user_id: string;
+  user_info: {
     name: string;
     email: string;
-    avatar?: string;
+    profile_pic?: string;
   };
-  invited_by: {
-    _id: string;
-    name: string;
-    email: string;
-  };
-  status: 'pending' | 'approved' | 'rejected' | 'removed';
-  approved_by?: {
-    _id: string;
-    name: string;
-    email: string;
-  };
+  status: 'active' | 'pending' | 'blocked' | 'removed';
   permissions: {
-    manage_content: boolean;
-    manage_guests: boolean;
-    manage_settings: boolean;
-    approve_content: boolean;
+    can_view: boolean;
+    can_upload: boolean;
+    can_download: boolean;
+    can_invite_others: boolean;
+    can_moderate_content: boolean;
+    can_manage_participants: boolean;
+    can_edit_event: boolean;
+    can_delete_event: boolean;
+    can_approve_content: boolean;
+    can_export_data: boolean;
+    can_view_analytics: boolean;
+    can_manage_settings: boolean;
+  };
+  invited_by?: {
+    id: string;
+    name: string;
+  };
+  invited_at?: string;
+  joined_at: string;
+  last_activity_at: string;
+  stats: {
+    uploads_count: number;
+    downloads_count: number;
+    views_count: number;
+    invites_sent: number;
   };
 }
 
 export interface CoHostInvite {
+  invitation_id: string;
   token: string;
-  created_by: {
-    _id: string;
+  invite_link: string;
+  expires_at: string;
+  max_uses: number;
+  used_count: number;
+  event_title: string;
+  created_by?: {
     name: string;
     email: string;
   };
-  created_at: string;
-  expires_at: string;
-  is_active: boolean;
-  max_uses: number;
-  used_count: number;
-  is_expired: boolean;
-  is_max_used: boolean;
-  is_usable: boolean;
-  invite_link: string;
+  personal_message?: string;
 }
 
 export interface CoHostData {
   event_id: string;
   event_title: string;
-  event_creator: {
-    _id: string;
-    name: string;
-    email: string;
-    avatar?: string;
-  };
-  total_co_hosts: number;
-  co_hosts_by_status: {
-    approved: CoHost[];
-    pending: CoHost[];
-    rejected: CoHost[];
-    removed: CoHost[];
-    blocked: CoHost[];
-  };
-  summary: {
-    approved: number;
-    pending: number;
-    rejected: number;
-    removed: number;
-  };
+  event_creator: string; // ObjectId
+  co_hosts: CoHost[];
+  total_count: number;
 }
 
 /**
- * Generate a co-host invite token
+ * Create a co-host invite
  */
-export const generateCoHostInvite = async (
+export const createCoHostInvite = async (
   eventId: string,
-  expiresInHours: number = 24,
-  maxUses: number = 10,
+  options: {
+    maxUses?: number;
+    expiresInHours?: number;
+    personalMessage?: string;
+  } = {},
   authToken: string
 ): Promise<{ status: boolean; message: string; data: CoHostInvite | null }> => {
   try {
-    console.log(`Generating co-host invite for event: ${eventId}`);
+    console.log(`Creating co-host invite for event: ${eventId}`);
 
     const response = await axios.post(
       `${API_BASE_URL}/event/${eventId}/cohost-invite`,
       {
-        expires_in_hours: expiresInHours,
-        max_uses: maxUses
+        max_uses: options.maxUses || 10,
+        expires_in_hours: options.expiresInHours || 168,
+        personal_message: options.personalMessage
       },
       {
         headers: {
@@ -99,14 +94,14 @@ export const generateCoHostInvite = async (
       }
     );
 
-    console.log('Co-host invite generated:', response.data);
+    console.log('Co-host invite created:', response.data);
     return response.data;
   } catch (error) {
-    console.error(`Error generating co-host invite for event ${eventId}:`, error);
+    console.error(`Error creating co-host invite for event ${eventId}:`, error);
 
     if (axios.isAxiosError(error)) {
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        throw new Error('You don\'t have permission to generate co-host invites for this event');
+      if (error.response?.status === 403) {
+        throw new Error('You don\'t have permission to create co-host invites');
       } else if (error.response?.status === 404) {
         throw new Error('Event not found');
       }
@@ -117,16 +112,16 @@ export const generateCoHostInvite = async (
 };
 
 /**
- * Deactivate co-host invite token
+ * Get co-host invite details
  */
-export const deactivateCoHostInvite = async (
+export const getCoHostInviteDetails = async (
   eventId: string,
   authToken: string
 ): Promise<{ status: boolean; message: string; data: any }> => {
   try {
-    console.log(`Deactivating co-host invite for event: ${eventId}`);
+    console.log(`Getting co-host invite details for event: ${eventId}`);
 
-    const response = await axios.delete(
+    const response = await axios.get(
       `${API_BASE_URL}/event/${eventId}/cohost-invite`,
       {
         headers: {
@@ -136,10 +131,39 @@ export const deactivateCoHostInvite = async (
       }
     );
 
-    console.log('Co-host invite deactivated:', response.data);
+    console.log('Co-host invite details:', response.data);
     return response.data;
   } catch (error) {
-    console.error(`Error deactivating co-host invite for event ${eventId}:`, error);
+    console.error(`Error getting co-host invite details for event ${eventId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Revoke co-host invite
+ */
+export const revokeCoHostInvite = async (
+  eventId: string,
+  invitationId: string,
+  authToken: string
+): Promise<{ status: boolean; message: string; data: any }> => {
+  try {
+    console.log(`Revoking co-host invite ${invitationId} for event: ${eventId}`);
+
+    const response = await axios.delete(
+      `${API_BASE_URL}/event/${eventId}/cohost-invite/${invitationId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+        timeout: 10000
+      }
+    );
+
+    console.log('Co-host invite revoked:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error(`Error revoking co-host invite for event ${eventId}:`, error);
     throw error;
   }
 };
@@ -212,12 +236,12 @@ export const getEventCoHosts = async (
 };
 
 /**
- * Manage co-host (approve/reject/remove)
+ * Manage co-host (remove, block, unblock)
  */
 export const manageCoHost = async (
   eventId: string,
   userId: string,
-  action: 'approve' | 'block' | 'remove' | 'unblock',
+  action: 'remove' | 'block' | 'unblock',
   authToken: string
 ): Promise<{ status: boolean; message: string; data: any }> => {
   try {
@@ -252,76 +276,4 @@ export const manageCoHost = async (
 
     throw error;
   }
-};
-
-/**
- * Update co-host permissions
- */
-export const updateCoHostPermissions = async (
-  eventId: string,
-  userId: string,
-  permissions: {
-    manage_content?: boolean;
-    manage_guests?: boolean;
-    manage_settings?: boolean;
-    approve_content?: boolean;
-  },
-  authToken: string
-): Promise<{ status: boolean; message: string; data: any }> => {
-  try {
-    console.log(`Updating co-host permissions for event ${eventId}, user ${userId}`, permissions);
-
-    const response = await axios.patch(
-      `${API_BASE_URL}/event/${eventId}/cohosts/${userId}/permissions`,
-      {
-        permissions
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-        timeout: 10000
-      }
-    );
-
-    console.log('Co-host permissions updated:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error(`Error updating co-host permissions for event ${eventId}:`, error);
-    throw error;
-  }
-};
-
-/**
- * Get shareable co-host invite link
- */
-export const getCoHostInviteLink = (token: string, baseUrl?: string): string => {
-  const base = baseUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://app.example.com');
-  return `${base}/event/join-cohost/${token}`;
-};
-
-/**
- * Check if co-host invite is valid
- */
-export const validateCoHostInvite = (invite: CoHostInvite | null): {
-  isValid: boolean;
-  reason?: string;
-} => {
-  if (!invite) {
-    return { isValid: false, reason: 'No invite found' };
-  }
-
-  if (!invite.invite_link) {
-    return { isValid: false, reason: 'Invite has been deactivated' };
-  }
-
-  if (invite.is_expired) {
-    return { isValid: false, reason: 'Invite has expired' };
-  }
-
-  if (invite.is_max_used) {
-    return { isValid: false, reason: 'Invite usage limit reached' };
-  }
-
-  return { isValid: true };
 };

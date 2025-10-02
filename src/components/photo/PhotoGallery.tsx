@@ -1,4 +1,4 @@
-// Enhanced Gallery component with proper quality management
+// components/photo/PhotoGallery.tsx - UPDATED with bulk operations
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
@@ -17,20 +17,20 @@ import {
   useDeleteMedia,
   useGalleryUtils
 } from '@/hooks/useMediaQueries';
-import { useUploadStatusMonitor } from '@/hooks/useUploadStatusMonitor';
-import { StatusTabs } from './StatusTabs';
-import { EmptyState } from './EmptyState';
-import PhotoUploadDialog from './PhotoUploadDialog';
+import { StatusTabs } from '../album/StatusTabs';
+import { EmptyState } from '../album/EmptyState';
+import PhotoUploadDialog from '../album/PhotoUploadDialog';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
 import { OptimizedPhotoGrid } from './PhotoGrid';
-import { useSimpleWebSocket } from '@/hooks/useWebSocket';
-import { AdminNotificationBadge } from './AdminNotificationBadge';
-import { useUploadProgress } from '@/hooks/useUploadProgress';
+import { UploadProgressPanel } from '../album/UploadProgressPanel';
+import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
+import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
 }
+
 export default function OptimizedPhotoGallery({
   eventId,
   albumId,
@@ -52,19 +52,13 @@ export default function OptimizedPhotoGallery({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
 
-
-  // Upload tracking
-  const [uploadedMediaIds, setUploadedMediaIds] = useState<string[]>([]);
-
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // WebSocket connection
-  const webSocket = useSimpleWebSocket(eventId, shareToken, 'admin');
-
-  // 🚀 QUALITY MANAGEMENT: Use thumbnail for grid, full for viewer
-  const gridQuality = 'thumbnail'; // Fast loading for grid
+  // WebSocket connection for admin features
+  const webSocket = useEventWebSocket(eventId, { userType: 'admin' });
+  const gridQuality = 'thumbnail';
 
   // Data fetching hooks with thumbnail quality for grid
   const {
@@ -75,7 +69,7 @@ export default function OptimizedPhotoGallery({
   } = useEventMedia(eventId, {
     status: activeTab,
     limit: 100,
-    quality: gridQuality, // 🚀 Use thumbnail for grid
+    quality: gridQuality,
     enabled: !useInfiniteScroll
   });
 
@@ -90,7 +84,7 @@ export default function OptimizedPhotoGallery({
   } = useInfiniteEventMediaFlat(eventId, {
     status: activeTab,
     limit: 20,
-    quality: gridQuality, // 🚀 Use thumbnail for grid
+    quality: gridQuality,
     enabled: useInfiniteScroll
   });
 
@@ -115,62 +109,56 @@ export default function OptimizedPhotoGallery({
     refetch: refetchCounts
   } = useEventMediaCounts(eventId, userPermissions.moderate);
 
-  // Upload status monitoring
+  // WebSocket-based upload progress monitoring
   const {
-    statuses: uploadStatuses,
-    summary: uploadSummary,
-    isMonitoring
-  } = useUploadStatusMonitor(uploadedMediaIds, eventId, {
-    onComplete: (mediaId, status) => {
-      console.log('✅ Upload completed:', mediaId, status.filename);
-      setUploadedMediaIds(prev => prev.filter(id => id !== mediaId));
+    uploadProgress,
+    isMonitoring,
+    summary,
+    startMonitoring,
+    stopMonitoring,
+    clearAll,
+    isConnected: wsConnected,
+    isAuthenticated: wsAuthenticated
+  } = useWebSocketUploadProgress(eventId, {
+    onComplete: (mediaId, data) => {
+      console.log('Upload completed:', mediaId, data);
       refetchPhotos();
       refetchCounts();
     },
-    onFailed: (mediaId, status) => {
-      console.log('❌ Upload failed:', mediaId, status.filename);
-      setUploadedMediaIds(prev => prev.filter(id => id !== mediaId));
-      refetchPhotos();
-    },
-    enabled: uploadedMediaIds.length > 0
-  });
-
-  const uploadProgress = useUploadProgress(webSocket, eventId, {
-    onComplete: (mediaId) => {
-      console.log('✅ Upload completed:', mediaId);
-      refetchPhotos();
-      refetchCounts();
-    },
-    onFailed: (mediaId, error) => {
-      console.log('❌ Upload failed:', mediaId, error);
+    onFailed: (mediaId, data) => {
+      console.log('Upload failed:', mediaId, data);
       refetchPhotos();
     },
     showToasts: true
   });
 
-  // Mutations
+  // UPDATED: Use bulk operations mutation
   const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
     onSuccess: (result) => {
       const { data } = result;
       setUploadDialogOpen(false);
 
-      // Clear file inputs
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
 
-      // Start monitoring uploads with the new system
       if (data?.uploads && Array.isArray(data.uploads)) {
-        const validUploads = data.uploads.filter((upload: any) =>
-          upload.id && upload.status !== 'failed'
-        );
+        const successfulUploads = data.uploads.filter((upload: any) => upload.status !== 'failed');
 
-        if (validUploads.length > 0) {
-          const mediaIds = validUploads.map((upload: any) => upload.id);
-          const filenames = validUploads.map((upload: any) => upload.filename || 'Unknown');
+        if (successfulUploads.length > 0) {
+          const mediaIds = successfulUploads.map((upload: any) => upload.id);
+          const filenames = successfulUploads.map((upload: any) => upload.filename || 'Unknown');
 
-          // Start monitoring with the new progress system
-          uploadProgress.startMonitoring(mediaIds, filenames);
-          console.log('📊 Started monitoring uploads:', mediaIds);
+          startMonitoring(mediaIds, filenames);
+
+          toast.success(`${successfulUploads.length} file${successfulUploads.length > 1 ? 's' : ''} uploaded successfully!`, {
+            description: 'Processing has started - you\'ll see progress updates below',
+            duration: 4000
+          });
+        }
+
+        const failedUploads = data.uploads.filter((upload: any) => upload.status === 'failed');
+        if (failedUploads.length > 0) {
+          toast.error(`${failedUploads.length} file${failedUploads.length > 1 ? 's' : ''} failed to upload`);
         }
       }
 
@@ -179,94 +167,70 @@ export default function OptimizedPhotoGallery({
     },
     onError: (error) => {
       console.error('Upload failed:', error);
+      setUploadDialogOpen(false);
+      toast.error('Upload failed', {
+        description: error.message || 'Please try again',
+        duration: 5000
+      });
     }
   });
 
-
-
+  // UPDATED: Use bulk operations for status updates
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
   const { getCachedPhotoCount } = useGalleryUtils(eventId);
 
+  // Progress panel handlers
+  const handleRemoveProgressItem = useCallback((mediaId: string) => {
+    stopMonitoring([mediaId]);
+  }, [stopMonitoring]);
 
-  // Upload Progress Indicator
-  const UploadProgressIndicator = memo(() => {
-    // Use the new progress hook instead of the old monitoring system
-    const uploadProgress = useUploadProgress(webSocket, eventId, {
-      onComplete: (mediaId) => {
-        console.log('✅ Upload completed:', mediaId);
-        refetchPhotos();
-        refetchCounts();
-      },
-      onFailed: (mediaId, error) => {
-        console.log('❌ Upload failed:', mediaId, error);
-        refetchPhotos();
-      },
-      showToasts: true
-    });
+  const handleClearAll = useCallback(() => {
+    clearAll();
+  }, [clearAll]);
 
-    if (!uploadProgress.isMonitoring || uploadProgress.summary.total === 0) {
-      return null;
+  const handleRetryUpload = useCallback((mediaId: string) => {
+    console.log('Retry upload not implemented yet:', mediaId);
+    toast.info('Retry feature will be available when queue management is implemented');
+  }, []);
+
+  const handleCancelUpload = useCallback((mediaId: string) => {
+    console.log('Cancel upload not implemented yet:', mediaId);
+    toast.info('Cancel feature will be available when queue management is implemented');
+  }, []);
+
+  const handlePauseResumeUpload = useCallback((mediaId: string, action: 'pause' | 'resume') => {
+    console.log(`${action} upload not implemented yet:`, mediaId);
+    toast.info(`${action} feature will be available when queue management is implemented`);
+  }, []);
+
+  // WebSocket connection status indicator
+  const ConnectionStatus = memo(() => {
+    if (!wsConnected) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-red-600">
+          <WifiOffIcon className="h-3 w-3" />
+          <span>Disconnected</span>
+        </div>
+      );
     }
 
-    const { total, completed, processing, failed, overallProgress } = uploadProgress.summary;
-    const hasActiveUploads = processing > 0;
+    if (!wsAuthenticated) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-yellow-600">
+          <WifiIcon className="h-3 w-3" />
+          <span>Connecting...</span>
+        </div>
+      );
+    }
 
     return (
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {hasActiveUploads ? (
-              <div className="animate-spin">
-                <UploadIcon className="h-4 w-4 text-blue-600" />
-              </div>
-            ) : (
-              <UploadIcon className="h-4 w-4 text-blue-600" />
-            )}
-            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-              {hasActiveUploads ? 'Processing uploads' : 'Uploads processed'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-blue-600 dark:text-blue-400">
-              {completed + failed}/{total}
-            </span>
-            {!hasActiveUploads && (
-              <button
-                onClick={() => uploadProgress.clearAll()}
-                className="text-xs text-blue-500 hover:text-blue-700"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
-
-        <Progress value={overallProgress} className="h-2" />
-
-        <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
-          <span>{processing} processing</span>
-          <span>{completed} completed</span>
-          {failed > 0 && <span className="text-red-600">{failed} failed</span>}
-        </div>
-
-        {/* Show individual file progress if there are active uploads */}
-        {hasActiveUploads && Object.values(uploadProgress.uploadProgress).length > 0 && (
-          <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-            {Object.values(uploadProgress.uploadProgress)
-              .filter(progress => progress.status === 'processing' || progress.status === 'uploading')
-              .map(progress => (
-                <div key={progress.mediaId} className="flex items-center gap-2 text-xs">
-                  <span className="flex-1 truncate">{progress.filename}</span>
-                  <span className="text-blue-600">{progress.percentage}%</span>
-                </div>
-              ))}
-          </div>
-        )}
+      <div className="flex items-center gap-2 text-xs text-green-600">
+        <WifiIcon className="h-3 w-3" />
+        <span>Connected</span>
       </div>
     );
   });
-
 
   // Memoized computed values
   const canUserUpload = useMemo(() =>
@@ -297,12 +261,32 @@ export default function OptimizedPhotoGallery({
     setUseInfiniteScroll(false);
   }, [activeTab]);
 
-  const handleStatusUpdate = useCallback((photoId: string, status: string, reason?: string) => {
+  // UPDATED: Use bulk operations for status updates
+  const handleStatusUpdate = useCallback((photoId: string | string[], status: string, reason?: string) => {
+    console.log('Status update requested:', { photoId, status, reason });
+
     updateStatusMutation.mutate({
       mediaId: photoId,
-      status: status as 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved',
+      status: status as 'approved' | 'pending' | 'rejected' | 'hidden',
       reason
     });
+  }, [updateStatusMutation]);
+
+  // NEW: Bulk status update handler
+  const handleBulkStatusUpdate = useCallback((photoIds: string[], status: string, reason?: string) => {
+    console.log('Bulk status update requested:', { count: photoIds.length, status, reason });
+
+    if (photoIds.length === 0) {
+      toast.error('No photos selected for bulk update');
+      return;
+    }
+
+    // Use the bulk-specific method
+    updateStatusMutation.updateMultiple(
+      photoIds,
+      status as 'approved' | 'pending' | 'rejected' | 'hidden',
+      reason
+    );
   }, [updateStatusMutation]);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -335,19 +319,14 @@ export default function OptimizedPhotoGallery({
       return;
     }
 
-    // Show immediate feedback
-    const filenames = validFiles.map(f => f.name);
     toast.success(`Starting upload of ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}...`);
-
     uploadMutation.mutate(validFiles);
   }, [canUserUpload, uploadMutation]);
 
-  // 🚀 ENHANCED: Photo viewer with full quality loading
   const openPhotoViewer = useCallback((photo: Photo, index: number) => {
-    // Don't open viewer for uploading photos
     if (photo.status === 'uploading' || photo.isTemporary) return;
 
-    console.log('🔍 Opening photo viewer with full quality for:', photo.id);
+    console.log('Opening photo viewer with full quality for:', photo.id);
     setSelectedPhoto(photo);
     setSelectedPhotoIndex(index);
     setPhotoViewerOpen(true);
@@ -369,7 +348,7 @@ export default function OptimizedPhotoGallery({
       newIndex = selectedPhotoIndex > 0 ? selectedPhotoIndex - 1 : photos.length - 1;
     }
 
-    console.log(`🔍 Navigating to photo ${newIndex + 1}/${photos.length}`);
+    console.log(`Navigating to photo ${newIndex + 1}/${photos.length}`);
     setSelectedPhotoIndex(newIndex);
     setSelectedPhoto(photos[newIndex]);
   }, [selectedPhotoIndex, photos]);
@@ -403,33 +382,25 @@ export default function OptimizedPhotoGallery({
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleManualRefresh = useCallback(() => {
-    console.log('🔄 Manual refresh triggered');
+    console.log('Manual refresh triggered');
     refetchPhotos();
     refetchCounts();
     toast.info('Refreshing data...');
   }, [refetchPhotos, refetchCounts]);
 
-  // WebSocket error handling
+  // WebSocket connection status effects
   useEffect(() => {
-    if (webSocket.connectionError) {
-      console.error('WebSocket connection error:', webSocket.connectionError);
-      if (process.env.NODE_ENV === 'development') {
-        toast.error(`Connection failed: ${webSocket.connectionError}`, {
-          description: 'Real-time updates may not work',
-          duration: 5000
-        });
-      }
+    if (wsConnected && wsAuthenticated) {
+      console.log('WebSocket connected and authenticated for upload progress');
     }
-  }, [webSocket.connectionError]);
+  }, [wsConnected, wsAuthenticated]);
 
+  // Cleanup bulk operations on unmount
   useEffect(() => {
-    if (webSocket.isAuthenticated && webSocket.user) {
-      console.log('✅ Admin WebSocket authenticated:', webSocket.user);
-      if (process.env.NODE_ENV === 'development') {
-        toast.success(`Connected as ${webSocket.user.name}`, { duration: 2000 });
-      }
-    }
-  }, [webSocket.isAuthenticated, webSocket.user]);
+    return () => {
+      updateStatusMutation.cleanup?.();
+    };
+  }, [updateStatusMutation]);
 
   // Error handling
   if (photosError) {
@@ -467,13 +438,6 @@ export default function OptimizedPhotoGallery({
             userPermissions={userPermissions}
           />
 
-          {/* {userPermissions.moderate && (
-            <AdminNotificationBadge
-              eventId={eventId}
-              onNavigateToPending={handleNavigateToPending}
-              className="ml-2"
-            />
-          )} */}
           {useInfiniteScroll && (
             <div className="text-xs text-gray-500">
               Infinite scroll ({photos.length} loaded)
@@ -482,23 +446,24 @@ export default function OptimizedPhotoGallery({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* {process.env.NODE_ENV === 'development' && (
+          {process.env.NODE_ENV === 'development' && (
             <>
-              {webSocket.isAuthenticated && webSocket.user && (
-                <Badge variant="outline" className="text-xs">
-                  {webSocket.user.type}: {webSocket.user.name}
-                </Badge>
-              )}
+              <ConnectionStatus />
               <Button
                 onClick={handleManualRefresh}
                 variant="outline"
                 size="sm"
                 className="text-xs"
               >
-                🔄 Refresh
+                Refresh
               </Button>
+              {updateStatusMutation.isPending && (
+                <Badge variant="secondary" className="text-xs">
+                  Processing {updateStatusMutation.queueLength || 0} operations
+                </Badge>
+              )}
             </>
-          )} */}
+          )}
 
           {canUserUpload && (
             <PhotoUploadDialog
@@ -514,14 +479,23 @@ export default function OptimizedPhotoGallery({
         </div>
       </div>
 
-      {/* Upload progress indicator */}
-      <UploadProgressIndicator />
+      <UploadProgressPanel
+        uploadProgress={uploadProgress}
+        isMonitoring={isMonitoring}
+        summary={summary}
+        onClearAll={handleClearAll}
+        onRemoveItem={handleRemoveProgressItem}
+        onRetryItem={handleRetryUpload}
+        onCancelItem={handleCancelUpload}
+        onPauseResumeItem={handlePauseResumeUpload}
+        className="transition-all duration-300"
+      />
 
       {(updateStatusMutation.isPending || uploadMutation.isPending) && (
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-blue-700 dark:text-blue-300">
-            {uploadMutation.isPending ? 'Starting upload...' : 'Updating status...'}
+            {uploadMutation.isPending ? 'Starting upload...' : 'Processing status updates...'}
           </span>
         </div>
       )}
@@ -547,6 +521,7 @@ export default function OptimizedPhotoGallery({
             userPermissions={userPermissions}
             currentTab={activeTab}
             onStatusUpdate={handleStatusUpdate}
+            onBulkStatusUpdate={handleBulkStatusUpdate} // NEW: Pass bulk handler
             onDownload={handleDownload}
             onDelete={handleDelete}
           />
@@ -563,7 +538,6 @@ export default function OptimizedPhotoGallery({
             </div>
           )}
 
-          {/* 🚀 ENHANCED: Photo viewer with full quality support */}
           {photoViewerOpen && selectedPhoto && (
             <FullscreenPhotoViewer
               selectedPhoto={selectedPhoto}
@@ -574,7 +548,6 @@ export default function OptimizedPhotoGallery({
               onPrev={() => navigatePhoto('prev')}
               onNext={() => navigatePhoto('next')}
               setPhotoInfoOpen={(open) => {
-                // Handle photo info dialog
                 console.log('Photo info:', open);
               }}
               deletePhoto={handleDelete}

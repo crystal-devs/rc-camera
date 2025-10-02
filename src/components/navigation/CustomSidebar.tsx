@@ -27,7 +27,7 @@ const getNavItems = (selectedEventId: string | null) => {
             icon: <HomeIcon size={20} />,
             label: 'Home',
             href: `${baseRoute}`,
-            requiresEvent: false,
+            requiresEvent: true,
         },
         {
             icon: <ImageIcon size={20} />,
@@ -109,8 +109,8 @@ export function CustomSidebar() {
                     `}
                                     >
                                         <div className={`transition-colors ${isActive
-                                                ? 'text-primary-foreground'
-                                                : 'text-foreground'
+                                            ? 'text-primary-foreground'
+                                            : 'text-foreground'
                                             }`}>
                                             {item.icon}
                                         </div>
@@ -145,8 +145,8 @@ export function CustomSidebar() {
                     `}
                                     >
                                         <div className={`transition-colors ${isActive
-                                                ? 'text-primary-foreground'
-                                                : 'text-accent-foreground'
+                                            ? 'text-primary-foreground'
+                                            : 'text-accent-foreground'
                                             }`}>
                                             {item.icon}
                                         </div>
