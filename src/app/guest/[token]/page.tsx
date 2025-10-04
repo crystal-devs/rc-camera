@@ -1,16 +1,16 @@
-// app/guest/[token]/page.tsx - FIXED VERSION (infinite re-render resolved)
+// app/guest/[token]/page.tsx - UPDATED with Guest Claiming
 'use client';
 
 import React, { useState, useCallback, use, useEffect, memo, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WifiIcon, WifiOffIcon, Camera, X, Loader2, Plus, Upload } from 'lucide-react';
+import { WifiIcon, WifiOffIcon, Camera, X, Loader2, Plus, Upload, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TransformedPhoto } from '@/types/events';
 import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
-import { notFound } from 'next/navigation';
+import { notFound, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
@@ -20,6 +20,7 @@ import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
 import { NotificationBanner } from '@/components/guest/NotificationBanner';
+import { useGuestClaim } from '@/hooks/useGuestClaim';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,6 +43,9 @@ interface GuestPageProps {
 }
 
 function GuestPageContent({ shareToken }: GuestPageProps) {
+  const router = useRouter();
+
+
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<TransformedPhoto | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
@@ -78,7 +82,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
   // FIXED: Stable callback for viewport state change
   const handleViewportStateChange = useCallback((viewportInfo: any) => {
-    // This callback is now stable and won't cause re-renders
     console.log('📐 Viewport changed:', viewportInfo);
   }, []);
 
@@ -95,7 +98,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     refresh,
     webSocketHandlers,
     cleanup,
-    // Buffering functionality
     bufferedChanges,
     bufferedCount,
     applyBufferedChanges,
@@ -105,19 +107,62 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     shareToken,
     auth,
     limit: 20,
-    onViewportStateChange: handleViewportStateChange // FIXED: Use stable callback
+    onViewportStateChange: handleViewportStateChange
   });
+
+  // Guest claim hook - auto-claims on mount if authenticated
+  const {
+    summary: claimSummary,
+    isChecking: isCheckingClaim,
+    isClaiming,
+    hasClaimableContent,
+    claimResult,
+    claimContent,
+  } = useGuestClaim({
+    eventId: eventDetails?._id || '',
+    authToken: auth,
+    enabled: !!eventDetails?._id && !!auth,
+    autoClaimOnMount: true, // Auto-claim on mount
+  });
+
+  // Refresh photos after successful claim
+  useEffect(() => {
+    if (claimResult && claimResult.mediaMigrated > 0) {
+      // Refresh the photo gallery to show updated attribution
+      setTimeout(() => {
+        refresh();
+      }, 1000);
+    }
+  }, [claimResult, refresh]);
 
   // Fetch event details
   const fetchEventDetails = async (shareToken: string) => {
     try {
       const response = await getTokenInfo(shareToken, auth);
+
       if (response && response.status === true && response.data) {
         setEventDetails(response.data.event);
         setAccessDetails(response.data.access);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching event details:', err);
+
+      // 👇 THIS IS THE NEW REDIRECT LOGIC
+      if (err?.status === 401 || err?.response?.status === 401) {
+        toast.error('Authentication required. Please sign in to access this event.');
+
+        // Store the current URL for redirect after login
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('redirectAfterLogin', `/guest/${shareToken}`);
+        }
+
+        // Redirect to login
+        router.push('/login');
+        return;
+      }
+      // 👆 END OF NEW REDIRECT LOGIC
+
+      toast.error('Failed to load event details');
     }
   };
 
@@ -167,12 +212,10 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     setShowNotificationBanner(bufferedCount > 0);
   }, [bufferedCount]);
 
-  // FIXED: Handle viewport changes from PinterestPhotoGrid
   const handleViewportChange = useCallback((viewportInfo: any) => {
     updateViewportInfo(viewportInfo);
   }, [updateViewportInfo]);
 
-  // Apply buffered changes and show success feedback
   const handleApplyBufferedChanges = useCallback(() => {
     applyBufferedChanges();
     toast.success(`Applied ${bufferedCount} new photos!`, {
@@ -181,7 +224,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     });
   }, [applyBufferedChanges, bufferedCount]);
 
-  // Dismiss notification banner
   const handleDismissNotification = useCallback(() => {
     clearBufferedChanges();
     setShowNotificationBanner(false);
@@ -191,7 +233,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     });
   }, [clearBufferedChanges]);
 
-  // FIXED: Stable reference for bufferedChanges to prevent unnecessary re-renders
   const bufferedChangesRef = useRef(bufferedChanges);
   bufferedChangesRef.current = bufferedChanges;
 
@@ -201,11 +242,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     const handleMediaApproved = (payload: any) => {
       if (!shouldProcessEvent('media_approved', payload)) return;
-
       console.log('✅ Processing media approved:', payload.mediaId);
       webSocketHandlers.handleMediaApproved(payload);
-
-      // Only show toast if not buffering (immediate insertion)
       if (!bufferedChangesRef.current.some((change: any) => change.photo.id === payload.mediaId)) {
         toast.success('New photos approved!', {
           duration: 3000,
@@ -216,15 +254,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     const handleMediaStatusUpdated = (payload: any) => {
       if (!shouldProcessEvent('media_status_updated', payload)) return;
-
       console.log('📝 Processing status update:', payload.mediaId, payload.previousStatus, '→', payload.newStatus);
       webSocketHandlers.handleMediaStatusUpdated(payload);
-
-      // Smart notifications based on status change
       const items = Array.isArray(payload) ? payload : [payload];
       items.forEach(item => {
         if (item.newStatus === 'approved' && item.previousStatus !== 'approved') {
-          // Only show approval toast if we haven't already shown it via media_approved event
           const approvalSignature = createEventSignature('media_approved', item);
           if (!processedEventsRef.current.has(approvalSignature) &&
             !bufferedChangesRef.current.some((change: any) => change.photo.id === item.mediaId)) {
@@ -244,11 +278,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     const handleNewMediaUploaded = (payload: any) => {
       if (!shouldProcessEvent('new_media_uploaded', payload)) return;
-
       console.log('📸 Processing new media upload');
       webSocketHandlers.handleNewMediaUploaded(payload);
-
-      // Only show toast if not buffering (immediate insertion)
       if (!bufferedChangesRef.current.some((change: any) => change.reason.includes('upload'))) {
         toast.success('New photos added!', {
           duration: 3000,
@@ -259,10 +290,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     const handleMediaRemoved = (payload: any) => {
       if (!shouldProcessEvent('media_removed', payload)) return;
-
       console.log('🗑️ Processing media removal');
       webSocketHandlers.handleMediaRemoved(payload);
-
       const count = payload.mediaIds?.length || 1;
       toast.info(`${count} photo${count > 1 ? 's' : ''} removed`, {
         duration: 3000,
@@ -272,17 +301,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     const handleMediaProcessingComplete = (payload: any) => {
       if (!shouldProcessEvent('media_processing_complete', payload)) return;
-
       console.log('⚡ Processing completion event');
       webSocketHandlers.handleMediaProcessingComplete(payload);
-
       toast.success('High-quality version ready!', {
         duration: 2000,
         position: 'bottom-center'
       });
     };
 
-    // Set up event listeners
     webSocket.socket.on('media_approved', handleMediaApproved);
     webSocket.socket.on('media_status_updated', handleMediaStatusUpdated);
     webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
@@ -441,6 +467,15 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     );
   });
 
+  // Manual claim button handler
+  const handleManualClaim = useCallback(async () => {
+    try {
+      await claimContent();
+    } catch (error) {
+      console.error('Manual claim failed:', error);
+    }
+  }, [claimContent]);
+
   // Content rendering
   const renderContent = useCallback(() => {
     if (isInitialLoading) {
@@ -451,6 +486,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           {webSocket.isAuthenticated && (
             <p className="text-sm text-green-600 mt-2">
               ✓ Real-time updates enabled
+            </p>
+          )}
+          {isCheckingClaim && auth && (
+            <p className="text-sm text-blue-600 mt-2">
+              Checking for previous uploads...
             </p>
           )}
         </div>
@@ -487,7 +527,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               onClick={() => setShowUploadDialog(true)}
               className="bg-blue-500 hover:bg-blue-600 text-white"
             >
-              <Upload className="w-4 w-4 mr-2" />
+              <Upload className="w-4 h-4 mr-2" />
               Upload First Photo
             </Button>
           )}
@@ -523,15 +563,16 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     refresh,
     webSocket.isAuthenticated,
     eventDetails,
-    handleViewportChange
+    handleViewportChange,
+    isCheckingClaim,
+    auth
   ]);
 
   if (!shareToken) {
     notFound();
   }
 
-  console.log(eventDetails, 'eventDetailseventDetails')
-
+  console.log('hasClaimableContent', hasClaimableContent)
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
       {/* Notification Banner for buffered changes */}
@@ -545,6 +586,37 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         actionLabel="View Now"
         position="top"
       />
+
+      {/* Claiming Status Banner - Shows when claiming is in progress */}
+      {isClaiming && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="bg-blue-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="font-medium">Claiming your previous uploads...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Claim Button - Shows in header when there's claimable content */}
+      {auth && hasClaimableContent && !isClaiming && !claimResult && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="bg-amber-50 border border-amber-200 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-900">
+                You have {claimSummary?.totalMedia} unclaimed photo{claimSummary?.totalMedia !== 1 ? 's' : ''} from previous uploads
+              </p>
+            </div>
+            <Button
+              onClick={handleManualClaim}
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-1" />
+              Claim Now
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Dynamic Event Cover */}
       <DynamicEventCover
