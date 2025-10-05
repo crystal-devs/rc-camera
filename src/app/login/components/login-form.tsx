@@ -76,44 +76,51 @@ export function LoginForm({
     let shouldDelayRedirect = false;
 
     // Handle invite context if present (HIGHEST PRIORITY)
-    if (inviteContext && inviteContext.type === 'cohost') {
-      try {
-        console.log('🔄 Attempting to join as co-host with token:', inviteContext.token);
+    if (inviteContext) {
+      if (inviteContext.type === 'cohost') {
+        try {
+          console.log('🔄 Attempting to join as co-host with token:', inviteContext.token);
 
-        // Auto-join as co-host
-        const cohostResponse = await joinAsCoHost(inviteContext.token, apiResult.token);
+          // Auto-join as co-host
+          const cohostResponse = await joinAsCoHost(inviteContext.token, apiResult.token);
 
-        console.log('📊 Co-host API response:', cohostResponse);
+          console.log('📊 Co-host API response:', cohostResponse);
 
-        // 🔥 SIMPLIFIED: Both success and "already co-host" return event_id now
-        if (cohostResponse.status) {
-          const eventId = cohostResponse.data?.event_id;
-          console.log('🎯 Got event ID from response:', eventId);
+          if (cohostResponse.status) {
+            const eventId = cohostResponse.data?.event_id;
+            console.log('🎯 Got event ID from response:', eventId);
 
-          if (eventId) {
-            finalRedirectUrl = `/events/${eventId}`;
-            console.log('✅ Setting redirect URL to:', finalRedirectUrl);
+            if (eventId) {
+              finalRedirectUrl = `/events/${eventId}`;
+              console.log('✅ Setting redirect URL to:', finalRedirectUrl);
 
-            if (cohostResponse.message.includes('already a co-host')) {
-              toast.info('You are already a co-host for this event');
+              if (cohostResponse.message.includes('already a co-host')) {
+                toast.info('You are already a co-host for this event');
+              } else {
+                toast.success(`Successfully joined as co-host!`);
+              }
             } else {
-              toast.success(`Successfully joined as co-host!`);
+              console.log('⚠️ No event ID found, using fallback');
+              finalRedirectUrl = '/events';
+              toast.success('Successfully joined as co-host!');
             }
+            shouldDelayRedirect = true;
           } else {
-            console.log('⚠️ No event ID found, using fallback');
+            console.log('❌ Co-host join failed:', cohostResponse.message);
+            toast.error(cohostResponse.message || 'Failed to join as co-host');
             finalRedirectUrl = '/events';
-            toast.success('Successfully joined as co-host!');
           }
-          shouldDelayRedirect = true;
-        } else {
-          console.log('❌ Co-host join failed:', cohostResponse.message);
-          toast.error(cohostResponse.message || 'Failed to join as co-host');
+        } catch (cohostError: any) {
+          console.error('💥 Auto co-host join error:', cohostError);
+          toast.error('Login successful, but there was an issue with the co-host invitation.');
           finalRedirectUrl = '/events';
         }
-      } catch (cohostError: any) {
-        console.error('💥 Auto co-host join error:', cohostError);
-        toast.error('Login successful, but there was an issue with the co-host invitation.');
-        finalRedirectUrl = '/events';
+      } else if (inviteContext.type === 'guest') {
+        // Guest invite - redirect to guest page (auto-claim will happen there)
+        finalRedirectUrl = `/guest/${inviteContext.token}`;
+        console.log('👤 Guest invite - redirecting to:', finalRedirectUrl);
+        toast.success('Welcome! Your previous uploads will be claimed automatically.');
+        shouldDelayRedirect = true;
       }
     } else {
       // No invite context - check for stored redirect (LOWER PRIORITY)
@@ -137,6 +144,9 @@ export function LoginForm({
       // Force navigation to ensure it works
       if (finalRedirectUrl.startsWith('/events/') && finalRedirectUrl !== '/events') {
         console.log('🎯 Using window.location.href for specific event page');
+        window.location.href = finalRedirectUrl;
+      } else if (finalRedirectUrl.startsWith('/guest/')) {
+        console.log('👤 Using window.location.href for guest page (for auto-claim)');
         window.location.href = finalRedirectUrl;
       } else {
         console.log('📍 Using router.push for general navigation');
@@ -280,6 +290,9 @@ export function LoginForm({
           <p>By signing in, you agree to join this event</p>
           {inviteContext.type === 'cohost' && (
             <p className="text-blue-600">Co-host access may require admin approval</p>
+          )}
+          {inviteContext.type === 'guest' && (
+            <p className="text-green-600">Your previous uploads will be claimed automatically</p>
           )}
         </div>
       )}

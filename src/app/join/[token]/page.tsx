@@ -6,7 +6,6 @@ import {
   Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Loader2, CheckCircle, AlertTriangle, Lock, ArrowRight, LogIn,
   Calendar, Users
@@ -71,23 +70,23 @@ export default function JoinPage() {
     try {
       setLoading(true);
       setError('');
-      
+
       console.log('🔍 Starting token validation');
       console.log('🔑 Auth token available:', {
         exists: !!auth,
         length: auth?.length || 0,
         preview: auth ? auth.substring(0, 20) + '...' : 'none'
       });
-      
+
       // Pass auth token if available (null/undefined if not authenticated)
       const response = await getTokenInfo(token, auth);
-      
+
       console.log('📋 Token validation response:', {
         hasResponse: !!response,
         hasData: !!response?.data,
         dataKeys: response?.data ? Object.keys(response.data) : []
       });
-      
+
       if (!response.data?.event) {
         throw new Error('Invalid response format');
       }
@@ -113,7 +112,7 @@ export default function JoinPage() {
 
       // For all other cases, show the event preview or error on this page
       setLoading(false);
-      
+
       if (access.requiresAuth) {
         console.log('🔐 Authentication required - showing login prompt');
         setError('This event requires you to sign in first.');
@@ -128,17 +127,17 @@ export default function JoinPage() {
 
       // Show preview for events where user has access
       console.log('📄 Showing event preview');
-      
+
     } catch (e: any) {
       console.error('❌ Token validation error:', e);
       setLoading(false);
-      
+
       // Always show error on this page, don't redirect
       if (e.status === 401) {
         console.log('🔐 401 error - showing auth required message');
         setError('This event requires you to sign in first.');
       } else if (e.status === 403) {
-        console.log('🔒 403 error - showing access denied message'); 
+        console.log('🔒 403 error - showing access denied message');
         setError(e.message || 'You don\'t have permission to access this event.');
       } else if (e.status === 404) {
         console.log('🔍 404 error - showing not found message');
@@ -204,9 +203,9 @@ export default function JoinPage() {
       if (typeof window !== 'undefined') {
         console.log('🔍 Debugging auth token storage:');
         const authToken = localStorage.getItem('rc-token');
-        const accessToken = localStorage.getItem('accessToken'); 
+        const accessToken = localStorage.getItem('accessToken');
         const user = localStorage.getItem('user');
-        
+
         console.log('📦 Storage check:', {
           authToken: authToken ? `exists (${authToken.length} chars)` : 'missing',
           accessToken: accessToken ? `exists (${accessToken.length} chars)` : 'missing',
@@ -214,7 +213,7 @@ export default function JoinPage() {
           allKeys: Object.keys(localStorage)
         });
       }
-      
+
       validateToken();
     }
   }, [token]);
@@ -306,11 +305,11 @@ export default function JoinPage() {
                 You're invited!
               </h1>
               <p className="text-gray-600">
-                {access.role === 'owner' 
+                {access.role === 'owner'
                   ? 'Welcome back! This is your event.'
                   : access.role === 'co_host'
-                  ? 'Welcome back! You\'re a co-host of this event.'
-                  : 'You have access to this event.'
+                    ? 'Welcome back! You\'re a co-host of this event.'
+                    : 'You have access to this event.'
                 }
               </p>
             </div>
@@ -362,7 +361,7 @@ export default function JoinPage() {
                       </p>
                     </div>
                   </div>
-                  
+
                   {event.location?.name && (
                     <div className="text-center text-gray-600">
                       📍 {event.location.name}
@@ -391,7 +390,7 @@ export default function JoinPage() {
             {/* Footer */}
             <div className="text-center mt-8">
               <p className="text-sm text-gray-500">
-                {access.role === 'guest' 
+                {access.role === 'guest'
                   ? "Can't join right now? Your invitation will be waiting for you."
                   : "Thanks for being part of this event!"
                 }
