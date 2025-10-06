@@ -65,7 +65,7 @@ export const logout = () => {
     localStorage.removeItem("userData");
 }
 
-export const verifyUser = async (router: any) => {
+export const verifyUser = async (router?: any) => {
     try{
         await axios.get(VERIFY_USER_ROUTE, {
             headers: setHeader()

@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001/api/v1';
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1` || 'http://localhost:3001/api/v1';
 
 export interface PhotoWallItem {
   id: string;
@@ -52,7 +52,14 @@ export const getPhotoWallData = async (
     if (options.maxItems) params.append('maxItems', options.maxItems.toString());
 
     const endpoint = `${API_BASE_URL}/photo-wall/${shareToken}`;
-    const url = params.toString() ? `${endpoint}?${params}` : endpoint;
+
+    // const url = params.toString() ? `${endpoint}?${params}` : endpoint;
+
+    const url = `${endpoint}?${ params.toString() ?? params }`;
+
+    console.log(params.toString(), "troubler", params)
+
+    console.log(url, "is the trouble url")
 
     const response = await axios.get(url, { timeout: 15000 });
 
