@@ -46,7 +46,7 @@ export const StatusTabs = ({
             color === 'yellow' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-400' :
                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
             }`} />}
-          {label}
+          {label} 
           {mediaCounts[key] > 0 && (
             <span className={`ml-1 px-1.5 py-0.5 text-xs rounded-full ${color === 'green' ? 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400' :
               color === 'yellow' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-400' :
