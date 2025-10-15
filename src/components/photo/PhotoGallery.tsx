@@ -26,6 +26,7 @@ import { OptimizedPhotoGrid } from './PhotoGrid';
 import { UploadProgressPanel } from '../album/UploadProgressPanel';
 import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
+import { UploadProgressTab } from '../progress/upload-progress';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
@@ -445,6 +446,18 @@ export default function OptimizedPhotoGallery({
           )}
         </div>
 
+        <UploadProgressTab
+          uploadProgress={uploadProgress}
+          isMonitoring={isMonitoring}
+          summary={summary}
+          onClearAll={handleClearAll}
+          onRemoveItem={handleRemoveProgressItem}
+          onRetryItem={handleRetryUpload}
+          onCancelItem={handleCancelUpload}
+          onPauseResumeItem={handlePauseResumeUpload}
+          className="transition-all duration-300"
+        />
+
         <div className="flex items-center gap-2">
           {process.env.NODE_ENV === 'development' && (
             <>
@@ -455,7 +468,7 @@ export default function OptimizedPhotoGallery({
                 size="sm"
                 className="text-xs"
               >
-                Refresh
+                Refresh {/* Right now the refresh button is only for dev env, it will dissapear on prod */}
               </Button>
               {updateStatusMutation.isPending && (
                 <Badge variant="secondary" className="text-xs">
@@ -477,9 +490,9 @@ export default function OptimizedPhotoGallery({
             />
           )}
         </div>
-      </div>
+      </div> 
 
-      <UploadProgressPanel
+      {/* <UploadProgressPanel
         uploadProgress={uploadProgress}
         isMonitoring={isMonitoring}
         summary={summary}
@@ -489,7 +502,7 @@ export default function OptimizedPhotoGallery({
         onCancelItem={handleCancelUpload}
         onPauseResumeItem={handlePauseResumeUpload}
         className="transition-all duration-300"
-      />
+      /> */}
 
       {(updateStatusMutation.isPending || uploadMutation.isPending) && (
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
