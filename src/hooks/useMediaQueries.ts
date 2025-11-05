@@ -25,7 +25,7 @@ import { Photo } from '@/types/PhotoGallery.types';
 interface MediaFetchOptions {
   status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
   limit?: number;
-  quality?: 'small' | 'medium' | 'large' | 'original' | 'thumbnail' | 'display' | 'full';
+  quality?: 'small' | 'medium' | 'large' | 'original';
   enabled?: boolean;
 }
 
@@ -51,7 +51,7 @@ export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) 
       const mediaItems = await getEventMedia(eventId, token, {
         status,
         limit,
-        quality: quality as 'small' | 'medium' | 'large' | 'original' | 'thumbnail' | 'display' | 'full',
+        quality: quality as 'small' | 'medium' | 'large' | 'original',
         scrollType: 'pagination'
       });
 
@@ -104,7 +104,7 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
       const response = await getEventMediaWithPagination(eventId, token, {
         status,
         limit,
-        quality: quality as 'small' | 'medium' | 'large' | 'original' | 'thumbnail' | 'display' | 'full',
+        quality: quality as 'small' | 'medium' | 'large' | 'original',
         page: pageParam,
         scrollType: 'infinite'
       });

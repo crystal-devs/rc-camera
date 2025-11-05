@@ -15,7 +15,6 @@ import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
 import { FullscreenPhotoViewer } from '@/components/photo/FullscreenPhotoViewer';
-import { BulkDownloadButton } from './BulkDownloadButton';
 import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
@@ -101,13 +100,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     bufferedChanges,
     bufferedCount,
     applyBufferedChanges,
-    clearBufferedChanges,
-    updateViewportInfo
+    clearBufferedChanges
   } = useInfiniteMediaQuery({
     shareToken,
     auth,
-    limit: 20,
-    onViewportStateChange: handleViewportStateChange
+    limit: 20
   });
 
   // Guest claim hook - auto-claims on mount if authenticated
@@ -213,8 +210,9 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   }, [bufferedCount]);
 
   const handleViewportChange = useCallback((viewportInfo: any) => {
-    updateViewportInfo(viewportInfo);
-  }, [updateViewportInfo]);
+    // Viewport tracking is handled internally by the hook
+    console.log('Viewport changed:', viewportInfo);
+  }, []);
 
   const handleApplyBufferedChanges = useCallback(() => {
     applyBufferedChanges();
@@ -336,7 +334,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   useEffect(() => {
     if (!webSocket.socket) return;
     webSocket.socket.on('room_user_counts', handleRoomStats);
-    return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
+    return () => {
+      if (webSocket.socket) {
+        webSocket.socket.off('room_user_counts', handleRoomStats);
+      }
+    };
   }, [webSocket.socket, handleRoomStats]);
 
   // Cleanup on unmount
@@ -353,7 +355,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
-      setSelectedFiles(files);
+      setSelectedFiles(files as File[]);
     }
   };
 
@@ -506,7 +508,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               {error instanceof Error ? error.message : 'Failed to load photos'}
             </p>
             <button
-              onClick={refresh}
+              onClick={() => refresh()}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
             >
               Try Again
@@ -540,6 +542,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       );
     }
 
+    console.log(photos, '8qwerqweruioqweruiop')
     return (
       <PinterestPhotoGrid
         photos={photos}
@@ -768,6 +771,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             takenBy: Number((selectedPhoto as any).takenBy) || 0,
             imageUrl: (selectedPhoto as any).imageUrl ?? selectedPhoto.src ?? '',
             createdAt: new Date((selectedPhoto as any).createdAt || Date.now()),
+            approval: {
+              ...selectedPhoto.approval,
+              approved_by: selectedPhoto.approval?.approved_by || undefined,
+              approved_at: selectedPhoto.approval?.approved_at ? new Date(selectedPhoto.approval.approved_at) : undefined
+            }
           }}
           selectedPhotoIndex={selectedPhotoIndex}
           photos={photos.map(photo => ({
@@ -777,13 +785,15 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             takenBy: Number((photo as any).takenBy) || 0,
             imageUrl: (photo as any).imageUrl ?? photo.src ?? '',
             createdAt: new Date((photo as any).createdAt || Date.now()),
+            approval: {
+              ...photo.approval,
+              approved_by: photo.approval?.approved_by || undefined,
+              approved_at: photo.approval?.approved_at ? new Date(photo.approval.approved_at) : undefined
+            }
           }))}
           onClose={() => setPhotoViewerOpen(false)}
           onPrev={() => navigatePhoto('prev')}
           onNext={() => navigatePhoto('next')}
-          setPhotoInfoOpen={(open) => {
-            console.log('Photo info:', open);
-          }}
           downloadPhoto={() => {
             console.log('Downloading photo:', selectedPhoto);
           }}

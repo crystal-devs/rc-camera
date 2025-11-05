@@ -360,6 +360,7 @@ export const PinterestPhotoGrid: React.FC<{
     if (photos.length === 0 && (isLoadingMore || hasNextPage)) {
       return <Skeleton />;
     }
+    console.log(photos, 'photosphotosphotos')
 
     return (
       <div className="space-y-4 pt-10" style={getContainerStyles}>

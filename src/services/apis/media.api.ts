@@ -2,8 +2,18 @@
 
 import axios from 'axios';
 import { API_BASE_URL } from '@/lib/api-config';
-import { MediaFetchOptions, MediaResponse } from '@/types/events';
+import { MediaFetchOptions } from '@/types/events';
 import { Photo } from '@/types/PhotoGallery.types';
+
+// Local MediaResponse for this file
+export interface MediaResponse {
+  data: MediaItem[];
+  total?: number;
+  hasMore?: boolean;
+  nextCursor?: string;
+  pagination?: any;
+  other?: any;
+}
 
 // Enhanced media response type with progressive loading support
 export interface MediaItem {
@@ -27,8 +37,13 @@ export interface MediaItem {
     };
     processing?: {
         status: 'pending' | 'processing' | 'completed' | 'failed';
-        thumbnails_generated: boolean;
+        started_at?: string;
+        completed_at?: string;
+        processing_time_ms?: number;
+        thumbnails_generated?: boolean;
         variants_generated?: boolean;
+        variants_count?: number;
+        error_message?: string;
     };
     metadata?: {
         width?: number;
@@ -40,22 +55,6 @@ export interface MediaItem {
     created_at: string;
     created_by: number;
     updated_at: string;
-}
-
-export interface MediaApiResponse {
-    status: boolean;
-    code: number;
-    message: string;
-    data: MediaItem[];
-    pagination?: {
-        page: number;
-        limit: number;
-        totalCount: number;
-        totalPages: number;
-        hasNext: boolean;
-        hasPrev: boolean;
-    };
-    other?: any;
 }
 
 export interface MediaApiResponse {
@@ -86,7 +85,7 @@ export const getEventMediaWithPagination = async (
         includePending?: boolean;
         page?: number;
         limit?: number;
-        quality?: 'thumbnail' | 'display' | 'full';
+        quality?: 'small' | 'medium' | 'large' | 'original';
         since?: string;
         status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
         scrollType?: 'pagination' | 'infinite';
@@ -157,7 +156,7 @@ export const getEventMediaWithPagination = async (
                     }
                 };
             }
-            if (error.response?.status >= 500) {
+            if (error.response?.status && error.response.status >= 500) {
                 throw new Error('Server error. Please try again later.');
             }
         }
@@ -178,7 +177,7 @@ export const getEventMedia = async (
         includePending?: boolean;
         page?: number;
         limit?: number;
-        quality?: 'thumbnail' | 'display' | 'full';
+        quality?: 'small' | 'medium' | 'large' | 'original';
         since?: string;
         status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
         scrollType?: 'pagination' | 'infinite';
@@ -561,7 +560,7 @@ export const getEventMediaWithGuestToken = async (
                 throw new Error('Event not found or share link is invalid');
             }
 
-            if (error.response?.status >= 500) {
+            if (error.response?.status && error.response.status >= 500) {
                 throw new Error('Server error - please try again later');
             }
 
@@ -590,7 +589,7 @@ export const getAlbumMediaWithGuestToken = async (
     options: {
         page?: number;
         limit?: number;
-        quality?: 'thumbnail' | 'display' | 'full';
+        quality?: 'small' | 'medium' | 'large' | 'original';
     } = {}
 ): Promise<MediaItem[]> => {
     try {
@@ -1130,6 +1129,52 @@ async function uploadWithRetry(formData: FormData, authToken: string, maxRetries
 
 
 /**
+ * Get bulk upload URLs for multiple files
+ */
+export const getBulkUploadUrls = async (
+    eventId: string,
+    files: Array<{ fileName: string; fileType: string }>,
+    authToken: string
+): Promise<{
+    status: boolean;
+    message: string;
+    data: {
+        uploadUrls: Array<{
+            uploadUrl: string;
+            key: string;
+            fileName: string;
+            uploadId: string;
+            expiresIn: number;
+        }>;
+        batchSize: number;
+        expiresIn: number;
+        eventId: string;
+    };
+}> => {
+    try {
+        const response = await axios.post(`${API_BASE_URL}/media/upload-url`, {
+            eventId,
+            files
+        }, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 15000
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data;
+        }
+
+        throw new Error(response.data?.message || 'Failed to get bulk upload URLs');
+    } catch (error) {
+        console.error('Error getting bulk upload URLs:', error);
+        throw error;
+    }
+};
+
+/**
  * 🚀 API FUNCTION: Updated upload function
  */
 export const uploadMultipleMedia = async (
@@ -1233,7 +1278,7 @@ export const getAlbumMedia = async (
         includePending?: boolean;
         page?: number;
         limit?: number;
-        quality?: 'thumbnail' | 'display' | 'full';
+        quality?: 'small' | 'medium' | 'large' | 'original';
     } = {}
 ): Promise<MediaItem[]> => {
     try {
@@ -1345,14 +1390,13 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
 
         approval: {
             status: mediaItem.approval_status || mediaItem.approval?.status,
-            approved_at: mediaItem.approval?.approved_at ? new Date(mediaItem.approval.approved_at) : undefined,
+            approved_at: mediaItem.approval?.approved_at,
             approved_by: mediaItem.approval?.approved_by,
             rejection_reason: mediaItem.approval?.rejection_reason
         },
 
         processing: {
             status: mediaItem.processing_status || mediaItem.processing?.status,
-            thumbnails_generated: mediaItem.has_variants || mediaItem.processing?.thumbnails_generated,
             variants_generated: mediaItem.has_variants || mediaItem.processing?.variants_generated
         },
 
@@ -1360,10 +1404,7 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
 
         metadata: {
             width: mediaItem.dimensions?.width || mediaItem.metadata?.width || mediaItem.image_variants?.original?.width || 0,
-            height: mediaItem.dimensions?.height || mediaItem.metadata?.height || mediaItem.image_variants?.original?.height || 0,
-            fileName: mediaItem.original_filename || mediaItem.metadata?.file_name,
-            fileType: mediaItem.format || mediaItem.metadata?.file_type,
-            fileSize: mediaItem.size_mb || mediaItem.metadata?.file_size || 0
+            height: mediaItem.dimensions?.height || mediaItem.metadata?.height || mediaItem.image_variants?.original?.height || 0
         },
 
         stats: mediaItem.stats || {

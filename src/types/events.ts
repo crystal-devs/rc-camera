@@ -190,6 +190,7 @@ export interface TransformedPhoto {
   createdAt: string;
   albumId: string;
   eventId: string;
+  responsive_urls?: ApiPhoto['responsive_urls'];
 }
 
 export interface EventDetails {
@@ -241,5 +242,6 @@ export const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => ({
   approval: apiPhoto.approval,
   createdAt: apiPhoto.createdAt,
   albumId: apiPhoto.albumId,
-  eventId: apiPhoto.eventId
+  eventId: apiPhoto.eventId,
+  responsive_urls: apiPhoto.responsive_urls
 });

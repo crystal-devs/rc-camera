@@ -32,11 +32,11 @@ const nextConfig = {
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     formats: ['image/webp', 'image/avif'],
   },
-  api: {
-    bodyParser: {
-      sizeLimit: '100mb', // Allow up to 100 MB for API routes
-    },
-  },
+  // api: {
+  //   bodyParser: {
+  //     sizeLimit: '100mb', // Allow up to 100 MB for API routes
+  //   },
+  // },
   // typescript: {
   //   ignoreBuildErrors: true,
   // },

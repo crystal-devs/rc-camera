@@ -15,13 +15,13 @@ interface PinterestPhotoCardProps {
   onImageLoad?: (photoId: string, actualHeight: number) => void;
 }
 
-export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({ 
-  photo, 
-  index, 
-  baseWidth, 
+export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
+  photo,
+  index,
+  baseWidth,
   expectedHeight,
-  isLiked, 
-  onLike, 
+  isLiked,
+  onLike,
   onClick,
   onImageLoad
 }) => {
@@ -42,7 +42,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
 
   const handleImageLoad = useCallback(() => {
     setIsLoaded(true);
-    
+
     // Get actual rendered height and report back
     if (imageRef.current && onImageLoad) {
       const actualHeight = imageRef.current.offsetHeight;
@@ -83,7 +83,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
           <>
             {/* Loading placeholder with expected aspect ratio */}
             {!isLoaded && (
-              <div 
+              <div
                 className="w-full bg-gray-100 animate-pulse flex items-center justify-center"
                 style={{ height: expectedHeight }}
               >
@@ -94,7 +94,15 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
             {/* Actual Image - Regular img tag for natural aspect ratio */}
             <img
               ref={imageRef}
-              src={photo.imageUrl}
+              srcSet={
+                photo.responsive_urls
+                  ? `${photo.responsive_urls.thumbnail} 400w,
+                    ${photo.responsive_urls.display} 800w,
+                    ${photo.responsive_urls.full} 1600w`
+                  : undefined
+              }
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              src={photo.responsive_urls?.display || photo.url}
               alt={`Photo ${photo.id}`}
               className={`
                 w-full h-auto object-cover transition-all duration-500
@@ -107,7 +115,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
           </>
         ) : (
           // Error state
-          <div 
+          <div
             className="w-full bg-gray-100 flex items-center justify-center"
             style={{ height: expectedHeight }}
           >

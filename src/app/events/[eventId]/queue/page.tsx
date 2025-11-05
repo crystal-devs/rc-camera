@@ -21,7 +21,7 @@ import {
 import { toast } from 'sonner';
 
 // Import your components and hooks
-import { useSimpleWebSocket } from '@/hooks/useWebSocket';
+import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useQueueManagement } from '@/hooks/useQueueManagement';
 import UploadQueueVisualization from '@/components/album/UploadQueueVisualization';
 
@@ -31,7 +31,11 @@ export default function AdminQueueManagement() {
   const [selectedTab, setSelectedTab] = useState<'overview' | 'monitoring' | 'settings'>('overview');
 
   // WebSocket connection for admin
-  const webSocket = useSimpleWebSocket(eventId, undefined, 'admin');
+  const webSocket = useEventWebSocket(eventId, {
+    userType: 'admin',
+    shareToken: undefined,
+    enabled: true
+  });
 
   // Queue management hook
   const queueManager = useQueueManagement(eventId, webSocket, {

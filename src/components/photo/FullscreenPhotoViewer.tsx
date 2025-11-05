@@ -7,28 +7,6 @@ import { Photo } from '../album/PhotoGallery.types';
 import { useFullscreen } from '@/lib/FullscreenContext';
 import { PhotoInfoSheet } from './PhotoInfoSheet';
 
-// Global image cache to prevent re-downloading
-const imageCache = new Map<string, {
-  lowRes: string;
-  highRes: string;
-  originalRes: string;
-  isHighResLoaded: boolean;
-  isOriginalResLoaded: boolean;
-  imageElement?: HTMLImageElement;
-}>();
-
-// Cache cleanup - optimized for live event photo sharing
-const MAX_CACHE_SIZE = 25;
-const cleanupCache = () => {
-  if (imageCache.size > MAX_CACHE_SIZE) {
-    const entries = Array.from(imageCache.entries());
-    const removeCount = Math.floor(MAX_CACHE_SIZE * 0.4);
-    for (let i = 0; i < removeCount; i++) {
-      imageCache.delete(entries[i][0]);
-    }
-    console.log(`Cache cleaned up, size: ${imageCache.size}`);
-  }
-};
 
 interface FullscreenPhotoViewerProps {
   selectedPhoto: Photo;
@@ -66,44 +44,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const imageRef = useRef<HTMLImageElement>(null);
 
   // Smart URL resolution with support for original quality
-  const photoId = selectedPhoto.id;
-  const lowResUrl = selectedPhoto?.progressiveUrls?.thumbnail || selectedPhoto?.thumbnail || selectedPhoto?.imageUrl;
   const highResUrl = selectedPhoto?.progressiveUrls?.original || selectedPhoto?.progressiveUrls?.full || selectedPhoto?.imageUrl;
   const originalUrl = selectedPhoto?.progressiveUrls?.original || selectedPhoto?.imageUrl || highResUrl;
-
-  // Calculate display dimensions based on original metadata and viewport
-  const calculateDisplayDimensions = useMemo(() => {
-    const metadata = selectedPhoto.metadata;
-    if (!metadata?.originalWidth || !metadata?.originalHeight) {
-      // Fallback if no metadata
-      return {
-        width: 'auto',
-        height: 'auto',
-        maxWidth: '100vw',
-        maxHeight: '100vh'
-      };
-    }
-
-    const originalWidth = metadata?.originalWidth;
-    const originalHeight = metadata?.originalHeight;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Calculate scale factor to fit within viewport while maintaining aspect ratio
-    const scaleX = viewportWidth / originalWidth;
-    const scaleY = viewportHeight / originalHeight;
-    const scale = Math.min(scaleX, scaleY, 1); // Never scale up beyond original size
-
-    const displayWidth = originalWidth * scale;
-    const displayHeight = originalHeight * scale;
-
-    return {
-      width: `${displayWidth}px`,
-      height: `${displayHeight}px`,
-      maxWidth: '100vw',
-      maxHeight: '100vh'
-    };
-  }, [selectedPhoto.metadata]);
 
   // Smart URL resolution with proper progressive loading
   const getImageUrls = useMemo(() => {
@@ -128,156 +70,37 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     };
   }, [selectedPhoto]);
 
-  // Initialize cache entry for current photo
-  useEffect(() => {
-    const photoId = selectedPhoto.id;
-    const urls = getImageUrls;
-
-    if (!imageCache.has(photoId)) {
-      imageCache.set(photoId, {
-        lowRes: urls.thumbnail || '',
-        highRes: urls.high || urls.display || '',
-        originalRes: urls.original || urls.high || '',
-        isHighResLoaded: false,
-        isOriginalResLoaded: false
-      });
-      cleanupCache();
-    }
-  }, [selectedPhoto.id, getImageUrls]);
-
-  // Load high-res image after low-res is displayed (with caching)
-  useEffect(() => {
-    const photoId = selectedPhoto.id;
-    const urls = getImageUrls;
-    const highResUrl = urls.high || urls.display;
-    const lowResUrl = urls.thumbnail;
-
-    if (!highResUrl || lowResUrl === highResUrl) return;
-
-    const cacheEntry = imageCache.get(photoId);
-
-    // Check if high-res is already cached
-    if (cacheEntry?.isHighResLoaded) {
-      console.log('Using cached high-res image for:', photoId);
-      if (imageRef.current) {
-        imageRef.current.src = highResUrl;
-        setIsHighResLoading(false);
-      }
-      return;
-    }
-
-    console.log('Loading high-res image for:', photoId);
-    setIsHighResLoading(true);
-
-    const highResImage = new Image();
-
-    highResImage.onload = () => {
-      console.log('High-res image loaded and cached:', photoId);
-
-      // Update cache with loaded state
-      if (cacheEntry) {
-        cacheEntry.isHighResLoaded = true;
-        cacheEntry.imageElement = highResImage;
-      }
-
-      if (imageRef.current && selectedPhoto.id === photoId) {
-        imageRef.current.src = highResUrl;
-        setIsHighResLoading(false);
-      }
-    };
-
-    highResImage.onerror = () => {
-      console.warn('High-res image failed to load:', photoId);
-      setIsHighResLoading(false);
-    };
-
-    // Small delay to ensure low-res is displayed first
-    const timer = setTimeout(() => {
-      highResImage.src = highResUrl;
-    }, 100);
-
-    return () => {
-      clearTimeout(timer);
-      highResImage.onload = null;
-      highResImage.onerror = null;
-    };
-  }, [selectedPhoto.id, getImageUrls]);
 
   // Preload adjacent images (with smart caching)
   useEffect(() => {
-    const preloadAdjacentImages = () => {
-      const adjacentIndices = [
-        selectedPhotoIndex !== null && selectedPhotoIndex > 0 ? selectedPhotoIndex - 1 : null,
-        selectedPhotoIndex !== null && selectedPhotoIndex < photos.length - 1 ? selectedPhotoIndex + 1 : null
-      ].filter(idx => idx !== null) as number[];
+    const adjacentIndices = [
+      selectedPhotoIndex !== null && selectedPhotoIndex > 0 ? selectedPhotoIndex - 1 : null,
+      selectedPhotoIndex !== null && selectedPhotoIndex < photos.length - 1 ? selectedPhotoIndex + 1 : null
+    ].filter(idx => idx !== null) as number[];
 
-      adjacentIndices.forEach(index => {
-        const photo = photos[index];
-        const photoId = photo.id;
-        const lowRes = photo?.progressiveUrls?.thumbnail || photo?.thumbnail;
-        const highRes = photo?.progressiveUrls?.original || photo?.progressiveUrls?.full || photo?.imageUrl;
+    adjacentIndices.forEach(index => {
+      const photo = photos[index];
+      const urls = photo.progressiveUrls;
 
-        if (lowRes) {
-          // Check if already cached
-          if (!imageCache.has(photoId)) {
-            imageCache.set(photoId, {
-              lowRes,
-              highRes: highRes || lowRes,
-              originalRes: highRes || lowRes,
-              isHighResLoaded: false,
-              isOriginalResLoaded: false
-            });
+      if (urls?.high) {
+        // Create link preload element
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = urls.high;
+        link.imageSrcset = `${urls.thumbnail} 800w, ${urls.display} 1600w, ${urls.high} 2400w`;
+        link.imageSizes = '100vw';
+        document.head.appendChild(link);
 
-            // Preload low-res for instant display
-            const preloadImg = new Image();
-            preloadImg.onload = () => {
-              console.log(`Cached low-res for photo ${index + 1}`);
-            };
-            preloadImg.src = lowRes;
-
-            // Also preload high-res for smoother experience
-            if (highRes && highRes !== lowRes) {
-              setTimeout(() => {
-                const highResImg = new Image();
-                highResImg.onload = () => {
-                  const cacheEntry = imageCache.get(photoId);
-                  if (cacheEntry) {
-                    cacheEntry.isHighResLoaded = true;
-                    cacheEntry.imageElement = highResImg;
-                  }
-                  console.log(`Preloaded high-res for photo ${index + 1}`);
-                };
-                highResImg.src = highRes;
-              }, 500);
-            }
-          } else {
-            console.log(`Photo ${index + 1} already cached`);
-          }
-        }
-      });
-
-      cleanupCache();
-    };
-
-    const preloadTimer = setTimeout(preloadAdjacentImages, 500);
-    return () => clearTimeout(preloadTimer);
-  }, [selectedPhoto, selectedPhotoIndex, photos]);
+        // Cleanup
+        return () => document.head.removeChild(link);
+      }
+    });
+  }, [selectedPhotoIndex, photos]);
 
   // Reset states when photo changes and check cache
   useEffect(() => {
-    const photoId = selectedPhoto.id;
-    const cacheEntry = imageCache.get(photoId);
-
-    if (cacheEntry?.isHighResLoaded) {
-      // Image is already in cache - no need to load again
-      setImageLoaded(true);
-      setIsHighResLoading(false);
-      console.log('Photo loaded from cache:', photoId);
-    } else {
-      // New photo - reset loading states
-      setImageLoaded(false);
-      setIsHighResLoading(false);
-    }
+    setImageLoaded(false);
   }, [selectedPhoto.id]);
 
   // Touch handling
@@ -511,10 +334,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   // Quality indicator
   const getQualityText = () => {
-    const cacheEntry = imageCache.get(photoId);
-    const isHighResCached = cacheEntry?.isHighResLoaded;
 
-    if (imageLoaded && !isHighResLoading && isHighResCached) return 'High Quality';
+    if (imageLoaded && !isHighResLoading) return 'High Quality';
     if (isHighResLoading) return 'Enhancing...';
     if (imageLoaded) return 'Standard Quality';
     return 'Loading...';
@@ -653,39 +474,26 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                 height: '100vh'
               }}
             >
-              {/* Background thumbnail at original dimensions (blurred) */}
-              {getImageUrls.thumbnail && getImageUrls.thumbnail !== getImageUrls.high && (
-                <img
-                  src={getImageUrls.thumbnail}
-                  alt=""
-                  className="absolute blur-sm opacity-60"
-                  style={{
-                    filter: imageLoaded ? 'blur(0px)' : 'blur(4px)',
-                    transition: 'filter 0.3s ease-out, opacity 0.3s ease-out',
-                    ...calculateDisplayDimensions
-                  }}
-                  draggable={false}
-                />
-              )}
 
               {/* Main high-quality image at original dimensions */}
               <img
                 ref={imageRef}
                 key={selectedPhoto.id}
-                src={(() => {
-                  // Smart URL selection based on cache
-                  const photoId = selectedPhoto.id;
-                  const cacheEntry = imageCache.get(photoId);
-                  if (cacheEntry?.isHighResLoaded) {
-                    return getImageUrls.high || getImageUrls.display;
-                  }
-                  return getImageUrls.thumbnail || getImageUrls.display;
-                })()}
+                srcSet={
+                  getImageUrls.thumbnail && getImageUrls.high
+                    ? `${getImageUrls.thumbnail} 800w,
+                    ${getImageUrls.display || getImageUrls.high} 1600w,
+                    ${getImageUrls.high} 2400w,
+                    ${getImageUrls.original} 4000w`
+                    : undefined
+                }
+                sizes="100vw"
+                src={getImageUrls.high || getImageUrls.display}
                 alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
-                className="relative transition-opacity duration-500 ease-out"
+                className="relative max-w-full max-h-full object-contain"
                 style={{
                   opacity: imageLoaded ? 1 : 0,
-                  ...calculateDisplayDimensions
+                  transition: 'opacity 0.3s ease-out'
                 }}
                 onLoad={handleImageLoad}
                 onError={() => {

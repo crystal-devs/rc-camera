@@ -23,10 +23,11 @@ import PhotoUploadDialog from '../album/PhotoUploadDialog';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
 import { OptimizedPhotoGrid } from './PhotoGrid';
-import { UploadProgressPanel } from '../album/UploadProgressPanel';
 import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { UploadProgressTab } from '../progress/upload-progress';
+import UploadButton from '../guest/UploadButton';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
@@ -51,29 +52,19 @@ export default function OptimizedPhotoGallery({
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Query client for direct cache manipulation
+  const queryClient = useQueryClient();
 
   // WebSocket connection for admin features
   const webSocket = useEventWebSocket(eventId, { userType: 'admin' });
   const gridQuality = 'thumbnail';
 
   // Data fetching hooks with thumbnail quality for grid
-  const {
-    data: regularPhotos = [],
-    isLoading: regularLoading,
-    error: regularError,
-    refetch: refetchRegular
-  } = useEventMedia(eventId, {
-    status: activeTab,
-    limit: 100,
-    quality: gridQuality,
-    enabled: !useInfiniteScroll
-  });
-
   const {
     photos: infinitePhotos = [],
     isLoading: infiniteLoading,
@@ -86,22 +77,14 @@ export default function OptimizedPhotoGallery({
     status: activeTab,
     limit: 20,
     quality: gridQuality,
-    enabled: useInfiniteScroll
+    enabled: true
   });
 
-  // Use regular or infinite photos based on mode
-  const photos = useInfiniteScroll ? infinitePhotos : regularPhotos;
-  const isLoading = useInfiniteScroll ? infiniteLoading : regularLoading;
-  const photosError = useInfiniteScroll ? infiniteError : regularError;
-  const refetchPhotos = useInfiniteScroll ? refetchInfinite : refetchRegular;
-
-  // Switch to infinite scroll if we have many photos
-  useEffect(() => {
-    if (regularPhotos.length > 50 && !useInfiniteScroll) {
-      console.log('Switching to infinite scroll mode due to large photo count');
-      setUseInfiniteScroll(true);
-    }
-  }, [regularPhotos.length, useInfiniteScroll]);
+  // Use infinite photos
+  const photos = infinitePhotos;
+  const isLoading = infiniteLoading;
+  const photosError = infiniteError;
+  const refetchPhotos = refetchInfinite;
 
   // Media counts
   const {
@@ -259,11 +242,10 @@ export default function OptimizedPhotoGallery({
     setActiveTab(newTab);
     setSelectedPhoto(null);
     setPhotoViewerOpen(false);
-    setUseInfiniteScroll(false);
   }, [activeTab]);
 
   // UPDATED: Use bulk operations for status updates
-  const handleStatusUpdate = useCallback((photoId: string | string[], status: string, reason?: string) => {
+  const handleStatusUpdate = useCallback((photoId: string, status: string, reason?: string) => {
     console.log('Status update requested:', { photoId, status, reason });
 
     updateStatusMutation.mutate({
@@ -271,23 +253,6 @@ export default function OptimizedPhotoGallery({
       status: status as 'approved' | 'pending' | 'rejected' | 'hidden',
       reason
     });
-  }, [updateStatusMutation]);
-
-  // NEW: Bulk status update handler
-  const handleBulkStatusUpdate = useCallback((photoIds: string[], status: string, reason?: string) => {
-    console.log('Bulk status update requested:', { count: photoIds.length, status, reason });
-
-    if (photoIds.length === 0) {
-      toast.error('No photos selected for bulk update');
-      return;
-    }
-
-    // Use the bulk-specific method
-    updateStatusMutation.updateMultiple(
-      photoIds,
-      status as 'approved' | 'pending' | 'rejected' | 'hidden',
-      reason
-    );
   }, [updateStatusMutation]);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -399,9 +364,9 @@ export default function OptimizedPhotoGallery({
   // Cleanup bulk operations on unmount
   useEffect(() => {
     return () => {
-      updateStatusMutation.cleanup?.();
+      // Cleanup if needed
     };
-  }, [updateStatusMutation]);
+  }, []);
 
   // Error handling
   if (photosError) {
@@ -417,7 +382,7 @@ export default function OptimizedPhotoGallery({
           {photosError.message || 'Something went wrong while loading photos.'}
         </p>
         <div className="flex gap-2">
-          <Button onClick={refetchPhotos} variant="outline">
+          <Button onClick={() => refetchPhotos()} variant="outline">
             Try Again
           </Button>
           <Button onClick={handleManualRefresh} variant="outline">
@@ -439,11 +404,9 @@ export default function OptimizedPhotoGallery({
             userPermissions={userPermissions}
           />
 
-          {useInfiniteScroll && (
-            <div className="text-xs text-gray-500">
-              Infinite scroll ({photos.length} loaded)
-            </div>
-          )}
+          <div className="text-xs text-gray-500">
+            Infinite scroll ({photos.length} loaded)
+          </div>
         </div>
 
         <UploadProgressTab
@@ -472,7 +435,7 @@ export default function OptimizedPhotoGallery({
               </Button>
               {updateStatusMutation.isPending && (
                 <Badge variant="secondary" className="text-xs">
-                  Processing {updateStatusMutation.queueLength || 0} operations
+                  Processing operations
                 </Badge>
               )}
             </>
@@ -485,10 +448,89 @@ export default function OptimizedPhotoGallery({
               isUploading={uploadMutation.isPending}
               approvalMode={approvalMode}
               onFileUpload={handleFileUpload}
-              fileInputRef={fileInputRef}
-              cameraInputRef={cameraInputRef}
+              fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
+              cameraInputRef={cameraInputRef as React.RefObject<HTMLInputElement>}
             />
           )}
+
+          <UploadButton
+            eventId={eventId}
+            onUploadComplete={(mediaData) => {
+              console.log('Upload completed:', mediaData);
+              // Add temp photo to gallery with originalUrl immediately
+              const tempPhoto: Photo = {
+                id: mediaData.mediaId,
+                albumId: undefined,
+                eventId: eventId,
+                takenBy: 'Guest', // Will be updated when WebSocket data comes
+                imageUrl: mediaData.originalUrl,
+                thumbnail: mediaData.originalUrl,
+                createdAt: new Date(),
+                originalFilename: mediaData.fileName,
+                processingStatus: 'processing' as const,
+                processingProgress: 0,
+                approval: {
+                  status: 'pending' as const,
+                },
+                processing: {
+                  status: 'processing' as const,
+                  variants_generated: false,
+                },
+                progressiveUrls: {
+                  placeholder: mediaData.originalUrl,
+                  thumbnail: mediaData.originalUrl,
+                  display: mediaData.originalUrl,
+                  full: mediaData.originalUrl,
+                  original: mediaData.originalUrl,
+                },
+                metadata: {
+                  width: 0,
+                  height: 0,
+                },
+                stats: {
+                  views: 0,
+                  downloads: 0,
+                  shares: 0,
+                  likes: 0,
+                },
+              };
+
+              // Add temp photo to the query cache immediately
+              queryClient.setQueryData(['event-media', eventId], (oldData: any) => {
+                if (!oldData?.data) return oldData;
+
+                // Add temp photo at the beginning
+                const newData = [tempPhoto, ...oldData.data];
+
+                return {
+                  ...oldData,
+                  data: newData,
+                  pagination: {
+                    ...oldData.pagination,
+                    totalCount: (oldData.pagination?.totalCount || 0) + 1,
+                    total: (oldData.pagination?.total || 0) + 1,
+                  }
+                };
+              });
+
+              // Also update infinite query if it exists
+              queryClient.setQueryData(['guest-media', shareToken], (oldData: any) => {
+                if (!oldData?.pages) return oldData;
+
+                const newPage = {
+                  photos: [tempPhoto],
+                  hasNext: oldData.pages[0]?.hasNext || false,
+                  total: (oldData.pages[0]?.total || 0) + 1,
+                  page: 1
+                };
+
+                return {
+                  ...oldData,
+                  pages: [newPage, ...oldData.pages]
+                };
+              });
+            }}
+          />
         </div>
       </div> 
 
@@ -534,12 +576,11 @@ export default function OptimizedPhotoGallery({
             userPermissions={userPermissions}
             currentTab={activeTab}
             onStatusUpdate={handleStatusUpdate}
-            onBulkStatusUpdate={handleBulkStatusUpdate} // NEW: Pass bulk handler
             onDownload={handleDownload}
             onDelete={handleDelete}
           />
 
-          {useInfiniteScroll && hasNextPage && (
+          {hasNextPage && (
             <div className="flex justify-center pt-6">
               <Button
                 onClick={handleLoadMore}
@@ -560,7 +601,7 @@ export default function OptimizedPhotoGallery({
               onClose={closePhotoViewer}
               onPrev={() => navigatePhoto('prev')}
               onNext={() => navigatePhoto('next')}
-              setPhotoInfoOpen={(open) => {
+              setPhotoInfoOpen={(open: boolean) => {
                 console.log('Photo info:', open);
               }}
               deletePhoto={handleDelete}

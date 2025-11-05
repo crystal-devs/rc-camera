@@ -263,7 +263,7 @@ export const OptimizedProgressiveImage = ({
           )}
 
           {/* Main optimized image */}
-          <img
+          {/* <img
             src={src}
             alt={`Photo ${index + 1}`}
             className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'
@@ -273,8 +273,27 @@ export const OptimizedProgressiveImage = ({
             loading="lazy"
             decoding="async"
             onContextMenu={(e) => e.preventDefault()}
-          />
+          /> */}
 
+          <img
+            srcSet={
+              photo.progressiveUrls
+                ? `${photo.progressiveUrls.thumbnail} 400w,
+                  ${photo.progressiveUrls.display} 800w,
+                  ${photo.progressiveUrls.full} 1600w`
+                  : undefined
+            }
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            src={photo.progressiveUrls?.display || photo.imageUrl}
+            alt={`Photo ${index + 1}`}
+            className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'
+              } ${isUploading ? 'opacity-75' : ''}`}
+            onLoad={handleImageLoad}
+            onError={handleImageError}
+            loading="lazy"
+            decoding="async"
+            onContextMenu={(e) => e.preventDefault()}
+          />
           {/* Loading state */}
           {!imageLoaded && !error && !isUploading && (
             <div className="absolute inset-0 flex items-center justify-center bg-card">

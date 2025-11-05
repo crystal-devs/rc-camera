@@ -13,111 +13,51 @@ interface UseProgressiveImageReturn {
 }
 
 export function useProgressiveImage(
-  photo: Photo, 
+  photo: Photo,
   context: 'grid' | 'lightbox' | 'preview' = 'grid'
 ): UseProgressiveImageReturn {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 
-  // 🚀 SMART URL SELECTION: Choose best URL based on context and browser support
-  const { src, placeholder, quality, isOptimized } = useMemo(() => {
-    // 🔧 TEMPORARY PHOTOS: Use blob URL immediately
+  // 🚀 SIMPLIFIED: Just return the right src for context
+  const { src, placeholder } = useMemo(() => {
+    // Temporary photos
     if (photo.isTemporary && photo.imageUrl.startsWith('blob:')) {
+      return { src: photo.imageUrl, placeholder: null };
+    }
+
+    // For grid: let srcset handle it, just provide fallback
+    if (context === 'grid' && photo.progressiveUrls) {
       return {
-        src: photo.imageUrl,
-        placeholder: null,
-        quality: 'original' as const,
-        isOptimized: false
+        src: photo.progressiveUrls.display,
+        placeholder: photo.progressiveUrls.placeholder
       };
     }
 
-    // 🔧 PROCESSING PHOTOS: Show current URL (preview)
-    if (photo.processing || photo.status === 'uploading') {
+    // For lightbox: use full quality
+    if (context === 'lightbox' && photo.progressiveUrls) {
       return {
-        src: photo.imageUrl,
-        placeholder: null,
-        quality: 'medium' as const,
-        isOptimized: true
+        src: photo.progressiveUrls.full,
+        placeholder: photo.progressiveUrls.display
       };
     }
 
-    // 🚀 OPTIMIZED VARIANT SELECTION: Based on context and browser support
-    const supportsWebP = checkWebPSupport();
-    const variants = photo.image_variants;
-
-    if (variants) {
-      let targetVariant;
-      let targetQuality: 'low' | 'medium' | 'high' | 'original';
-
-      switch (context) {
-        case 'grid':
-          // Grid: Use small variants for fast loading
-          targetVariant = variants.small;
-          targetQuality = 'low';
-          break;
-        case 'preview':
-          // Preview: Use medium variants for good quality
-          targetVariant = variants.medium;
-          targetQuality = 'medium';
-          break;
-        case 'lightbox':
-          // Lightbox: Use large variants for best quality
-          targetVariant = variants.large;
-          targetQuality = 'high';
-          break;
-        default:
-          targetVariant = variants.medium;
-          targetQuality = 'medium';
-      }
-
-      // Choose WebP if supported, otherwise JPEG
-      const selectedUrl = supportsWebP && targetVariant?.webp?.url 
-        ? targetVariant.webp.url 
-        : targetVariant?.jpeg?.url;
-
-      if (selectedUrl) {
-        return {
-          src: selectedUrl,
-          placeholder: variants.small?.jpeg?.url || photo.thumbnailUrl,
-          quality: targetQuality,
-          isOptimized: true
-        };
-      }
-    }
-
-    // 🔧 FALLBACK: Use original or thumbnail
-    const fallbackSrc = context === 'lightbox' 
-      ? photo.imageUrl 
-      : photo.thumbnailUrl || photo.imageUrl;
-
+    // Fallback
     return {
-      src: fallbackSrc,
-      placeholder: photo.thumbnailUrl !== fallbackSrc ? photo.thumbnailUrl : null,
-      quality: context === 'lightbox' ? 'original' as const : 'medium' as const,
-      isOptimized: false
+      src: photo.imageUrl,
+      placeholder: photo.thumbnailUrl
     };
   }, [photo, context]);
 
-  // 🔧 PRELOAD IMAGE: Better loading experience
+  // Rest of the hook remains the same...
   useEffect(() => {
     setLoaded(false);
     setError(false);
-
     if (!src) return;
 
     const img = new Image();
-    
-    img.onload = () => {
-      setLoaded(true);
-      setError(false);
-    };
-    
-    img.onerror = () => {
-      setError(true);
-      setLoaded(false);
-      console.error('Failed to load image:', src);
-    };
-
+    img.onload = () => setLoaded(true);
+    img.onerror = () => setError(true);
     img.src = src;
 
     return () => {
@@ -126,14 +66,7 @@ export function useProgressiveImage(
     };
   }, [src]);
 
-  return {
-    src,
-    loaded,
-    error,
-    placeholder,
-    isOptimized,
-    quality
-  };
+  return { src, loaded, error, placeholder };
 }
 
 /**
@@ -153,12 +86,12 @@ function checkWebPSupport(): boolean {
   const canvas = document.createElement('canvas');
   canvas.width = 1;
   canvas.height = 1;
-  
+
   const supportsWebP = canvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
-  
+
   // Cache result
   sessionStorage.setItem('webp-support', supportsWebP.toString());
-  
+
   return supportsWebP;
 }
 
