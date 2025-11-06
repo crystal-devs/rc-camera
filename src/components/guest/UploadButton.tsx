@@ -10,7 +10,7 @@ interface UploadButtonProps {
   eventId: string;
   onUploadComplete?: (mediaData: {
     mediaId: string;
-    originalUrl: string;
+    originalUrl: string;      // S3 original URL (available immediately)
     uploadId: string;
     fileName: string;
   }) => void;
@@ -22,15 +22,13 @@ interface UploadProgress {
 
 export default function UploadButton({ eventId, onUploadComplete }: UploadButtonProps) {
   const authToken = useAuthToken();
-
-
   const [progress, setProgress] = useState<UploadProgress>({});
   const [previewUrls, setPreviewUrls] = useState<{ [fileName: string]: string }>({});
   const [isUploading, setIsUploading] = useState(false);
 
   // Use the centralized WebSocket hook
   const webSocket = useEventWebSocket(eventId, {
-    userType: 'admin', // Assuming this is for guest uploads
+    userType: 'admin',
     enabled: !!eventId
   });
 
@@ -38,23 +36,22 @@ export default function UploadButton({ eventId, onUploadComplete }: UploadButton
     if (!webSocket.socket) return;
 
     const handlePhotoUploading = (data: any) => {
+      // Early preview during upload - use S3 original URL if available
       if (data.id && data.fileName) {
-        setPreviewUrls(prev => ({ ...prev, [data.fileName]: data.previewUrl }));
+        setPreviewUrls(prev => ({ 
+          ...prev, 
+          [data.fileName]: data.previewUrl || data.originalUrl 
+        }));
       }
     };
 
     const handlePhotoReady = (data: any) => {
+      // Update to processed image when ready
       if (data.id && data.fileName) {
-        setPreviewUrls(prev => ({ ...prev, [data.fileName]: data.smallUrl }));
-      }
-      // Call onUploadComplete to update gallery with smallUrl
-      if (onUploadComplete && data.id && data.fileName && data.smallUrl) {
-        onUploadComplete({
-          mediaId: data.id,
-          originalUrl: data.smallUrl, // Use smallUrl as the updated URL
-          uploadId: data.uploadId || '',
-          fileName: data.fileName
-        });
+        setPreviewUrls(prev => ({ 
+          ...prev, 
+          [data.fileName]: data.smallUrl || data.displayUrl || data.originalUrl 
+        }));
       }
     };
 
@@ -67,7 +64,7 @@ export default function UploadButton({ eventId, onUploadComplete }: UploadButton
         webSocket.socket.off('photo-ready', handlePhotoReady);
       }
     };
-  }, [webSocket.socket, onUploadComplete]);
+  }, [webSocket.socket]);
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -90,7 +87,7 @@ export default function UploadButton({ eventId, onUploadComplete }: UploadButton
       }));
 
       // Get bulk upload URLs
-      const response = await getBulkUploadUrls(eventId, fileData, authToken || ''); // TODO: Add auth token
+      const response = await getBulkUploadUrls(eventId, fileData, authToken || '');
       const { uploadUrls } = response.data;
 
       // Upload files concurrently
@@ -108,7 +105,7 @@ export default function UploadButton({ eventId, onUploadComplete }: UploadButton
             },
           });
 
-          // Notify complete
+          // Notify backend about completion
           const completeResponse = await axios.post(
             `${API_BASE_URL}/media/upload-complete`,
             {
@@ -124,12 +121,21 @@ export default function UploadButton({ eventId, onUploadComplete }: UploadButton
             }
           );
 
-          // Call onUploadComplete with the response data
-          if (onUploadComplete && completeResponse.data?.data) {
+          // Extract data from response
+          const { data: responseData } = completeResponse.data;
+          
+          if (!responseData?.mediaId || !responseData?.originalUrl) {
+            throw new Error('Invalid response: missing mediaId or originalUrl');
+          }
+
+          // 🎯 KEY FIX: Call onUploadComplete immediately with S3 originalUrl
+          // This allows PhotoGallery to show the image preview right away
+          // The WebSocket will later update it to the processed version
+          if (onUploadComplete) {
             onUploadComplete({
-              mediaId: completeResponse.data.data.mediaId,
-              originalUrl: completeResponse.data.data.originalUrl,
-              uploadId: completeResponse.data.data.upload_id,
+              mediaId: responseData.mediaId,
+              originalUrl: responseData.originalUrl,  // Use S3 URL directly
+              uploadId: responseData.upload_id || uploadData.uploadId,
               fileName: file.name
             });
           }

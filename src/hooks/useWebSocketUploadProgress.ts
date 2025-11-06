@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useEventWebSocket } from './useEventWebSocket';
+import { queryKeys } from '@/lib/queryKeys';
 
 interface ProgressUpdate {
   mediaId: string;
@@ -106,33 +107,38 @@ export function useWebSocketUploadProgress(
 
   const updatePhotoInCache = useCallback((mediaId: string, updates: Partial<any>) => {
     const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+    const qualities = ['small', 'medium', 'large', 'original'];
 
     statuses.forEach(status => {
-      queryClient.setQueryData(
-        ['eventPhotos', eventId, status],
-        (oldData: any) => {
-          if (!oldData) return oldData;
-          return oldData.map((photo: any) =>
-            photo.id === mediaId ? { ...photo, ...updates } : photo
-          );
-        }
-      );
+      // Update regular queries
+      qualities.forEach(quality => {
+        queryClient.setQueryData(
+          [...queryKeys.eventPhotos(eventId, status), quality],
+          (oldData: any) => {
+            if (!oldData) return oldData;
+            return oldData.map((photo: any) =>
+              photo.id === mediaId ? { ...photo, ...updates } : photo
+            );
+          }
+        );
 
-      queryClient.setQueryData(
-        ['eventPhotos', eventId, status, 'infinite'],
-        (oldData: any) => {
-          if (!oldData?.pages) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page: any) => ({
-              ...page,
-              data: page.data?.map((photo: any) =>
-                photo.id === mediaId ? { ...photo, ...updates } : photo
-              )
-            }))
-          };
-        }
-      );
+        // Update infinite queries
+        queryClient.setQueryData(
+          [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
+          (oldData: any) => {
+            if (!oldData?.pages) return oldData;
+            return {
+              ...oldData,
+              pages: oldData.pages.map((page: any) => ({
+                ...page,
+                photos: page.photos?.map((photo: any) =>
+                  photo.id === mediaId ? { ...photo, ...updates } : photo
+                )
+              }))
+            };
+          }
+        );
+      });
     });
   }, [queryClient, eventId]);
 

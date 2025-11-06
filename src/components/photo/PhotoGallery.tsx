@@ -1,4 +1,4 @@
-// components/photo/PhotoGallery.tsx - UPDATED with bulk operations
+// components/photo/PhotoGallery.tsx - CORRECTED VERSION
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
@@ -28,6 +28,7 @@ import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { UploadProgressTab } from '../progress/upload-progress';
 import UploadButton from '../guest/UploadButton';
 import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/queryKeys';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
@@ -62,7 +63,7 @@ export default function OptimizedPhotoGallery({
 
   // WebSocket connection for admin features
   const webSocket = useEventWebSocket(eventId, { userType: 'admin' });
-  const gridQuality = 'thumbnail';
+  const gridQuality = 'small';
 
   // Data fetching hooks with thumbnail quality for grid
   const {
@@ -116,7 +117,7 @@ export default function OptimizedPhotoGallery({
     showToasts: true
   });
 
-  // UPDATED: Use bulk operations mutation
+  // CORRECTED: Use bulk operations mutation with proper approval status
   const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
     onSuccess: (result) => {
       const { data } = result;
@@ -135,7 +136,7 @@ export default function OptimizedPhotoGallery({
           startMonitoring(mediaIds, filenames);
 
           toast.success(`${successfulUploads.length} file${successfulUploads.length > 1 ? 's' : ''} uploaded successfully!`, {
-            description: 'Processing has started - you\'ll see progress updates below',
+            description: 'Photos are pending approval',
             duration: 4000
           });
         }
@@ -144,10 +145,90 @@ export default function OptimizedPhotoGallery({
         if (failedUploads.length > 0) {
           toast.error(`${failedUploads.length} file${failedUploads.length > 1 ? 's' : ''} failed to upload`);
         }
+
+        // ✅ CORRECTED: Replace temp photos with real photos showing S3 originalUrl
+        if (successfulUploads.length > 0) {
+          const realPhotos = successfulUploads.map((upload: any) => ({
+            id: upload.mediaId,
+            albumId: albumId,
+            eventId: eventId,
+            takenBy: 'You',
+            imageUrl: upload.originalUrl,          // ✅ S3 URL - shows immediately
+            thumbnail: upload.originalUrl,
+            createdAt: upload.uploadedAt ? new Date(upload.uploadedAt) : new Date(),
+            originalFilename: upload.filename || upload.fileName || 'Uploaded Image',
+            processingStatus: 'processing' as const,  // ✅ CORRECTED from 'completed'
+            processingProgress: 0,
+            approval: {
+              status: 'pending' as const,  // ✅ CORRECTED from 'approved'
+            },
+            processing: {
+              status: 'processing' as const,  // ✅ CORRECTED from 'completed'
+              variants_generated: false,
+            },
+            progressiveUrls: {
+              placeholder: upload.originalUrl,
+              thumbnail: upload.originalUrl,
+              display: upload.originalUrl,
+              full: upload.originalUrl,
+              original: upload.originalUrl,
+            },
+            metadata: {
+              width: 0,
+              height: 0,
+            },
+            stats: {
+              views: 0,
+              downloads: 0,
+              shares: 0,
+              likes: 0,
+            },
+          }));
+
+          // ✅ CORRECTED: Use 'pending' status in cache key, not 'approved'
+          const qualities = ['small', 'medium', 'large', 'original'];
+
+          qualities.forEach(quality => {
+            const cacheKey = [...queryKeys.eventPhotos(eventId, 'pending'), 'infinite', quality];
+
+            queryClient.setQueryData(cacheKey, (oldData: any) => {
+              if (!oldData?.pages) {
+                return {
+                  pages: [{
+                    photos: realPhotos,
+                    nextPage: undefined,
+                    hasMore: false
+                  }],
+                  pageParams: [1]
+                };
+              }
+
+              const firstPage = oldData.pages[0] || { photos: [] };
+              const newPhotos = [...realPhotos, ...(firstPage.photos || [])];
+
+              return {
+                ...oldData,
+                pages: [{
+                  ...firstPage,
+                  photos: newPhotos
+                }, ...oldData.pages.slice(1)]
+              };
+            });
+
+            // Also update the regular (non-infinite) query if it exists
+            const regularCacheKey = [...queryKeys.eventPhotos(eventId, 'pending'), quality];
+            queryClient.setQueryData(regularCacheKey, (oldData: any) => {
+              if (!oldData) return realPhotos;
+              return [...realPhotos, ...oldData];
+            });
+          });
+        }
       }
 
       refetchCounts();
       refetchPhotos();
+      // ✅ CORRECTED: Always switch to pending tab after upload
+      setActiveTab('pending');
     },
     onError: (error) => {
       console.error('Upload failed:', error);
@@ -456,24 +537,25 @@ export default function OptimizedPhotoGallery({
           <UploadButton
             eventId={eventId}
             onUploadComplete={(mediaData) => {
-              console.log('Upload completed:', mediaData);
-              // Add temp photo to gallery with originalUrl immediately
+              console.log('Guest upload completed:', mediaData);
+
+              // ✅ CORRECTED: Create temp photo with proper states
               const tempPhoto: Photo = {
                 id: mediaData.mediaId,
                 albumId: undefined,
                 eventId: eventId,
-                takenBy: 'Guest', // Will be updated when WebSocket data comes
-                imageUrl: mediaData.originalUrl,
+                takenBy: 'Guest',
+                imageUrl: mediaData.originalUrl,           // ✅ S3 URL - shows immediately
                 thumbnail: mediaData.originalUrl,
                 createdAt: new Date(),
                 originalFilename: mediaData.fileName,
-                processingStatus: 'processing' as const,
+                processingStatus: 'processing' as const,  // ✅ CORRECTED from 'completed'
                 processingProgress: 0,
                 approval: {
-                  status: 'pending' as const,
+                  status: 'pending' as const,  // ✅ CORRECTED from 'approved'
                 },
                 processing: {
-                  status: 'processing' as const,
+                  status: 'processing' as const,  // ✅ CORRECTED from 'completed'
                   variants_generated: false,
                 },
                 progressiveUrls: {
@@ -495,56 +577,49 @@ export default function OptimizedPhotoGallery({
                 },
               };
 
-              // Add temp photo to the query cache immediately
-              queryClient.setQueryData(['event-media', eventId], (oldData: any) => {
-                if (!oldData?.data) return oldData;
+              // ✅ CORRECTED: Use 'pending' status in cache key, not 'approved'
+              const cacheKey = [...queryKeys.eventPhotos(eventId, 'pending'), 'infinite', gridQuality];
 
-                // Add temp photo at the beginning
-                const newData = [tempPhoto, ...oldData.data];
+              queryClient.setQueryData(cacheKey, (oldData: any) => {
+                if (!oldData?.pages) {
+                  return {
+                    pages: [{
+                      photos: [tempPhoto],
+                      nextPage: undefined,
+                      hasMore: false
+                    }],
+                    pageParams: [1]
+                  };
+                }
 
+                const firstPage = oldData.pages[0] || { photos: [] };
                 return {
                   ...oldData,
-                  data: newData,
-                  pagination: {
-                    ...oldData.pagination,
-                    totalCount: (oldData.pagination?.totalCount || 0) + 1,
-                    total: (oldData.pagination?.total || 0) + 1,
-                  }
+                  pages: [{
+                    ...firstPage,
+                    photos: [tempPhoto, ...(firstPage.photos || [])]
+                  }, ...oldData.pages.slice(1)]
                 };
               });
 
-              // Also update infinite query if it exists
-              queryClient.setQueryData(['guest-media', shareToken], (oldData: any) => {
-                if (!oldData?.pages) return oldData;
-
-                const newPage = {
-                  photos: [tempPhoto],
-                  hasNext: oldData.pages[0]?.hasNext || false,
-                  total: (oldData.pages[0]?.total || 0) + 1,
-                  page: 1
-                };
-
-                return {
-                  ...oldData,
-                  pages: [newPage, ...oldData.pages]
-                };
+              // Also update regular query
+              const regularKey = [...queryKeys.eventPhotos(eventId, 'pending'), gridQuality];
+              queryClient.setQueryData(regularKey, (oldData: any) => {
+                if (!oldData) return [tempPhoto];
+                return [tempPhoto, ...oldData];
               });
+
+              // Trigger monitoring and switch tab
+              if (mediaData.mediaId) {
+                startMonitoring([mediaData.mediaId], [mediaData.fileName]);
+                setActiveTab('pending');  // ✅ CORRECTED from 'approved'
+              }
+
+              refetchCounts();
             }}
           />
         </div>
-      </div> 
-
-      {/* <UploadProgressPanel
-        uploadProgress={uploadProgress}
-        isMonitoring={isMonitoring}
-        summary={summary}
-        onClearAll={handleClearAll}
-        onRemoveItem={handleRemoveProgressItem}
-        onRetryItem={handleRetryUpload}
-        onCancelItem={handleCancelUpload}
-        onPauseResumeItem={handlePauseResumeUpload}
-        className="transition-all duration-300"
-      /> */}
+      </div>
 
       {(updateStatusMutation.isPending || uploadMutation.isPending) && (
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
@@ -594,18 +669,15 @@ export default function OptimizedPhotoGallery({
 
           {photoViewerOpen && selectedPhoto && (
             <FullscreenPhotoViewer
-              selectedPhoto={selectedPhoto}
+              selectedPhoto={selectedPhoto as any}
               selectedPhotoIndex={selectedPhotoIndex}
-              photos={photos}
+              photos={photos as any}
               userPermissions={userPermissions}
               onClose={closePhotoViewer}
               onPrev={() => navigatePhoto('prev')}
               onNext={() => navigatePhoto('next')}
-              setPhotoInfoOpen={(open: boolean) => {
-                console.log('Photo info:', open);
-              }}
               deletePhoto={handleDelete}
-              downloadPhoto={handleDownload}
+              downloadPhoto={(photo: any) => handleDownload(photo)}
             />
           )}
         </>

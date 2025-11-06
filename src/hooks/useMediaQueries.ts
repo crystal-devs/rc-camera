@@ -1,4 +1,4 @@
-// hooks/useMediaQueries.ts - Enhanced with better quality management
+// hooks/useMediaQueries.ts - CORRECTED with smart cache invalidation
 
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useCallback, useEffect } from 'react';
@@ -21,7 +21,6 @@ import { useAuthToken } from '@/hooks/use-auth';
 import { queryKeys } from '@/lib/queryKeys';
 import { Photo } from '@/types/PhotoGallery.types';
 
-// Enhanced media fetch options with better quality types
 interface MediaFetchOptions {
   status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
   limit?: number;
@@ -30,7 +29,7 @@ interface MediaFetchOptions {
 }
 
 /**
- * 🚀 ENHANCED: Regular query for event media with quality-aware caching
+ * 🚀 Regular query for event media with quality-aware caching
  */
 export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) {
   const token = useAuthToken();
@@ -42,32 +41,22 @@ export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) 
   } = options;
 
   return useQuery({
-    queryKey: [...queryKeys.eventPhotos(eventId, status), quality], // Include quality in cache key
+    queryKey: [...queryKeys.eventPhotos(eventId, status), quality],
     queryFn: async (): Promise<Photo[]> => {
       if (!token) throw new Error('Authentication required');
-
-      console.log('🔍 useEventMedia: Fetching photos', { eventId, status, limit, quality });
-
       const mediaItems = await getEventMedia(eventId, token, {
         status,
         limit,
         quality: quality as 'small' | 'medium' | 'large' | 'original',
         scrollType: 'pagination'
       });
-
-      console.log('✅ useEventMedia: Received media items', { 
-        count: mediaItems.length,
-        quality,
-        firstItemUrl: mediaItems[0]?.url || 'none'
-      });
-
       return mediaItems.map(transformMediaToPhoto);
     },
     enabled: enabled && !!token && !!eventId,
-    staleTime: quality === 'thumbnail' ? 5 * 60 * 1000 : 2 * 60 * 1000, // Longer cache for thumbnails
+    staleTime: quality === 'thumbnail' ? 5 * 60 * 1000 : 2 * 60 * 1000,
     gcTime: quality === 'thumbnail' ? 15 * 60 * 1000 : 10 * 60 * 1000,
     refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    refetchOnMount: 'stale',
     refetchOnReconnect: true,
     retry: 2,
     networkMode: 'online'
@@ -75,7 +64,7 @@ export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) 
 }
 
 /**
- * 🚀 ENHANCED: Infinite query with quality-aware pagination
+ * 🚀 Infinite query with quality-aware pagination
  */
 export function useInfiniteEventMedia(eventId: string, options: MediaFetchOptions = {}) {
   const token = useAuthToken();
@@ -87,19 +76,13 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
   } = options;
 
   return useInfiniteQuery({
-    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality], // Include quality
+    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
     queryFn: async ({ pageParam = 1 }): Promise<{
       photos: Photo[];
       nextPage?: number;
       hasMore: boolean;
     }> => {
       if (!token) throw new Error('Authentication required');
-
-      console.log(`🔍 useInfiniteEventMedia: Fetching page ${pageParam}`, { 
-        status, 
-        quality,
-        eventId 
-      });
 
       const response = await getEventMediaWithPagination(eventId, token, {
         status,
@@ -111,14 +94,6 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
 
       const photos = (response.data || []).map(transformMediaToPhoto);
 
-      console.log(`✅ useInfiniteEventMedia result:`, {
-        page: pageParam,
-        photosCount: photos.length,
-        hasNext: response.pagination?.hasNext || false,
-        quality,
-        firstPhotoUrl: photos[0]?.imageUrl || 'none'
-      });
-
       return {
         photos,
         nextPage: response.pagination?.hasNext ? pageParam + 1 : undefined,
@@ -126,14 +101,12 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
       };
     },
     initialPageParam: 1,
-    getNextPageParam: (lastPage) => {
-      return lastPage.nextPage;
-    },
+    getNextPageParam: (lastPage) => lastPage.nextPage,
     enabled: enabled && !!token && !!eventId,
     staleTime: quality === 'thumbnail' ? 5 * 60 * 1000 : 2 * 60 * 1000,
     gcTime: quality === 'thumbnail' ? 15 * 60 * 1000 : 10 * 60 * 1000,
     refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    refetchOnMount: 'stale',
     retry: 2,
     networkMode: 'online',
     meta: {
@@ -147,7 +120,6 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
  */
 export function useInfiniteEventMediaFlat(eventId: string, options: MediaFetchOptions = {}) {
   const infiniteQuery = useInfiniteEventMedia(eventId, options);
-
   const photos = infiniteQuery.data?.pages.flatMap(page => page.photos) || [];
 
   return {
@@ -158,7 +130,7 @@ export function useInfiniteEventMediaFlat(eventId: string, options: MediaFetchOp
 }
 
 /**
- * 🚀 NEW: Fetch single photo with full quality
+ * 🚀 Fetch single photo with full quality
  */
 export function useFullQualityPhoto(eventId: string, photoId: string, enabled = false) {
   const token = useAuthToken();
@@ -168,10 +140,7 @@ export function useFullQualityPhoto(eventId: string, photoId: string, enabled = 
     queryFn: async (): Promise<Photo | null> => {
       if (!token || !photoId) return null;
 
-      console.log('🔍 Fetching full quality photo:', photoId);
-
       try {
-        // Fetch the specific photo with original quality
         const mediaItems = await getEventMedia(eventId, token, {
           mediaId: photoId,
           quality: 'original',
@@ -182,28 +151,22 @@ export function useFullQualityPhoto(eventId: string, photoId: string, enabled = 
           throw new Error('Photo not found');
         }
 
-        const photo = transformMediaToPhoto(mediaItems[0]);
-        console.log('✅ Full quality photo loaded:', { 
-          id: photo.id, 
-          url: photo.imageUrl 
-        });
-
-        return photo;
+        return transformMediaToPhoto(mediaItems[0]);
       } catch (error) {
         console.error('❌ Failed to load full quality photo:', error);
         throw error;
       }
     },
     enabled: enabled && !!token && !!photoId && !!eventId,
-    staleTime: 10 * 60 * 1000, // 10 minutes for full quality
-    gcTime: 30 * 60 * 1000, // Keep in cache longer
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
     retry: 1,
     networkMode: 'online'
   });
 }
 
 /**
- * Media counts - unchanged
+ * Media counts
  */
 export function useEventMediaCounts(eventId: string, enabled = true) {
   const token = useAuthToken();
@@ -212,14 +175,13 @@ export function useEventMediaCounts(eventId: string, enabled = true) {
     queryKey: queryKeys.eventCounts(eventId),
     queryFn: async () => {
       if (!token) throw new Error('Authentication required');
-      console.log('🔍 Fetching media counts for event:', eventId);
       return await getEventMediaCounts(eventId, token);
     },
     enabled: enabled && !!token && !!eventId,
     staleTime: 1 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    refetchOnMount: 'stale',
     refetchOnReconnect: true,
     retry: 2,
     networkMode: 'online'
@@ -227,7 +189,7 @@ export function useEventMediaCounts(eventId: string, enabled = true) {
 }
 
 /**
- * 🚀 ENHANCED: Upload mutation with better quality management
+ * 🚀 Upload mutation
  */
 export function useUploadMultipleMedia(
   eventId: string,
@@ -246,10 +208,8 @@ export function useUploadMultipleMedia(
       if (!token) throw new Error('Authentication required');
       if (!files || files.length === 0) throw new Error('No files selected');
 
-      console.log('🔍 Starting upload for', files.length, 'files');
-
-      // Create instant previews
-      const filePreviewsWithMetadata = await Promise.all(
+      // File validation...
+      const validPreviews = await Promise.all(
         files.map(async (file, index) => {
           if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
             toast.error(`"${file.name}" is not a valid image or video file.`);
@@ -279,92 +239,29 @@ export function useUploadMultipleMedia(
         })
       );
 
-      const validPreviews = filePreviewsWithMetadata.filter(Boolean);
-      if (validPreviews.length === 0) {
+      const validFiles = validPreviews.filter(Boolean);
+      if (validFiles.length === 0) {
         throw new Error('No valid files to upload');
       }
 
-      // Create temporary photos with thumbnail quality URLs
-      const tempPhotos = validPreviews.map(preview => ({
-        id: preview!.tempId,
-        imageUrl: preview!.previewUrl,
-        thumbnailUrl: preview!.previewUrl,
-        filename: preview!.filename,
-        size: preview!.size,
-        dimensions: preview!.dimensions,
-        aspectRatio: preview!.aspectRatio || 1,
-        status: 'uploading',
-        processing: true,
-        uploadedBy: 'You',
-        uploadedAt: new Date().toISOString(),
-        approvalStatus: 'pending',
-        tags: [],
-        isTemporary: true
-      }));
-
-      // 🚀 OPTIMISTIC UPDATE: Add to thumbnail cache only
-      queryClient.setQueryData(
-        [...queryKeys.eventPhotos(eventId, 'pending'), 'thumbnail'],
-        (oldData: any) => {
-          if (!oldData) return tempPhotos;
-          return [...tempPhotos, ...oldData];
-        }
-      );
-
-      console.log('✅ Added', tempPhotos.length, 'temporary photos to thumbnail cache');
-
       const uploadResults = await uploadMultipleMedia(
-        validPreviews.map(p => p!.file), 
+        validFiles.map(p => p!.file), 
         eventId, 
         albumId, 
         token
       );
 
-      // Cleanup preview URLs
-      validPreviews.forEach(preview => {
+      validFiles.forEach(preview => {
         if (preview?.previewUrl) {
           URL.revokeObjectURL(preview.previewUrl);
         }
       });
 
-      return {
-        ...uploadResults,
-        tempPhotos,
-        validPreviews
-      };
+      return uploadResults;
     },
     onSuccess: (result) => {
-      const { data, tempPhotos } = result;
+      const { data } = result || {};
       const { summary, uploads } = data || {};
-
-      console.log('✅ Upload completed:', summary);
-
-      if (uploads && uploads.length > 0) {
-        setTimeout(() => {
-          // Remove temporary photos from all quality caches
-          const qualities = ['thumbnail', 'display', 'original'];
-          qualities.forEach(quality => {
-            queryClient.setQueryData(
-              [...queryKeys.eventPhotos(eventId, 'pending'), quality],
-              (oldData: any) => {
-                if (!oldData) return [];
-                return oldData.filter((photo: any) => !photo.isTemporary);
-              }
-            );
-          });
-
-          // Invalidate all quality variants to force refresh
-          queryClient.invalidateQueries({
-            queryKey: ['eventPhotos', eventId],
-            exact: false
-          });
-
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.eventCounts(eventId),
-            exact: false
-          });
-        }, 1000);
-      }
 
       if (summary?.successful > 0) {
         toast.success(
@@ -386,19 +283,6 @@ export function useUploadMultipleMedia(
     },
     onError: (error: Error) => {
       console.error('❌ Upload failed:', error);
-      
-      // Remove temporary photos from all quality caches
-      const qualities = ['thumbnail', 'display', 'original'];
-      qualities.forEach(quality => {
-        queryClient.setQueryData(
-          [...queryKeys.eventPhotos(eventId, 'pending'), quality],
-          (oldData: any) => {
-            if (!oldData) return [];
-            return oldData.filter((photo: any) => !photo.isTemporary);
-          }
-        );
-      });
-
       toast.error(error.message || 'Upload failed');
       options.onError?.(error);
     }
@@ -406,7 +290,7 @@ export function useUploadMultipleMedia(
 }
 
 /**
- * Helper function for image dimensions
+ * Helper for image dimensions
  */
 async function getImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
@@ -436,7 +320,12 @@ async function getImageDimensions(file: File): Promise<{ width: number; height: 
 }
 
 /**
- * 🚀 ENHANCED: Update media status with quality-aware cache invalidation
+ * 🚀 CORRECTED: Update media status with smart cache invalidation
+ * 
+ * Strategy:
+ * 1. Remove photo from ALL status caches (cleanup)
+ * 2. Invalidate NEW status cache to refetch from backend
+ * 3. Let WebSocket updates handle progressive improvements
  */
 export function useUpdateMediaStatus(eventId: string) {
   const token = useAuthToken();
@@ -453,43 +342,83 @@ export function useUpdateMediaStatus(eventId: string) {
       reason?: string;
     }) => {
       if (!token) throw new Error('Authentication required');
-
       console.log('🔍 Updating media status:', { mediaId, status });
-
       return await updateMediaStatus(mediaId, status, token, {
         reason,
         hideReason: reason
       });
     },
+    
     onSuccess: async (_, { status, mediaId }) => {
       console.log('✅ Media status updated successfully');
 
-      // Invalidate all quality variants and statuses
-      const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
-      const qualities = ['thumbnail', 'display', 'original'];
+      const allStatuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+      const qualities = ['small', 'medium', 'large', 'original'];
 
-      const invalidationPromises = [];
+      // STEP 1: Remove photo from ALL status caches (cleanup)
+      console.log('🧹 Removing photo from all status caches...');
+      const removalPromises: Promise<any>[] = [];
 
-      // Regular queries - all combinations
-      for (const s of statuses) {
+      for (const s of allStatuses) {
         for (const q of qualities) {
-          invalidationPromises.push(
-            queryClient.invalidateQueries({
-              queryKey: [...queryKeys.eventPhotos(eventId, s), q],
-              exact: false,
-              refetchType: 'all'
-            })
+          // Remove from infinite queries
+          removalPromises.push(
+            Promise.resolve(
+              queryClient.setQueryData(
+                [...queryKeys.eventPhotos(eventId, s), 'infinite', q],
+                (oldData: any) => {
+                  if (!oldData?.pages) return oldData;
+                  
+                  return {
+                    ...oldData,
+                    pages: oldData.pages.map((page: any) => ({
+                      ...page,
+                      photos: page.photos.filter((p: any) => p.id !== mediaId)
+                    }))
+                  };
+                }
+              )
+            )
           );
-          
-          // Also invalidate infinite queries
-          invalidationPromises.push(
-            queryClient.invalidateQueries({
-              queryKey: [...queryKeys.eventPhotos(eventId, s), 'infinite', q],
-              exact: false,
-              refetchType: 'all'
-            })
+
+          // Remove from regular queries
+          removalPromises.push(
+            Promise.resolve(
+              queryClient.setQueryData(
+                [...queryKeys.eventPhotos(eventId, s), q],
+                (oldData: any) => {
+                  if (!oldData) return oldData;
+                  return oldData.filter((p: any) => p.id !== mediaId);
+                }
+              )
+            )
           );
         }
+      }
+
+      await Promise.allSettled(removalPromises);
+      console.log('✅ Photo removed from all caches');
+
+      // STEP 2: Invalidate NEW status cache to refetch
+      console.log('🔄 Invalidating new status cache for refetch...');
+      const invalidationPromises: Promise<any>[] = [];
+
+      for (const q of qualities) {
+        invalidationPromises.push(
+          queryClient.invalidateQueries({
+            queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', q],
+            exact: false,
+            refetchType: 'all'
+          })
+        );
+
+        invalidationPromises.push(
+          queryClient.invalidateQueries({
+            queryKey: [...queryKeys.eventPhotos(eventId, status), q],
+            exact: false,
+            refetchType: 'all'
+          })
+        );
       }
 
       // Invalidate counts
@@ -501,16 +430,8 @@ export function useUpdateMediaStatus(eventId: string) {
         })
       );
 
-      // Invalidate specific photo full quality cache
-      invalidationPromises.push(
-        queryClient.invalidateQueries({
-          queryKey: ['photo', mediaId, 'full-quality'],
-          exact: false
-        })
-      );
-
-      // Execute all invalidations
       await Promise.allSettled(invalidationPromises);
+      console.log('✅ New status cache invalidated and refetching');
 
       // Broadcast to other tabs
       try {
@@ -536,23 +457,27 @@ export function useUpdateMediaStatus(eventId: string) {
 
       toast.success(`Photo ${statusAction} successfully`);
     },
+    
     onError: (error: Error, { status }) => {
       console.error('❌ Failed to update media status:', error);
-
       const statusAction = {
         approved: 'approve',
         rejected: 'reject',
         hidden: 'hide',
         pending: 'update'
       }[status];
-
       toast.error(`Failed to ${statusAction} photo`);
     }
   });
 }
 
 /**
- * 🚀 ENHANCED: Delete media mutation with quality-aware cleanup
+ * 🚀 CORRECTED: Delete media with smart cache removal
+ * 
+ * Strategy:
+ * 1. Remove photo from ALL caches immediately
+ * 2. Invalidate counts to refetch
+ * 3. No need to refetch individual status (photo is gone)
  */
 export function useDeleteMedia(eventId: string) {
   const token = useAuthToken();
@@ -564,40 +489,60 @@ export function useDeleteMedia(eventId: string) {
       console.log('🔍 Deleting media:', mediaId);
       return await deleteMedia(mediaId, token);
     },
+    
     onSuccess: async (_, mediaId) => {
       console.log('✅ Media deleted successfully');
 
-      // Comprehensive cleanup for all quality variants
-      const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
-      const qualities = ['thumbnail', 'display', 'original'];
+      const allStatuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+      const qualities = ['small', 'medium', 'large', 'original'];
 
-      const invalidationPromises = [];
+      // Remove photo from ALL caches
+      console.log('🧹 Removing photo from all caches...');
+      const removalPromises: Promise<any>[] = [];
 
-      // Invalidate all combinations
-      for (const status of statuses) {
+      for (const status of allStatuses) {
         for (const quality of qualities) {
-          // Regular queries
-          invalidationPromises.push(
-            queryClient.invalidateQueries({
-              queryKey: [...queryKeys.eventPhotos(eventId, status), quality],
-              exact: false,
-              refetchType: 'all'
-            })
+          // Remove from infinite queries
+          removalPromises.push(
+            Promise.resolve(
+              queryClient.setQueryData(
+                [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
+                (oldData: any) => {
+                  if (!oldData?.pages) return oldData;
+                  
+                  return {
+                    ...oldData,
+                    pages: oldData.pages.map((page: any) => ({
+                      ...page,
+                      photos: page.photos.filter((p: any) => p.id !== mediaId)
+                    }))
+                  };
+                }
+              )
+            )
           );
-          
-          // Infinite queries
-          invalidationPromises.push(
-            queryClient.invalidateQueries({
-              queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
-              exact: false,
-              refetchType: 'all'
-            })
+
+          // Remove from regular queries
+          removalPromises.push(
+            Promise.resolve(
+              queryClient.setQueryData(
+                [...queryKeys.eventPhotos(eventId, status), quality],
+                (oldData: any) => {
+                  if (!oldData) return oldData;
+                  return oldData.filter((p: any) => p.id !== mediaId);
+                }
+              )
+            )
           );
         }
       }
 
+      await Promise.allSettled(removalPromises);
+      console.log('✅ Photo removed from all caches');
+
       // Invalidate counts and specific photo cache
-      invalidationPromises.push(
+      console.log('🔄 Invalidating counts...');
+      const invalidationPromises = [
         queryClient.invalidateQueries({
           queryKey: queryKeys.eventCounts(eventId),
           exact: false,
@@ -607,9 +552,10 @@ export function useDeleteMedia(eventId: string) {
           queryKey: ['photo', mediaId, 'full-quality'],
           exact: false
         })
-      );
+      ];
 
       await Promise.allSettled(invalidationPromises);
+      console.log('✅ Counts invalidated');
 
       // Broadcast deletion to other tabs
       try {
@@ -627,6 +573,7 @@ export function useDeleteMedia(eventId: string) {
 
       toast.success('Photo deleted successfully');
     },
+    
     onError: (error) => {
       console.error('❌ Failed to delete media:', error);
       toast.error('Failed to delete photo');
@@ -635,7 +582,7 @@ export function useDeleteMedia(eventId: string) {
 }
 
 /**
- * 🚀 ENHANCED: Gallery management utilities with quality-aware cross-tab communication
+ * Gallery utilities
  */
 export function useGalleryUtils(eventId: string) {
   const queryClient = useQueryClient();
@@ -650,13 +597,12 @@ export function useGalleryUtils(eventId: string) {
           if (event.eventId === eventId) {
             console.log('📡 Received cross-tab update:', event);
 
-            // Invalidate all quality variants when receiving cross-tab updates
-            const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
-            const qualities = ['thumbnail', 'display', 'original'];
+            const allStatuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+            const qualities = ['small', 'medium', 'large', 'original'];
 
             const invalidationPromises = [];
 
-            for (const status of statuses) {
+            for (const status of allStatuses) {
               for (const quality of qualities) {
                 invalidationPromises.push(
                   queryClient.invalidateQueries({
@@ -694,13 +640,11 @@ export function useGalleryUtils(eventId: string) {
   const refreshData = useCallback(async () => {
     console.log('🔄 Manual refresh triggered for event:', eventId);
 
-    // Clear all cache variants first
     await queryClient.removeQueries({
       queryKey: ['eventPhotos', eventId],
       exact: false
     });
 
-    // Then invalidate and refetch
     await queryClient.invalidateQueries({
       queryKey: queryKeys.event(eventId),
       exact: false,
@@ -708,14 +652,12 @@ export function useGalleryUtils(eventId: string) {
     });
   }, [eventId, queryClient]);
 
-  // Get cached photo count (check thumbnail cache first)
+  // Get cached photo count
   const getCachedPhotoCount = useCallback((status: string) => {
-    // Try thumbnail cache first (most likely to be populated)
     let data = queryClient.getQueryData<Photo[]>(
-      [...queryKeys.eventPhotos(eventId, status), 'thumbnail']
+      [...queryKeys.eventPhotos(eventId, status), 'small']
     );
     
-    // Fallback to any quality variant
     if (!data) {
       data = queryClient.getQueryData<Photo[]>(
         queryKeys.eventPhotos(eventId, status)
@@ -730,6 +672,3 @@ export function useGalleryUtils(eventId: string) {
     getCachedPhotoCount
   };
 }
-
-// Export the new full quality hook
-// export { useFullQualityPhoto };
