@@ -324,7 +324,7 @@ export const transformBackendPhoto = (backendPhoto: any): Photo => {
 // 🔧 UTILITY: Get best image URL for context
 export const getBestImageUrl = (
   photo: Photo, 
-  context: PhotoContext = 'display',
+  context: PhotoContext = 'thumbnail',
   supportsWebP: boolean = true
 ): string => {
   // Handle temporary/uploading photos

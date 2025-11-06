@@ -102,7 +102,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
                   : undefined
               }
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-              src={photo.responsive_urls?.display || photo.url}
+              src={photo.responsive_urls?.display}
               alt={`Photo ${photo.id}`}
               className={`
                 w-full h-auto object-cover transition-all duration-500

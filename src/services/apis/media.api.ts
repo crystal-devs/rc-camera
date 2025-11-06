@@ -1,9 +1,10 @@
 // services/apis/media.api.ts
 
-import axios from 'axios';
-import { API_BASE_URL } from '@/lib/api-config';
+import { apiClient } from '@/lib/api-client';
+import { API_ROUTES, buildApiUrl } from '@/lib/api-routes';
 import { MediaFetchOptions } from '@/types/events';
 import { Photo } from '@/types/PhotoGallery.types';
+import axios from 'axios';
 
 // Local MediaResponse for this file
 export interface MediaResponse {
@@ -96,8 +97,8 @@ export const getEventMediaWithPagination = async (
         console.log(`Fetching event media for eventId: ${eventId}, status: ${options.status}, options:`, options);
 
         const endpoint = options.albumId
-            ? `${API_BASE_URL}/media/album/${options.albumId}`
-            : `${API_BASE_URL}/media/event/${eventId}`;
+            ? API_ROUTES.MEDIA.GET_ALBUM(options.albumId)
+            : API_ROUTES.MEDIA.GET_EVENT(eventId);
 
         const params = new URLSearchParams();
 
@@ -114,7 +115,8 @@ export const getEventMediaWithPagination = async (
 
         console.log(`Calling API: ${endpoint}?${params}`);
 
-        const response = await axios.get(`${endpoint}?${params}`, {
+        const response = await apiClient.get(endpoint, {
+            params,
             headers: {
                 'Authorization': `Bearer ${authToken}`,
             },
@@ -129,36 +131,34 @@ export const getEventMediaWithPagination = async (
         }
 
         throw new Error(response.data?.message || 'Failed to fetch event media');
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching event media:', error);
 
-        if (axios.isAxiosError(error)) {
-            if (error.code === 'ERR_NETWORK') {
-                throw new Error('Network error - API server may be down');
-            }
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Authentication error. Please log in again.');
-            }
-            if (error.response?.status === 404) {
-                console.log('No media found for event, returning empty response');
-                return {
-                    status: true,
-                    code: 200,
-                    message: 'No media found',
-                    data: [],
-                    pagination: {
-                        page: 1,
-                        limit: options.limit || 20,
-                        totalCount: 0,
-                        totalPages: 0,
-                        hasNext: false,
-                        hasPrev: false
-                    }
-                };
-            }
-            if (error.response?.status && error.response.status >= 500) {
-                throw new Error('Server error. Please try again later.');
-            }
+        if (error?.code === 'ERR_NETWORK') {
+            throw new Error('Network error - API server may be down');
+        }
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error('Authentication error. Please log in again.');
+        }
+        if (error?.response?.status === 404) {
+            console.log('No media found for event, returning empty response');
+            return {
+                status: true,
+                code: 200,
+                message: 'No media found',
+                data: [],
+                pagination: {
+                    page: 1,
+                    limit: options.limit || 20,
+                    totalCount: 0,
+                    totalPages: 0,
+                    hasNext: false,
+                    hasPrev: false
+                }
+            };
+        }
+        if (error?.response?.status && error.response.status >= 500) {
+            throw new Error('Server error. Please try again later.');
         }
 
         throw error;
@@ -198,9 +198,7 @@ export const updateMediaStatus = async (
     } = {}
 ): Promise<any> => {
     try {
-        const endpoint = `${API_BASE_URL}/media/${mediaId}/status`;
-
-        const response = await axios.patch(endpoint, {
+        const response = await apiClient.patch(API_ROUTES.MEDIA.UPDATE_STATUS(mediaId), {
             status,
             reason: options.reason,
             hide_reason: options.hideReason
@@ -234,9 +232,6 @@ export async function bulkUpdateMediaStatus(
         hideReason?: string;
     } = {}
 ): Promise<any> {
-    // Use your existing API_BASE_URL constant and VERSION
-    const url = `${API_BASE_URL}/bulk/media/event/${eventId}/status`;
-
     console.log('🔄 Bulk updating media status via dedicated endpoint:', {
         eventId,
         count: mediaIds.length,
@@ -246,42 +241,26 @@ export async function bulkUpdateMediaStatus(
     });
 
     try {
-        const response = await fetch(url, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-                media_ids: mediaIds, // Match your backend field name
-                status,
-                reason: options.reason,
-                hide_reason: options.hideReason
-            }),
+        const response = await apiClient.patch(API_ROUTES.MEDIA.BULK_UPDATE(eventId), {
+            media_ids: mediaIds, // Match your backend field name
+            status,
+            reason: options.reason,
+            hide_reason: options.hideReason
         });
 
-        if (!response.ok) {
-            if (response.status === 429) {
-                const errorData = await response.json().catch(() => ({}));
-                const retryAfter = response.headers.get('Retry-After') || '120';
-                throw new Error(`Too many bulk operations. Please wait ${retryAfter} seconds and try again.`);
-            }
-
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-
         console.log('✅ Bulk status update completed via dedicated endpoint:', {
-            successful: result.data?.modifiedCount || mediaIds.length,
-            requested: result.data?.requestedCount || mediaIds.length,
+            successful: response.data?.data?.modifiedCount || mediaIds.length,
+            requested: response.data?.data?.requestedCount || mediaIds.length,
             endpoint: 'bulk-operations'
         });
 
-        return result;
-    } catch (error) {
+        return response.data;
+    } catch (error: any) {
         console.error('❌ Bulk status update failed:', error);
+        if (error?.response?.status === 429) {
+            const retryAfter = error.response.headers?.['retry-after'] || '120';
+            throw new Error(`Too many bulk operations. Please wait ${retryAfter} seconds and try again.`);
+        }
         throw error;
     }
 }
@@ -292,27 +271,13 @@ export async function bulkApproveMedia(
     token: string,
     reason?: string
 ): Promise<any> {
-    const url = `${API_BASE_URL}/bulk/media/event/${eventId}/approve`;
-
     try {
-        const response = await fetch(url, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-                media_ids: mediaIds,
-                reason
-            }),
+        const response = await apiClient.patch(API_ROUTES.MEDIA.BULK_APPROVE(eventId), {
+            media_ids: mediaIds,
+            reason
         });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `Bulk approve failed: ${response.statusText}`);
-        }
-
-        return await response.json();
+        return response.data;
     } catch (error) {
         console.error('❌ Bulk approve failed:', error);
         throw error;
@@ -325,27 +290,13 @@ export async function bulkRejectMedia(
     token: string,
     reason?: string
 ): Promise<any> {
-    const url = `${API_BASE_URL}/bulk/media/event/${eventId}/reject`;
-
     try {
-        const response = await fetch(url, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-                media_ids: mediaIds,
-                reason
-            }),
+        const response = await apiClient.patch(API_ROUTES.MEDIA.BULK_REJECT(eventId), {
+            media_ids: mediaIds,
+            reason
         });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `Bulk reject failed: ${response.statusText}`);
-        }
-
-        return await response.json();
+        return response.data;
     } catch (error) {
         console.error('❌ Bulk reject failed:', error);
         throw error;
@@ -358,27 +309,13 @@ export async function bulkHideMedia(
     token: string,
     reason?: string
 ): Promise<any> {
-    const url = `${API_BASE_URL}/api/v1/bulk/media/event/${eventId}/hide`;
-
     try {
-        const response = await fetch(url, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-                media_ids: mediaIds,
-                reason
-            }),
+        const response = await apiClient.patch(API_ROUTES.MEDIA.BULK_HIDE(eventId), {
+            media_ids: mediaIds,
+            reason
         });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `Bulk hide failed: ${response.statusText}`);
-        }
-
-        return await response.json();
+        return response.data;
     } catch (error) {
         console.error('❌ Bulk hide failed:', error);
         throw error;
@@ -434,15 +371,6 @@ export const getEventMediaWithGuestToken = async (
             throw new Error('Share token is required');
         }
 
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
-
-        // Add auth token if available
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        }
-
         // Build query parameters with defaults
         const params = new URLSearchParams();
         if (options.page) params.append('page', options.page.toString());
@@ -452,24 +380,20 @@ export const getEventMediaWithGuestToken = async (
 
         console.log(`🔗 Fetching guest event media: ${shareToken.substring(0, 8)}... with params:`, Object.fromEntries(params));
 
-        const url = `${API_BASE_URL}/media/guest/${shareToken}${params.toString() ? `?${params.toString()}` : ''}`;
-        console.log(`📡 API URL: ${url}`);
-
-        const response = await axios.get(url, {
+        const response = await apiClient.get(API_ROUTES.MEDIA.GUEST_ACCESS(shareToken), {
+            params,
             timeout: 15000,
-            headers,
-            validateStatus: (status) => status < 500 // Accept 4xx errors to handle them properly
+            validateStatus: (status: number) => status < 500 // Accept 4xx errors to handle them properly
         });
 
         console.log('📦 API Response:', {
             status: response.status,
-            statusText: response.statusText,
             dataKeys: response.data ? Object.keys(response.data) : [],
             hasData: !!response.data?.data,
             itemCount: response.data?.data?.length || 0,
             apiStatus: response.data?.status,
-            apiSuccess: response.data?.success,
-            pagination: response.data?.pagination,
+            apiSuccess: (response.data as any)?.success,
+            pagination: (response.data as any)?.pagination,
             other: response.data?.other
         });
 
@@ -493,12 +417,12 @@ export const getEventMediaWithGuestToken = async (
 
         // Handle different API response formats
         const isSuccessful = response.data.status === true ||
-            response.data.success === true ||
+            (response.data as any).success === true ||
             response.status === 200;
 
         if (!isSuccessful) {
             const errorMessage = response.data.message ||
-                response.data.error?.message ||
+                (response.data as any).error?.message ||
                 'API request was not successful';
             throw new Error(errorMessage);
         }
@@ -509,24 +433,24 @@ export const getEventMediaWithGuestToken = async (
         const result: MediaResponse = {
             data: mediaItems,
             // Try multiple sources for total count
-            total: response.data.pagination?.total ||
-                response.data.pagination?.totalCount ||
-                response.data.total ||
-                response.data.other?.pagination?.totalCount ||
+            total: (response.data as any).pagination?.total ||
+                (response.data as any).pagination?.totalCount ||
+                (response.data as any).total ||
+                (response.data as any).other?.pagination?.totalCount ||
                 mediaItems.length,
 
             // Try multiple sources for hasMore
-            hasMore: response.data.pagination?.hasMore ||
-                response.data.hasMore ||
-                response.data.pagination?.hasNext ||
-                response.data.other?.pagination?.hasNext ||
+            hasMore: (response.data as any).pagination?.hasMore ||
+                (response.data as any).hasMore ||
+                (response.data as any).pagination?.hasNext ||
+                (response.data as any).other?.pagination?.hasNext ||
                 false,
 
-            nextCursor: response.data.nextCursor,
+            nextCursor: (response.data as any).nextCursor,
 
             // Preserve original pagination structure
-            pagination: response.data.pagination,
-            other: response.data.other
+            pagination: (response.data as any).pagination,
+            other: (response.data as any).other
         };
 
         console.log('✅ Processed API response:', {
@@ -547,29 +471,27 @@ export const getEventMediaWithGuestToken = async (
         });
 
         // Enhanced error handling
-        if (axios.isAxiosError(error)) {
-            if (error.code === 'ECONNABORTED') {
-                throw new Error('Request timeout - please check your connection');
-            }
+        if ((error as any)?.code === 'ECONNABORTED') {
+            throw new Error('Request timeout - please check your connection');
+        }
 
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Share link has expired or is no longer valid');
-            }
+        if ((error as any)?.response?.status === 401 || (error as any)?.response?.status === 403) {
+            throw new Error('Share link has expired or is no longer valid');
+        }
 
-            if (error.response?.status === 404) {
-                throw new Error('Event not found or share link is invalid');
-            }
+        if ((error as any)?.response?.status === 404) {
+            throw new Error('Event not found or share link is invalid');
+        }
 
-            if (error.response?.status && error.response.status >= 500) {
-                throw new Error('Server error - please try again later');
-            }
+        if ((error as any)?.response?.status && (error as any).response.status >= 500) {
+            throw new Error('Server error - please try again later');
+        }
 
-            // Use response error message if available
-            const responseMessage = error.response?.data?.message ||
-                error.response?.data?.error?.message;
-            if (responseMessage) {
-                throw new Error(responseMessage);
-            }
+        // Use response error message if available
+        const responseMessage = (error as any)?.response?.data?.message ||
+            (error as any)?.response?.data?.error?.message;
+        if (responseMessage) {
+            throw new Error(responseMessage);
         }
 
         // Re-throw the error if it's already a custom error
@@ -608,11 +530,12 @@ export const getAlbumMediaWithGuestToken = async (
         if (options.limit) params.append('limit', options.limit.toString());
         if (options.quality) params.append('quality', options.quality);
 
-        const response = await axios.get(`${API_BASE_URL}/media/album/${albumId}/guest?${params}`, {
+        const response = await apiClient.get(API_ROUTES.MEDIA.GUEST_ALBUM(albumId), {
+            params,
             timeout: 15000
         });
 
-        if (response.data && (response.data.status === true || response.data.success)) {
+        if (response.data && (response.data.status === true || (response.data as any).success)) {
             const mediaItems = response.data.data || [];
 
             if (!options.page) {
@@ -624,13 +547,11 @@ export const getAlbumMediaWithGuestToken = async (
         }
 
         throw new Error(response.data?.message || 'Failed to fetch album media');
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching album media with guest token:', error);
 
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Share link has expired or is no longer valid');
-            }
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error('Share link has expired or is no longer valid');
         }
 
         throw error;
@@ -649,13 +570,9 @@ export const moderateMedia = async (
     try {
         console.log(`${action === 'approve' ? 'Approving' : 'Rejecting'} media: ${mediaId}`);
 
-        const response = await axios.post(`${API_BASE_URL}/media/${mediaId}/moderate`, {
+        const response = await apiClient.post(API_ROUTES.MEDIA.GET_BY_ID(mediaId) + '/moderate', {
             action,
             reason
-        }, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
         });
 
         if (response.data && response.data.status === true) {
@@ -665,13 +582,11 @@ export const moderateMedia = async (
         }
 
         throw new Error(response.data?.message || `Failed to ${action} media`);
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Error ${action === 'approve' ? 'approving' : 'rejecting'} media:`, error);
 
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('You do not have permission to moderate content.');
-            }
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error('You do not have permission to moderate content.');
         }
 
         throw error;
@@ -696,10 +611,8 @@ export const getPendingMedia = async (
         if (options.page) params.append('page', options.page.toString());
         if (options.limit) params.append('limit', options.limit.toString());
 
-        const response = await axios.get(`${API_BASE_URL}/media/event/${eventId}/pending?${params}`, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
+        const response = await apiClient.get(API_ROUTES.MEDIA.GET_EVENT(eventId) + '/pending', {
+            params
         });
 
         if (response.data && response.data.status === true) {
@@ -707,13 +620,11 @@ export const getPendingMedia = async (
         }
 
         throw new Error(response.data?.message || 'Failed to fetch pending media');
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching pending media:', error);
 
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('You do not have permission to view pending content.');
-            }
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error('You do not have permission to view pending content.');
         }
 
         throw error;
@@ -754,10 +665,7 @@ export const uploadCoverImage = async (
 
         console.log('Uploading cover image with options:', options);
 
-        const response = await axios.post(`${API_BASE_URL}/media/upload-cover`, formData, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-            },
+        const response = await apiClient.post(API_ROUTES.MEDIA.UPLOAD_COVER, formData, {
             timeout: 60000
         });
 
@@ -766,19 +674,17 @@ export const uploadCoverImage = async (
         }
 
         throw new Error('Invalid response from cover image upload API');
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error uploading cover image:', error);
 
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 413) {
-                throw new Error('Image file is too large. Please use a smaller file.');
-            }
-            if (error.response?.status === 415) {
-                throw new Error('Unsupported file type. Please use JPEG, PNG, or WebP format.');
-            }
-            if (error.response?.status === 401) {
-                throw new Error('Authentication error. Please log in again.');
-            }
+        if (error?.response?.status === 413) {
+            throw new Error('Image file is too large. Please use a smaller file.');
+        }
+        if (error?.response?.status === 415) {
+            throw new Error('Unsupported file type. Please use JPEG, PNG, or WebP format.');
+        }
+        if (error?.response?.status === 401) {
+            throw new Error('Authentication error. Please log in again.');
         }
 
         throw error;
@@ -792,11 +698,7 @@ export const deleteMedia = async (mediaId: string, authToken: string): Promise<b
     try {
         console.log(`Deleting media: ${mediaId}`);
 
-        const response = await axios.delete(`${API_BASE_URL}/media/${mediaId}`, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
-        });
+        const response = await apiClient.delete(API_ROUTES.MEDIA.GET_BY_ID(mediaId));
 
         if (response.data && response.data.status === true) {
             // Clear caches to force refresh
@@ -805,17 +707,15 @@ export const deleteMedia = async (mediaId: string, authToken: string): Promise<b
         }
 
         throw new Error(response.data?.message || 'Failed to delete media');
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error deleting media:', error);
 
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('You do not have permission to delete this photo.');
-            }
-            if (error.response?.status === 404) {
-                console.warn('Media not found on server, may have been already deleted');
-                return true;
-            }
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error('You do not have permission to delete this photo.');
+        }
+        if (error?.response?.status === 404) {
+            console.warn('Media not found on server, may have been already deleted');
+            return true;
         }
 
         throw error;
@@ -839,11 +739,7 @@ export const getMediaProcessingStatus = async (
     }>;
 }> => {
     try {
-        const response = await axios.get(`${API_BASE_URL}/media/${mediaId}/processing`, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
-        });
+        const response = await apiClient.get(API_ROUTES.MEDIA.GET_BY_ID(mediaId) + '/processing');
 
         if (response.data && response.data.status === true) {
             return response.data.data;
@@ -864,12 +760,8 @@ export const batchApproveMedia = async (
     authToken: string
 ): Promise<{ successful: string[]; failed: string[] }> => {
     try {
-        const response = await axios.post(`${API_BASE_URL}/media/batch/approve`, {
+        const response = await apiClient.post(API_ROUTES.MEDIA.BATCH_APPROVE, {
             media_ids: mediaIds
-        }, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
         });
 
         if (response.data && response.data.status === true) {
@@ -890,13 +782,9 @@ export const batchRejectMedia = async (
     authToken: string
 ): Promise<{ successful: string[]; failed: string[] }> => {
     try {
-        const response = await axios.post(`${API_BASE_URL}/media/batch/reject`, {
+        const response = await apiClient.post(API_ROUTES.MEDIA.BATCH_REJECT, {
             media_ids: mediaIds,
             reason
-        }, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
         });
 
         if (response.data && response.data.status === true) {
@@ -1096,12 +984,9 @@ async function uploadWithRetry(formData: FormData, authToken: string, maxRetries
                 await new Promise(resolve => setTimeout(resolve, 1000 * retries));
             }
 
-            return await axios.post(`${API_BASE_URL}/media/upload`, formData, {
-                headers: {
-                    'Authorization': `Bearer ${authToken}`,
-                },
+            return await apiClient.post(API_ROUTES.MEDIA.UPLOAD, formData, {
                 timeout: 120000, // 2 minutes for large files
-                onUploadProgress: (progressEvent) => {
+                onUploadProgress: (progressEvent: any) => {
                     const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
                     console.log(`Upload progress: ${percentCompleted}%`);
                 }
@@ -1110,10 +995,9 @@ async function uploadWithRetry(formData: FormData, authToken: string, maxRetries
             console.error(`Upload error (attempt ${retries + 1}/${maxRetries + 1}):`, error);
 
             // Only retry on network errors or 500 errors
-            if (axios.isAxiosError(error) &&
-                (error.code === 'ECONNABORTED' ||
-                    error.code === 'ECONNRESET' ||
-                    error.response?.status === 500)) {
+            if ((error as any)?.code === 'ECONNABORTED' ||
+                (error as any)?.code === 'ECONNRESET' ||
+                (error as any)?.response?.status === 500) {
                 retries++;
                 if (retries <= maxRetries) {
                     continue;
@@ -1152,14 +1036,10 @@ export const getBulkUploadUrls = async (
     };
 }> => {
     try {
-        const response = await axios.post(`${API_BASE_URL}/media/upload-url`, {
+        const response = await apiClient.post(API_ROUTES.MEDIA.UPLOAD_URLS, {
             eventId,
             files
         }, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'application/json'
-            },
             timeout: 15000
         });
 
@@ -1202,7 +1082,7 @@ export const uploadMultipleMedia = async (
             totalSize: `${(files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)}MB`
         });
 
-        const response = await fetch(`${API_BASE_URL}/media/upload`, {
+        const response = await fetch(buildApiUrl(API_ROUTES.MEDIA.UPLOAD), {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${authToken}`,
@@ -1231,40 +1111,40 @@ export const uploadMultipleMedia = async (
  */
 function handleUploadError(error: any) {
     console.error('API error details:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        url: error.config?.url
+        status: error?.response?.status,
+        data: error?.response?.data,
+        url: error?.config?.url
     });
 
-    if (error.response?.status === 413) {
+    if (error?.response?.status === 413) {
         throw new Error('File too large. Please use a smaller image or enable compression.');
     }
 
-    if (error.response?.status === 415) {
+    if (error?.response?.status === 415) {
         throw new Error('Unsupported file type. Please use JPEG, PNG, WebP, or HEIC format.');
     }
 
-    if (error.response?.status === 401) {
+    if (error?.response?.status === 401) {
         throw new Error('Authentication expired. Please log in again.');
     }
 
-    if (error.response?.status === 403) {
+    if (error?.response?.status === 403) {
         throw new Error('You do not have permission to upload to this album.');
     }
 
-    if (error.response?.status === 400) {
-        const message = error.response?.data?.message || 'Invalid upload request';
+    if (error?.response?.status === 400) {
+        const message = error?.response?.data?.message || 'Invalid upload request';
         throw new Error(`Upload failed: ${message}`);
     }
 
-    if (error.response?.status === 500) {
-        if (error.response?.data?.error?.message?.includes('processing')) {
+    if (error?.response?.status === 500) {
+        if (error?.response?.data?.error?.message?.includes('processing')) {
             throw new Error('Server is busy processing images. Please try again in a moment.');
         }
         throw new Error('Server error. Please try again later.');
     }
 
-    throw new Error(error.response?.data?.message || 'Upload failed. Please try again.');
+    throw new Error(error?.response?.data?.message || 'Upload failed. Please try again.');
 }
 
 /**
@@ -1300,9 +1180,9 @@ export const getAlbumMedia = async (
         if (options.limit) params.append('limit', options.limit.toString());
         if (options.quality) params.append('quality', options.quality);
 
-        const response = await axios.get(`${API_BASE_URL}/media/album/${albumId}?${params}`, {
+        const response = await apiClient.get(API_ROUTES.MEDIA.GET_ALBUM(albumId), {
+            params,
             headers: {
-                'Authorization': `Bearer ${authToken}`,
                 'If-Modified-Since': imageCache.getLastModified(cacheKey) || ''
             },
             timeout: 15000
@@ -1326,16 +1206,14 @@ export const getAlbumMedia = async (
         }
 
         throw new Error(response.data?.message || 'Failed to fetch album media');
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching album media:', error);
 
-        if (axios.isAxiosError(error)) {
-            if (error.response?.status === 401 || error.response?.status === 403) {
-                throw new Error('Authentication error. Please log in again.');
-            }
-            if (error.response?.status === 404) {
-                return []; // Album has no photos yet
-            }
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error('Authentication error. Please log in again.');
+        }
+        if (error?.response?.status === 404) {
+            return []; // Album has no photos yet
         }
 
         throw error;
