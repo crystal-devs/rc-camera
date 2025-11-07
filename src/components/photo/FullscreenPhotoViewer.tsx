@@ -259,18 +259,26 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   }, []);
 
   // Action handlers
-  const handleDownload = useCallback((e: React.MouseEvent) => {
+  const handleDownload = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (downloadPhoto) {
-      // Download original quality image
+    try {
       const originalUrl = getImageUrls.original || getImageUrls.high;
-      const photoToDownload = {
-        ...selectedPhoto,
-        imageUrl: originalUrl
-      };
-      downloadPhoto(photoToDownload);
+      const response = await fetch(originalUrl);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `photo-${selectedPhoto.id}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download failed:', error);
+      // Fallback to opening in new tab
+      window.open(getImageUrls.original || getImageUrls.high, '_blank');
     }
-  }, [downloadPhoto, selectedPhoto, getImageUrls]);
+  }, [selectedPhoto.id, getImageUrls]);
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -535,12 +543,12 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           id: selectedPhoto.id,
           imageUrl: originalUrl,
           src: originalUrl,
-          title: selectedPhoto?.title || '',
+          title: selectedPhoto?.id || '',
           takenBy: selectedPhoto.takenBy?.toString(),
           uploadedBy: selectedPhoto.uploadedBy?.toString() || '',
-          uploadedAt: selectedPhoto.uploadedAt?.toString() || '',
-          takenAt: selectedPhoto.takenAt?.toString() || '',
-          location: selectedPhoto.location || {},
+          uploadedAt: selectedPhoto.createdAt?.toString() || '',
+          takenAt: selectedPhoto.metadata?.timestamp?.toString() || '',
+          location: selectedPhoto.metadata?.location || {},
           metadata: {
             width: selectedPhoto.metadata?.originalWidth,
             height: selectedPhoto.metadata?.originalHeight,

@@ -1,6 +1,6 @@
 // components/OptimizedProgressiveImage.tsx - ENHANCED for instant feedback
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { CameraIcon, CheckIcon, XIcon, EyeOffIcon, TrashIcon, DownloadIcon, ClockIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,9 @@ interface OptimizedProgressiveImageProps {
   onStatusUpdate: (photoId: string, status: string) => void;
   onDownload?: (photo: Photo) => void;
   onDelete?: (photoId: string) => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelection?: (photoId: string) => void;
 }
 
 export const OptimizedProgressiveImage = ({
@@ -31,7 +34,10 @@ export const OptimizedProgressiveImage = ({
   currentTab,
   onStatusUpdate,
   onDownload,
-  onDelete
+  onDelete,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelection
 }: OptimizedProgressiveImageProps) => {
   const { src, loaded, error, placeholder, isOptimized, quality } = useProgressiveImage(photo, 'grid');
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -220,12 +226,21 @@ export const OptimizedProgressiveImage = ({
     return actions;
   };
 
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (selectionMode) {
+      e.stopPropagation();
+      onToggleSelection?.(photo.id);
+    } else if (!isUploading) {
+      onPhotoClick(photo, index);
+    }
+  }, [selectionMode, isUploading, onToggleSelection, photo.id, onPhotoClick, index]);
+
   return (
     <div
       ref={imgRef}
       className={`group relative aspect-square overflow-hidden rounded bg-card cursor-pointer transition-all duration-200 ${!isUploading ? 'hover:shadow-md' : ''
-        } ${isUploading ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}`}
-      onClick={() => !isUploading && onPhotoClick(photo, index)}
+        } ${isUploading ? 'ring-2 ring-blue-500 ring-opacity-50' : ''} ${selectionMode && isSelected ? 'ring-2 ring-blue-500' : ''}`}
+      onClick={handleClick}
     >
       {/* Only render image when in view */}
       {isInView && (
@@ -318,8 +333,27 @@ export const OptimizedProgressiveImage = ({
             </div>
           )} */}
 
-          {/* Status actions overlay - Only show when not uploading */}
-          {!isUploading && (
+          {/* Selection checkbox - Only show in selection mode */}
+          {selectionMode && (
+            <div className="absolute top-2 left-2 z-20">
+              <div
+                className={`w-5 h-5 rounded border-2 flex items-center justify-center cursor-pointer transition-all ${
+                  isSelected
+                    ? 'bg-blue-500 border-blue-500 text-white'
+                    : 'bg-white/80 border-gray-300 hover:bg-white'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelection?.(photo.id);
+                }}
+              >
+                {isSelected && <CheckIcon className="w-3 h-3" />}
+              </div>
+            </div>
+          )}
+
+          {/* Status actions overlay - Only show when not uploading and not in selection mode */}
+          {!isUploading && !selectionMode && (
             <>
               {/* Desktop status actions - Bottom center */}
               <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 hidden md:flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

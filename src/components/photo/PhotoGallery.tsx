@@ -29,6 +29,8 @@ import { UploadProgressTab } from '../progress/upload-progress';
 import UploadButton from '../guest/UploadButton';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryKeys';
+import { bulkDeleteMedia } from '@/services/apis/media.api';
+import { useAuthToken } from '@/hooks/use-auth';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
@@ -53,6 +55,8 @@ export default function OptimizedPhotoGallery({
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set());
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -309,8 +313,7 @@ export default function OptimizedPhotoGallery({
       pending: getCachedPhotoCount('pending'),
       rejected: getCachedPhotoCount('rejected'),
       hidden: getCachedPhotoCount('hidden'),
-      auto_approved: getCachedPhotoCount('auto_approved'),
-      total: 0
+      total: getCachedPhotoCount('approved') + getCachedPhotoCount('pending') + getCachedPhotoCount('rejected') + getCachedPhotoCount('hidden')
     },
     [mediaCounts, getCachedPhotoCount]
   );
@@ -323,6 +326,8 @@ export default function OptimizedPhotoGallery({
     setActiveTab(newTab);
     setSelectedPhoto(null);
     setPhotoViewerOpen(false);
+    setSelectionMode(false);
+    setSelectedPhotos(new Set());
   }, [activeTab]);
 
   // UPDATED: Use bulk operations for status updates
@@ -422,6 +427,111 @@ export default function OptimizedPhotoGallery({
     document.body.removeChild(link);
   }, [userPermissions.download]);
 
+  // Selection handlers
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionMode(prev => !prev);
+    if (selectionMode) {
+      setSelectedPhotos(new Set());
+    }
+  }, [selectionMode]);
+
+  const togglePhotoSelection = useCallback((photoId: string) => {
+    setSelectedPhotos(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(photoId)) {
+        newSet.delete(photoId);
+      } else {
+        newSet.add(photoId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const selectAllPhotos = useCallback(() => {
+    const allPhotoIds = photos.map(photo => photo.id);
+    setSelectedPhotos(new Set(allPhotoIds));
+  }, [photos]);
+
+  const deselectAllPhotos = useCallback(() => {
+    setSelectedPhotos(new Set());
+  }, []);
+
+  // Get auth token at component level (following Rules of Hooks)
+  const token = useAuthToken();
+
+  const handleBulkDelete = useCallback(async () => {
+    if (!userPermissions.delete) {
+      toast.error("You don't have permission to delete photos.");
+      return;
+    }
+
+    if (selectedPhotos.size === 0) {
+      toast.error("No photos selected.");
+      return;
+    }
+
+    const confirmed = confirm(`Delete ${selectedPhotos.size} photo${selectedPhotos.size > 1 ? 's' : ''} permanently?`);
+    if (!confirmed) return;
+
+    try {
+      // Use the new bulk delete API
+      if (!token) {
+        toast.error("Authentication required");
+        return;
+      }
+      const result = await bulkDeleteMedia(eventId, Array.from(selectedPhotos), token);
+
+      if (result.deleted > 0) {
+        setSelectedPhotos(new Set());
+        toast.success(`Successfully deleted ${result.deleted} photo${result.deleted > 1 ? 's' : ''}`);
+        refetchPhotos();
+        refetchCounts();
+      }
+
+      if (result.failed > 0) {
+        toast.error(`Failed to delete ${result.failed} photo${result.failed > 1 ? 's' : ''}`);
+      }
+    } catch (error: any) {
+      console.error('Bulk delete error:', error);
+      toast.error(error.message || "Failed to delete photos");
+    }
+  }, [selectedPhotos, userPermissions.delete, eventId, token, refetchPhotos, refetchCounts]);
+
+  const handleBulkDownload = useCallback(async () => {
+    if (!userPermissions.download) {
+      toast.error("You don't have permission to download photos.");
+      return;
+    }
+
+    if (selectedPhotos.size === 0) {
+      toast.error("No photos selected.");
+      return;
+    }
+
+    try {
+      const selectedPhotosData = photos.filter(photo => selectedPhotos.has(photo.id));
+      const downloadPromises = selectedPhotosData.map(async (photo) => {
+        const originalUrl = photo.image_variants?.original?.url || photo.imageUrl;
+        const response = await fetch(originalUrl);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `photo-${photo.id}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      });
+
+      await Promise.all(downloadPromises);
+      toast.success(`Downloaded ${selectedPhotos.size} photo${selectedPhotos.size > 1 ? 's' : ''}`);
+    } catch (error) {
+      console.error('Bulk download failed:', error);
+      toast.error("Failed to download some photos");
+    }
+  }, [selectedPhotos, photos, userPermissions.download]);
+
   const handleLoadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
@@ -488,6 +598,61 @@ export default function OptimizedPhotoGallery({
           <div className="text-xs text-gray-500">
             Infinite scroll ({photos.length} loaded)
           </div>
+        </div>
+
+        {/* Selection Mode Toggle */}
+        <div className="flex items-center gap-2">
+          {selectionMode && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={selectAllPhotos}
+                disabled={selectedPhotos.size === photos.length}
+              >
+                Select All
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={deselectAllPhotos}
+                disabled={selectedPhotos.size === 0}
+              >
+                Deselect All
+              </Button>
+              {selectedPhotos.size > 0 && (
+                <>
+                  {userPermissions.download && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleBulkDownload}
+                      className="text-blue-600"
+                    >
+                      Download ({selectedPhotos.size})
+                    </Button>
+                  )}
+                  {userPermissions.delete && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleBulkDelete}
+                      className="text-red-600"
+                    >
+                      Delete ({selectedPhotos.size})
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          <Button
+            variant={selectionMode ? "default" : "outline"}
+            size="sm"
+            onClick={toggleSelectionMode}
+          >
+            {selectionMode ? 'Exit Select' : 'Select'}
+          </Button>
         </div>
 
         <UploadProgressTab
@@ -653,6 +818,9 @@ export default function OptimizedPhotoGallery({
             onStatusUpdate={handleStatusUpdate}
             onDownload={handleDownload}
             onDelete={handleDelete}
+            selectionMode={selectionMode}
+            selectedPhotos={selectedPhotos}
+            onToggleSelection={togglePhotoSelection}
           />
 
           {hasNextPage && (

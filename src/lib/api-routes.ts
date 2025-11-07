@@ -31,6 +31,7 @@ export const API_ROUTES = {
     GET_BY_ID: (mediaId: string) => `/media/${mediaId}`,
     UPDATE_STATUS: (mediaId: string) => `/media/${mediaId}/status`,
     DELETE: (mediaId: string) => `/media/${mediaId}`,
+    BULK_DELETE: (eventId: string) => `/media/event/${eventId}/bulk-delete`,
     PROCESSING_STATUS: (mediaId: string) => `/media/${mediaId}/processing`,
     BATCH_APPROVE: '/media/batch/approve',
     BATCH_REJECT: '/media/batch/reject',

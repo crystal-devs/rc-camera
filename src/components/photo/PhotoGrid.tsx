@@ -16,6 +16,9 @@ interface OptimizedPhotoGridProps {
   onStatusUpdate: (photoId: string, status: string) => void;
   onDownload?: (photo: Photo) => void;
   onDelete?: (photoId: string) => void;
+  selectionMode?: boolean;
+  selectedPhotos?: Set<string>;
+  onToggleSelection?: (photoId: string) => void;
   className?: string;
 }
 
@@ -27,10 +30,13 @@ export const OptimizedPhotoGrid = ({
   onStatusUpdate,
   onDownload,
   onDelete,
+  selectionMode = false,
+  selectedPhotos = new Set(),
+  onToggleSelection,
   className = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1 sm:gap-1 md:gap-1"
 }: OptimizedPhotoGridProps) => {
   console.log('📊 OptimizedPhotoGrid rendering with', photos, 'photos');
-  
+
   return (
     <div className={className}>
       {photos.map((photo, index) => (
@@ -44,6 +50,9 @@ export const OptimizedPhotoGrid = ({
           onStatusUpdate={onStatusUpdate}
           onDownload={onDownload}
           onDelete={onDelete}
+          selectionMode={selectionMode}
+          isSelected={selectedPhotos.has(photo.id)}
+          onToggleSelection={onToggleSelection}
         />
       ))}
     </div>

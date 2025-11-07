@@ -58,15 +58,25 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
     }
   }, [onImageLoad, photo.id, expectedHeight]);
 
-  const handleDownload = useCallback((e: React.MouseEvent) => {
+  const handleDownload = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const link = document.createElement('a');
-    link.href = photo.src;
-    link.download = `photo-${photo.id}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [photo.src, photo.id]);
+    try {
+      const response = await fetch(photo.responsive_urls?.original || photo.src);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `photo-${photo.id}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download failed:', error);
+      // Fallback to opening in new tab
+      window.open(photo.responsive_urls?.original || photo.src, '_blank');
+    }
+  }, [photo.responsive_urls, photo.src, photo.id]);
 
   const handleLikeClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
