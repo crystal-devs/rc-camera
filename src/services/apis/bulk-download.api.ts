@@ -12,20 +12,19 @@ interface BulkDownloadRequest {
 }
 
 interface BulkDownloadResponse {
-  success: boolean;
+  status: boolean;
   data: {
-    downloadId: string;
-    totalFiles: number;
-    estimatedSizeMB: number;
-    estimatedTimeMinutes: number;
-    mediaBreakdown: {
+    jobId: string;
+    downloadUrl?: string;
+    totalFiles?: number;
+    estimatedSizeMB?: number;
+    estimatedTimeMinutes?: number;
+    mediaBreakdown?: {
       images: { count: number; size_mb: number };
       videos: { count: number; size_mb: number };
     };
-    message: string;
   };
   message?: string;
-  code?: string;
 }
 
 interface DownloadStatus {
@@ -68,10 +67,47 @@ export const createBulkDownload = async (
     headers.Authorization = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}/download/bulk-download`, {
+  const response = await fetch(`${API_BASE_URL}/download/bulk`, {
     method: 'POST',
     headers,
     body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Create a bulk download request for authenticated users (event-based)
+ */
+export const createEventBulkDownload = async (
+  eventId: string,
+  requestedById: string,
+  requestedByType: 'user' | 'guest' = 'user',
+  quality: 'thumbnail' | 'medium' | 'large' | 'original' = 'original',
+  authToken?: string
+): Promise<BulkDownloadResponse> => {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/download/bulk`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      eventId,
+      requestedById,
+      requestedByType,
+      quality,
+    }),
   });
 
   if (!response.ok) {
@@ -96,6 +132,32 @@ export const getDownloadStatus = async (
   }
 
   const response = await fetch(`${API_BASE_URL}/download/bulk-download/${jobId}/status`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Get download status for event-based downloads
+ */
+export const getEventDownloadStatus = async (
+  jobId: string,
+  authToken?: string
+): Promise<DownloadStatus> => {
+  const headers: HeadersInit = {};
+
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/download/status/${jobId}`, {
     method: 'GET',
     headers,
   });
@@ -143,19 +205,43 @@ export const cancelDownload = async (
  */
 export const downloadZipFile = async (downloadUrl: string, filename?: string): Promise<void> => {
   try {
+    // For S3 presigned URLs, we need to handle CORS and authentication
+    const response = await fetch(downloadUrl, {
+      method: 'GET',
+      // Don't set credentials for S3 presigned URLs as they include auth in the URL
+    });
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+    }
+
+    // Get the blob from the response
+    const blob = await response.blob();
+
+    // Create a temporary URL for the blob
+    const blobUrl = window.URL.createObjectURL(blob);
+
     // Create a temporary link element to trigger download
     const link = document.createElement('a');
-    link.href = downloadUrl;
+    link.href = blobUrl;
     link.download = filename || `event-photos-${Date.now()}.zip`;
-    link.target = '_blank'; // Open in new tab as backup
-    
+
     // Append to body, click, then remove
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    // Clean up the blob URL
+    window.URL.revokeObjectURL(blobUrl);
   } catch (error) {
-    // If direct download fails, open in new tab
-    window.open(downloadUrl, '_blank');
-    throw new Error('Direct download failed, opened in new tab instead');
+    console.error('Direct download failed:', error);
+    // If direct download fails, try opening in new tab as fallback
+    try {
+      window.open(downloadUrl, '_blank');
+      console.log('Opened download URL in new tab as fallback');
+    } catch (fallbackError) {
+      console.error('Fallback download also failed:', fallbackError);
+      throw new Error('Download failed. Please try again or contact support.');
+    }
   }
 };

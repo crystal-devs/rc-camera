@@ -1,29 +1,19 @@
 // app/events/[eventId]/page.tsx
 'use client';
 
-import {
-    CalendarIcon,
-    CameraIcon,
-    FolderIcon,
-    MapPinIcon,
-    ShareIcon,
-} from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { use, useEffect, useState, useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-
-import AlbumManagement from '@/components/album/AlbumManagement';
 import PhotoGallery from '@/components/photo/PhotoGallery';
-import EventHeaderDetails from '@/components/event/EventDetailsHeader';
-import { format } from 'date-fns';
 
 // Import our optimized hook
 import { useEventData } from '@/hooks/useEventData';
 import useEventStore from '@/stores/useEventStore';
+import { useAuth } from '@/hooks/use-auth';
 
 export default function OptimizedEventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
     const { eventId } = use(params);
@@ -41,6 +31,9 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         refreshAlbums,
         authToken
     } = useEventData(eventId);
+
+    // Get user authentication
+    const { currentUserId } = useAuth();
 
     // Local state
     const [activeTab, setActiveTab] = useState('photos');
@@ -98,6 +91,88 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         }
     }, [event, authToken]);
 
+    // Bulk download functions
+    const handleBulkDownload = useCallback(async (eventId: string) => {
+        if (!currentUserId) {
+            toast.error('You must be logged in to download');
+            return;
+        }
+
+        try {
+            const { createEventBulkDownload, getEventDownloadStatus, downloadZipFile } = await import('@/services/apis/bulk-download.api');
+
+            const response = await createEventBulkDownload(
+                eventId,
+                currentUserId,
+                'user',
+                'original',
+                authToken || undefined
+            );
+
+            if (response.status && response.data) {
+                // Check if download URL is already available (existing download)
+                if (response.data.downloadUrl) {
+                    await downloadZipFile(response.data.downloadUrl, `${event?.title || 'event'}_photos.zip`);
+                    toast.success('Download started!');
+                } else if (response.data.jobId) {
+                    // Start polling for status
+                    const cleanup = startPollingStatus(response.data.jobId, getEventDownloadStatus, downloadZipFile, event?.title);
+
+                    // Store cleanup function for component unmount
+                    return () => cleanup();
+                } else {
+                    throw new Error('No download URL or job ID received');
+                }
+            } else {
+                throw new Error(response.message || 'Failed to start download');
+            }
+        } catch (error) {
+            console.error('Bulk download error:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to start download');
+        }
+    }, [currentUserId, authToken, event?.title]);
+
+    const startPollingStatus = useCallback((jobId: string, getStatusFn: any, downloadFn: any, eventTitle?: string) => {
+        let isCompleted = false;
+
+        const interval = setInterval(async () => {
+            // Prevent polling if already completed
+            if (isCompleted) {
+                clearInterval(interval);
+                return;
+            }
+
+            try {
+                const response = await getStatusFn(jobId, authToken || undefined);
+
+                if (response.success && response.data) {
+                    console.log(`Progress: ${response.data.progress}%`);
+
+                    if (response.data.jobStatus === "completed" && response.data.downloadUrl) {
+                        isCompleted = true;
+                        clearInterval(interval);
+                        await downloadFn(response.data.downloadUrl, `${eventTitle || 'event'}_photos.zip`);
+                        toast.success('Download completed!');
+                    } else if (response.data.jobStatus === "failed") {
+                        isCompleted = true;
+                        clearInterval(interval);
+                        toast.error("Download failed. Please try again.");
+                    }
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+                isCompleted = true;
+                clearInterval(interval);
+            }
+        }, 10000);
+
+        // Return cleanup function
+        return () => {
+            isCompleted = true;
+            clearInterval(interval);
+        };
+    }, [authToken]);
+
     // Loading state
     if (isLoading) {
         return (
@@ -144,6 +219,18 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         <div className="container mx-auto px-2 py-2 sm:px-4 sm:py-8 bg-background">
             {/* Event Header */}
             {/* <EventHeaderDetails event={event} /> */}
+
+            {/* Download Button */}
+            <div className="flex justify-end mb-4">
+                <Button
+                    onClick={() => handleBulkDownload(eventId)}
+                    variant="outline"
+                    className="flex items-center gap-2"
+                >
+                    <Download className="w-4 h-4" />
+                    Download All Media
+                </Button>
+            </div>
 
             <div className="mx-auto px-0 py-0 sm:px-2 sm:py-2">
                 <PhotoGallery

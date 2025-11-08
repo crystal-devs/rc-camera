@@ -8,12 +8,12 @@ import axios from 'axios';
 
 // Local MediaResponse for this file
 export interface MediaResponse {
-  data: MediaItem[];
-  total?: number;
-  hasMore?: boolean;
-  nextCursor?: string;
-  pagination?: any;
-  other?: any;
+    data: MediaItem[];
+    total?: number;
+    hasMore?: boolean;
+    nextCursor?: string;
+    pagination?: any;
+    other?: any;
 }
 
 // Enhanced media response type with progressive loading support
@@ -695,80 +695,80 @@ export const uploadCoverImage = async (
  * Delete a media item
  */
 export const deleteMedia = async (mediaId: string, authToken: string): Promise<boolean> => {
-  try {
-    console.log(`Deleting media: ${mediaId}`);
+    try {
+        console.log(`Deleting media: ${mediaId}`);
 
-    const response = await apiClient.delete(API_ROUTES.MEDIA.GET_BY_ID(mediaId));
+        const response = await apiClient.delete(API_ROUTES.MEDIA.GET_BY_ID(mediaId));
 
-    if (response.data && response.data.status === true) {
-      // Clear caches to force refresh
-      imageCache.clear();
-      return true;
+        if (response.data && response.data.status === true) {
+            // Clear caches to force refresh
+            imageCache.clear();
+            return true;
+        }
+
+        throw new Error(response.data?.message || 'Failed to delete media');
+    } catch (error: any) {
+        console.error('Error deleting media:', error);
+
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error('You do not have permission to delete this photo.');
+        }
+        if (error?.response?.status === 404) {
+            console.warn('Media not found on server, may have been already deleted');
+            return true;
+        }
+
+        throw error;
     }
-
-    throw new Error(response.data?.message || 'Failed to delete media');
-  } catch (error: any) {
-    console.error('Error deleting media:', error);
-
-    if (error?.response?.status === 401 || error?.response?.status === 403) {
-      throw new Error('You do not have permission to delete this photo.');
-    }
-    if (error?.response?.status === 404) {
-      console.warn('Media not found on server, may have been already deleted');
-      return true;
-    }
-
-    throw error;
-  }
 };
 
 export const bulkDeleteMedia = async (
-  eventId: string,
-  mediaIds: string[],
-  authToken: string
+    eventId: string,
+    mediaIds: string[],
+    authToken: string
 ): Promise<{ deleted: number; failed: number; errors?: string[] }> => {
-  try {
-    console.log(`Bulk deleting ${mediaIds.length} media items for event: ${eventId}`);
+    try {
+        console.log(`Bulk deleting ${mediaIds.length} media items for event: ${eventId}`);
 
-    const response = await apiClient.delete(API_ROUTES.MEDIA.BULK_DELETE(eventId), {
-      data: { media_ids: mediaIds },
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000, // 30 seconds for bulk operations
-    });
+        const response = await apiClient.delete(API_ROUTES.MEDIA.BULK_DELETE(eventId), {
+            data: { media_ids: mediaIds },
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000, // 30 seconds for bulk operations
+        });
 
-    if (response.data && response.data.status === true) {
-      // Clear caches to force refresh
-      imageCache.clear();
+        if (response.data && response.data.status === true) {
+            // Clear caches to force refresh
+            imageCache.clear();
 
-      const result = response.data.data || {};
-      console.log(`Bulk delete completed: ${result.deleted || mediaIds.length} deleted, ${result.failed || 0} failed`);
+            const result = response.data.data || {};
+            console.log(`Bulk delete completed: ${result.deleted || mediaIds.length} deleted, ${result.failed || 0} failed`);
 
-      return {
-        deleted: result.deleted || mediaIds.length,
-        failed: result.failed || 0,
-        errors: result.errors
-      };
+            return {
+                deleted: result.deleted || mediaIds.length,
+                failed: result.failed || 0,
+                errors: result.errors
+            };
+        }
+
+        throw new Error(response.data?.message || 'Failed to bulk delete media');
+    } catch (error: any) {
+        console.error('Error bulk deleting media:', error);
+
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+            throw new Error('You do not have permission to delete photos.');
+        }
+        if (error?.response?.status === 404) {
+            throw new Error('Event not found or no photos to delete.');
+        }
+        if (error?.response?.status === 400) {
+            throw new Error('Invalid request. Please check the media IDs.');
+        }
+
+        throw error;
     }
-
-    throw new Error(response.data?.message || 'Failed to bulk delete media');
-  } catch (error: any) {
-    console.error('Error bulk deleting media:', error);
-
-    if (error?.response?.status === 401 || error?.response?.status === 403) {
-      throw new Error('You do not have permission to delete photos.');
-    }
-    if (error?.response?.status === 404) {
-      throw new Error('Event not found or no photos to delete.');
-    }
-    if (error?.response?.status === 400) {
-      throw new Error('Invalid request. Please check the media IDs.');
-    }
-
-    throw error;
-  }
 };
 
 /**
