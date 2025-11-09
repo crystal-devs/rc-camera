@@ -1,11 +1,11 @@
 // components/Providers.tsx
 'use client';
 
-import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { SidebarProvider } from "./ui/sidebar";
 import { ThemeProvider } from "@/lib/ThemeContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { useState } from 'react';
 
 interface ProvidersProps {
@@ -39,8 +39,8 @@ function Providers({ children }: ProvidersProps) {
     }));
 
     return (
-        <SessionProvider>
-            <QueryClientProvider client={queryClient}>
+        <QueryClientProvider client={queryClient}>
+            <AuthProvider>
                 <ThemeProvider>
                     {children}
                     {/* Add React Query DevTools in development only */}
@@ -51,8 +51,8 @@ function Providers({ children }: ProvidersProps) {
                         />
                     )}
                 </ThemeProvider>
-            </QueryClientProvider>
-        </SessionProvider>
+            </AuthProvider>
+        </QueryClientProvider>
     );
 }
 

@@ -6,6 +6,7 @@ import { BottomNavigationWithFullscreenAwareness } from '@/components/navigation
 import { ReactNode } from 'react';
 import { TopNavbar } from './TopNavbar';
 import { CustomSidebar } from './CustomSidebar';
+import { AuthGuard } from '@/components/AuthGuard';
 
 interface ConditionalNavigationProps {
   children: ReactNode;
@@ -58,64 +59,66 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-sidebar">
-      {/* Top Navigation Bar - Full width */}
-      <div className="flex-shrink-0 w-full z-10">
-        <TopNavbar title={getPageTitle()} />
-      </div>
-
-      {/* Content area with sidebar and main content side by side */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Custom Sidebar - Takes up actual layout space */}
-        <div className="hidden md:flex flex-shrink-0">
-          <CustomSidebar />
+    <AuthGuard requireAuth={true}>
+      <div className="h-screen flex flex-col overflow-hidden bg-sidebar">
+        {/* Top Navigation Bar - Full width */}
+        <div className="flex-shrink-0 w-full z-10">
+          <TopNavbar title={getPageTitle()} />
         </div>
 
-        {/* Main content area with custom styling */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Content area with rounded border and custom scrollbar */}
-          <main className="flex-1 relative bg-background border border-border rounded-lg m-2 ml-1 overflow-hidden">
-            {/* Custom scrollbar styles */}
-            <style jsx global>{`
-              .custom-scrollbar::-webkit-scrollbar {
-                width: 8px;
-              }
-              
-              .custom-scrollbar::-webkit-scrollbar-track {
-                background: transparent;
-                border-radius: 4px;
-              }
-              
-              .custom-scrollbar::-webkit-scrollbar-thumb {
-                background: linear-gradient(180deg, #6366f1, #8b5cf6);
-                border-radius: 4px;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-              }
-              
-              .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                background: linear-gradient(180deg, #5855eb, #7c3aed);
-              }
-              
-              /* Firefox */
-              .custom-scrollbar {
-                scrollbar-width: thin;
-                scrollbar-color: #71717a transparent;
-              }
-            `}</style>
+        {/* Content area with sidebar and main content side by side */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Custom Sidebar - Takes up actual layout space */}
+          <div className="hidden md:flex flex-shrink-0">
+            <CustomSidebar />
+          </div>
 
-            <div className="h-full overflow-y-auto custom-scrollbar">
-              <div className="p-4 h-full">
-                {children}
+          {/* Main content area with custom styling */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Content area with rounded border and custom scrollbar */}
+            <main className="flex-1 relative bg-background border border-border rounded-lg m-2 ml-1 overflow-hidden">
+              {/* Custom scrollbar styles */}
+              <style jsx global>{`
+                .custom-scrollbar::-webkit-scrollbar {
+                  width: 8px;
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-track {
+                  background: transparent;
+                  border-radius: 4px;
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                  background: linear-gradient(180deg, #6366f1, #8b5cf6);
+                  border-radius: 4px;
+                  border: 1px solid rgba(255, 255, 255, 0.1);
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                  background: linear-gradient(180deg, #5855eb, #7c3aed);
+                }
+
+                /* Firefox */
+                .custom-scrollbar {
+                  scrollbar-width: thin;
+                  scrollbar-color: #71717a transparent;
+                }
+              `}</style>
+
+              <div className="h-full overflow-y-auto custom-scrollbar">
+                <div className="p-4 h-full">
+                  {children}
+                </div>
               </div>
-            </div>
-          </main>
+            </main>
+          </div>
+        </div>
+
+        {/* Mobile bottom navigation */}
+        <div className="md:hidden flex-shrink-0">
+          <BottomNavigationWithFullscreenAwareness />
         </div>
       </div>
-
-      {/* Mobile bottom navigation */}
-      <div className="md:hidden flex-shrink-0">
-        <BottomNavigationWithFullscreenAwareness />
-      </div>
-    </div>
+    </AuthGuard>
   );
 }

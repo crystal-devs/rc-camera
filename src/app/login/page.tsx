@@ -1,29 +1,27 @@
 "use client";
 import React, { useEffect, useState } from 'react'
 import { LoginForm } from './components/login-form'
-import { LoginCosmetics } from './components/login-cosmetics'
 import { GoogleOAuthProvider } from "@react-oauth/google"
 import { Toaster } from "@/components/ui/sonner"
-import { useStore } from '@/lib/store';
+import { useAuth } from '@/contexts/AuthContext';
 import { useSearchParams } from 'next/navigation';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UserPlus, Calendar, Crown } from 'lucide-react';
+import { LoginCosmetics } from './components/login-cosmetics';
 
 const client_id = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!
 
 interface InviteContext {
-  token: string;
-  eventId: string;
-  eventTitle?: string;
-  adminName?: string;
-  type: 'cohost' | 'guest';
+    token: string;
+    eventId: string;
+    eventTitle?: string;
+    adminName?: string;
+    type: 'cohost' | 'guest';
 }
 
 const LoginPage = () => {
     const searchParams = useSearchParams();
-    const isAuthenticated = useStore(state => state.isAuthenticated);
-    const hydrated = useStore(state => state.hydrated);
-    const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+    const { isAuthenticated, isLoading } = useAuth();
     const [inviteContext, setInviteContext] = useState<InviteContext | null>(null);
 
     const inviteToken = searchParams.get('invite');
@@ -59,36 +57,31 @@ const LoginPage = () => {
     }, [inviteToken, inviteType, inviteAction]);
 
     useEffect(() => {
-        // Wait for store to be hydrated before doing auth checks
-        if (hydrated) {
-            setIsCheckingAuth(false);
+        // Check if user is already authenticated
+        if (isAuthenticated && !isLoading) {
+            // DON'T redirect if we have invite context - let LoginForm handle it
+            if (inviteToken && (inviteType || localStorage.getItem('inviteContext'))) {
+                console.log('User authenticated with invite context - LoginForm will handle redirect');
+                return;
+            }
 
-            // Check if user is already authenticated after hydration
-            if (isAuthenticated) {
-                // DON'T redirect if we have invite context - let LoginForm handle it
-                if (inviteToken && (inviteType || localStorage.getItem('inviteContext'))) {
-                    console.log('User authenticated with invite context - LoginForm will handle redirect');
-                    return;
-                }
+            // Only redirect for non-invite scenarios
+            localStorage.removeItem('inviteContext');
 
-                // Only redirect for non-invite scenarios
-                localStorage.removeItem('inviteContext');
-                
-                const redirectAfterLogin = localStorage.getItem('redirectAfterLogin');
-                if (redirectAfterLogin) {
-                    localStorage.removeItem('redirectAfterLogin');
-                    window.location.href = redirectAfterLogin;
-                } else if (redirectUrl) {
-                    window.location.href = decodeURIComponent(redirectUrl);
-                } else {
-                    window.location.href = '/';
-                }
+            const redirectAfterLogin = localStorage.getItem('redirectAfterLogin');
+            if (redirectAfterLogin) {
+                localStorage.removeItem('redirectAfterLogin');
+                window.location.href = redirectAfterLogin;
+            } else if (redirectUrl) {
+                window.location.href = decodeURIComponent(redirectUrl);
+            } else {
+                window.location.href = '/';
             }
         }
-    }, [hydrated, isAuthenticated, inviteToken, inviteType, redirectUrl]);
+    }, [isAuthenticated, isLoading, inviteToken, inviteType, redirectUrl]);
 
     // Show loading while checking authentication state
-    if (isCheckingAuth) {
+    if (isLoading) {
         return (
             <div className="flex w-full min-h-screen bg-background items-center justify-center">
                 <div className="text-center">
@@ -106,10 +99,10 @@ const LoginPage = () => {
 
     return (
         <GoogleOAuthProvider clientId={client_id}>
-            <div className="flex w-full min-h-screen bg-background">
+            <div className="flex w-full min-h-screen bg-neutral-50 dark:bg-[#141414]">
                 <div className="w-full grid md:grid-cols-2">
-                    <div className="flex flex-1 items-center justify-center">
-                        <div className="w-full max-w-xs space-y-6">
+                    <div className="flex flex-1 w-full items-center justify-center">
+                        <div className="w-full max-w-md space-y-6">
                             {/* Invite Context Banner */}
                             {inviteContext && (
                                 <Alert className="border-blue-200 bg-blue-50">
@@ -117,7 +110,7 @@ const LoginPage = () => {
                                     <AlertDescription className="text-blue-800">
                                         <div className="space-y-2">
                                             <div className="font-medium">
-                                                {inviteContext.type === 'cohost' 
+                                                {inviteContext.type === 'cohost'
                                                     ? `You've been invited to co-host${inviteContext.eventTitle ? ` "${inviteContext.eventTitle}"` : ' an event'}`
                                                     : `You've been invited to${inviteContext.eventTitle ? ` "${inviteContext.eventTitle}"` : ' an event'}`
                                                 }
@@ -135,7 +128,7 @@ const LoginPage = () => {
                                     </AlertDescription>
                                 </Alert>
                             )}
-                            
+
                             <LoginForm inviteContext={inviteContext} />
                         </div>
                     </div>

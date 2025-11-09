@@ -1,13 +1,13 @@
 "use client";
 
 import { useGoogleLogin } from '@react-oauth/google';
-import { loginUser } from '@/services/apis/auth.api';
+import { loginUser, registerUser, initializeCsrf, initiateGoogleOAuth, handleGoogleOAuthCallback } from '@/services/apis/auth.api';
 import { joinAsCoHost } from '@/services/apis/cohost.api';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { Label } from '@/components/ui/label';
+import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -46,8 +46,15 @@ export function LoginForm({
   ...props
 }: LoginFormProps & React.ComponentProps<"form">) {
   const router = useRouter();
+  const { login: authLogin, register: authRegister, initiateGoogleOAuth: authInitiateGoogleOAuth } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: ''
+  });
   const login = useStore(state => state.login);
 
   useEffect(() => {
@@ -56,6 +63,9 @@ export function LoginForm({
     if (storedRedirectUrl && isValidRedirectUrl(storedRedirectUrl)) {
       setRedirectUrl(storedRedirectUrl);
     }
+
+    // Initialize CSRF token on component mount
+    initializeCsrf();
   }, []);
 
   const handleSuccessfulLogin = async (profile: any, apiResult: any) => {
@@ -155,11 +165,55 @@ export function LoginForm({
     }, redirectDelay);
   };
 
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    try {
+      if (isLoginMode) {
+        await authLogin({
+          email: formData.email,
+          password: formData.password
+        });
+        toast.success("Login successful!");
+      } else {
+        await authRegister({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password
+        });
+        toast.success("Registration successful! Please log in.");
+        setIsLoginMode(true); // Switch to login mode after successful registration
+      }
+
+      // Handle redirect logic here (similar to handleSuccessfulLogin)
+      let finalRedirectUrl = '/';
+      if (inviteContext) {
+        if (inviteContext.type === 'cohost') {
+          // Handle cohost logic
+          finalRedirectUrl = `/events/${inviteContext.eventId}`;
+        } else if (inviteContext.type === 'guest') {
+          finalRedirectUrl = `/guest/${inviteContext.token}`;
+        }
+      }
+
+      setTimeout(() => {
+        router.push(finalRedirectUrl);
+      }, 1000);
+
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message ?? `Something went wrong with ${isLoginMode ? 'login' : 'registration'}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const googleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setIsLoading(true);
       try {
-        // Fetch user profile from Google using access token
+        // Get user profile from Google
         const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: {
             Authorization: `Bearer ${tokenResponse.access_token}`,
@@ -167,16 +221,34 @@ export function LoginForm({
         });
         const profile = await res.json();
 
-        const result = await loginUser({
-          name: profile.name,
-          email: profile.email,
-          provider: "google",
-          profile_pic: profile.picture
-        });
-
-        if (result) {
+        // For Google OAuth, we need to register the user first if they don't exist
+        try {
+          const result = await loginUser({
+            email: profile.email,
+            password: profile.sub, // Use Google sub as temporary password for backend
+            provider: "google" // Add provider field for Google OAuth
+          });
           await handleSuccessfulLogin(profile, result);
+        } catch (loginError: any) {
+          // If login fails (user doesn't exist), register them
+          console.log('User not found, registering new Google user:', loginError.message);
+
+          try {
+            const registerResult = await registerUser({
+              name: profile.name,
+              email: profile.email,
+              password: profile.sub // Use Google sub as password for registration
+            });
+
+            // Registration successful, handle login
+            await handleSuccessfulLogin(profile, registerResult);
+          } catch (registerError: any) {
+            console.error('Registration also failed:', registerError);
+            throw new Error('Failed to authenticate with Google. Please try again.');
+          }
         }
+
+        // Success is handled inside the try-catch blocks above
       } catch (err: any) {
         console.error(err);
         toast.error(err?.message ?? "Something went wrong with login");
@@ -193,12 +265,9 @@ export function LoginForm({
 
   return (
     <form
-      className={cn("flex flex-col gap-10", className)}
+      className={cn("flex flex-col gap-10 p-6", className)}
       {...props}
-      onSubmit={(e) => {
-        e.preventDefault();
-        toast("Email/password login not implemented");
-      }}
+      onSubmit={handleEmailAuth}
     >
       <div className="flex flex-col items-start gap-2 text-center">
         <h1 className="text-2xl font-bold">
@@ -237,11 +306,11 @@ export function LoginForm({
         </Alert>
       )}
 
-      <div className="grid gap-6">
+      <div className="grid gap-4">
         <Button
           type="button"
           variant="outline"
-          className="w-full"
+          className="w-full h-12 py-4 px-3 md:text-md"
           onClick={() => googleLogin()}
           disabled={isLoading}
         >
@@ -259,29 +328,48 @@ export function LoginForm({
         </Button>
 
         <div className="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
-          <span className="bg-background text-muted-foreground relative z-10 px-2">
+          <span className="bg-neutral-50 text-muted-foreground relative z-10 px-2">
             Or continue with
           </span>
         </div>
 
-        <div className="grid gap-3">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" placeholder="m@example.com" required />
-        </div>
-        <div className="grid gap-3">
-          <div className="flex items-center">
-            <Label htmlFor="password">Password</Label>
-            <a
-              href="#"
-              className="ml-auto text-[12px] underline-offset-4 hover:underline text-muted-foreground"
-            >
-              Forgot your password?
-            </a>
+        {!isLoginMode && (
+          <div className="grid gap-3">
+            <Input
+              id="name"
+              type="text"
+              placeholder="Full Name"
+              required={!isLoginMode}
+              className='h-12 py-4 px-3 md:text-md bg-white'
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+            />
           </div>
-          <Input id="password" type="password" required />
+        )}
+        <div className="grid gap-3">
+          <Input
+            id="email"
+            type="email"
+            placeholder="m@example.com"
+            required
+            className='h-12 py-4 px-3 md:text-md bg-white'
+            value={formData.email}
+            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+          />
         </div>
-        <Button type="submit" className="w-full">
-          Log in
+        <div className="grid gap-3">
+          <Input
+            id="password"
+            type="password"
+            placeholder='Enter Password'
+            required
+            className='h-12 py-4 px-3 md:text-md bg-white'
+            value={formData.password}
+            onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+          />
+        </div>
+        <Button type="submit" className="w-full h-12 py-4 px-3 md:text-md" disabled={isLoading}>
+          {isLoading ? 'Please wait...' : (isLoginMode ? 'Log in' : 'Sign up')}
         </Button>
       </div>
 
@@ -299,9 +387,26 @@ export function LoginForm({
 
       <div className="text-center text-sm">
         Don&apos;t have an account?{" "}
-        <a href="#" className="underline underline-offset-4">
-          Sign up
-        </a>
+        {isLoginMode ? (
+          <button
+            type="button"
+            className="underline underline-offset-4"
+            onClick={() => setIsLoginMode(false)}
+          >
+            Sign up
+          </button>
+        ) : (
+          <>
+            Already have an account?{" "}
+            <button
+              type="button"
+              className="underline underline-offset-4"
+              onClick={() => setIsLoginMode(true)}
+            >
+              Log in
+            </button>
+          </>
+        )}
       </div>
     </form>
   );

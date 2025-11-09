@@ -17,7 +17,7 @@ export interface ApiEventResponse {
 }
 
 // Map API response to frontend Event format
-const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
+const mapApiEventToEvent = (apiEvent: any): Event => {
   const startDate = new Date(apiEvent.start_date);
   // Check if end_date is in the future
   const isActive = apiEvent.end_date
@@ -26,6 +26,37 @@ const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
 
   return {
     ...apiEvent,
+    // Ensure all required fields are present with defaults
+    share_settings: apiEvent.share_settings || {
+      is_active: true,
+      password: null,
+      expires_at: null
+    },
+    permissions: apiEvent.permissions || {
+      can_view: true,
+      can_upload: false,
+      can_download: false,
+      allowed_media_types: { images: true, videos: true },
+      require_approval: true
+    },
+    co_host_invite_token: apiEvent.co_host_invite_token || {
+      token: '',
+      expires_at: '',
+      is_active: true
+    },
+    co_hosts: apiEvent.co_hosts || [],
+    participants: apiEvent.participants || [],
+    stats: apiEvent.stats || {
+      total_participants: 0,
+      creators_count: 0,
+      co_hosts_count: 0,
+      guests_count: 0,
+      photos: 0,
+      videos: 0,
+      total_size_mb: 0,
+      pending_approval: 0,
+      pending_invitations: 0
+    }
   };
 };
 
@@ -36,13 +67,29 @@ export const fetchEvents = async (): Promise<Event[]> => {
       headers: setHeader(),
     });
 
-    if (response.data && response.data.data) {
-      console.log(response.data.data, 'apiEventsapiEvents')
-      const apiEvents: ApiEvent[] = response.data.data.events; // Adjusted to match the API response structure
-      // return apiEvents.map(mapApiEventToEvent);
-      return response.data.data.events ?? [];
+    console.log('Full events API response:', response.data);
+
+    // Handle the response structure you provided: {status: true, data: {events: [...], ...}}
+    if (response.data && response.data.data && response.data.data.events) {
+      console.log('Found events in response.data.data.events:', response.data.data.events.length);
+      return response.data.data.events.map(mapApiEventToEvent) ?? [];
     }
 
+    // Fallback for direct events in data
+    if (response.data && response.data.events) {
+      console.log('Found events in response.data.events:', response.data.events.length);
+      return response.data.events.map(mapApiEventToEvent) ?? [];
+    }
+
+    // Last resort - check if response.data.data itself is an events array
+    if (response.data && response.data.data && Array.isArray(response.data.data)) {
+      console.log('Response.data.data is an array, treating as events:', response.data.data.length);
+      return response.data.data.map(mapApiEventToEvent) ?? [];
+    }
+
+    console.log('No events found in any expected location, returning empty array');
+
+    console.log('No events found in response');
     return [];
   } catch (error) {
     console.error('Error fetching events:', error);

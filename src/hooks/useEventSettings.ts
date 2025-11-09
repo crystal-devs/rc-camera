@@ -21,7 +21,7 @@ interface EventFormData {
     url: string
     public_id: string
   }
-  visibility: 'private' | 'anyone_with_link' | 'public'
+  visibility: 'private' | 'anyone_with_link' | 'invited_only'
   permissions: any
   share_settings: {
     is_active: boolean
@@ -78,7 +78,7 @@ const convertEventToFormData = (event: Event): EventFormData => {
       url: event.cover_image?.url || '',
       public_id: event.cover_image?.public_id || ''
     },
-    visibility: event.visibility || 'private',
+    visibility: (event.visibility === 'public' ? 'anyone_with_link' : event.visibility) || 'private',
     permissions: event.permissions || {},
     share_settings: {
       is_active: event.share_settings?.is_active ?? true,
@@ -125,14 +125,20 @@ const prepareSubmitData = (formData: EventFormData) => {
   return {
     title: formData.title,
     description: formData.description,
-    start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
-    end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
+    start_date: formData.start_date ? new Date(formData.start_date).toISOString() : undefined,
+    end_date: formData.end_date ? new Date(formData.end_date).toISOString() : undefined,
     location: {
       name: formData.location.name,
-      address: formData.location.address
+      address: formData.location.address,
+      coordinates: []
     },
-    template: formData.template,
-    cover_image: formData.cover_image,
+    template: formData.template as "custom" | "wedding" | "birthday" | "concert" | "corporate" | "vacation",
+    cover_image: {
+      url: formData.cover_image.url,
+      public_id: formData.cover_image.public_id,
+      uploaded_by: null,
+      thumbnail_url: formData.cover_image.url
+    },
     visibility: formData.visibility,
     permissions: formData.permissions,
     share_settings: formData.share_settings,
@@ -172,33 +178,49 @@ export const useEventSettings = (eventId: string) => {
 
   // Load event data and convert to form data
   useEffect(() => {
-    if (!authToken || !eventId) return
+    if (!eventId) {
+      console.log(`Missing eventId: ${eventId}`)
+      return
+    }
 
     const loadEventData = async () => {
       console.log(`⚙️ Loading event settings for ${eventId}`)
 
-      let event = selectedEvent
+      try {
+        let event = selectedEvent
 
-      // If we don't have the event or it's different, fetch it
-      if (!event || event._id !== eventId) {
-        event = await getEventFromCacheOrFetch(eventId, authToken)
-      }
+        // If we don't have the event or it's different, fetch it
+        if (!event || event._id !== eventId) {
+          console.log(`Fetching event data for ${eventId}...`)
+          event = await getEventFromCacheOrFetch(eventId, authToken)
+          console.log(`Event fetch result:`, event ? 'success' : 'null')
+        } else {
+          console.log(`Using cached event data for ${eventId}`)
+        }
 
-      if (!event) {
-        toast.error("Event not found")
+        if (!event) {
+          console.error(`Event ${eventId} not found`)
+          toast.error("Event not found")
+          router.push('/events')
+          return
+        }
+
+        console.log(`Converting event data to form format...`)
+        // Convert to form data
+        const convertedData = convertEventToFormData(event)
+
+        console.log(`Setting form data...`)
+        setFormData(convertedData)
+        setOriginalData(convertedData)
+        setPreviewUrl(event.cover_image?.url || null)
+        setIsInitialized(true)
+
+        console.log(`✅ Event settings loaded for ${event.title}`)
+      } catch (error) {
+        console.error('Error loading event settings:', error)
+        toast.error("Failed to load event settings")
         router.push('/events')
-        return
       }
-
-      // Convert to form data
-      const convertedData = convertEventToFormData(event)
-
-      setFormData(convertedData)
-      setOriginalData(convertedData)
-      setPreviewUrl(event.cover_image?.url || null)
-      setIsInitialized(true)
-
-      console.log(`✅ Event settings loaded for ${event.title}`)
     }
 
     loadEventData()
