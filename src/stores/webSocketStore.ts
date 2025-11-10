@@ -383,7 +383,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                 }
 
                 const authToken = typeof window !== 'undefined'
-                    ? localStorage.getItem('rc-token') || localStorage.getItem('authToken')
+                    ? localStorage.getItem('rc-token')
                     : null;
 
                 if (!authToken) {

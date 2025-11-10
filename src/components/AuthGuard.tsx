@@ -23,6 +23,7 @@ export function AuthGuard({
   const router = useRouter();
   const pathname = usePathname();
   const [hasChecked, setHasChecked] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
     // Prevent browser back button navigation after logout
@@ -80,18 +81,22 @@ export function AuthGuard({
   }, [checkAuth, hasChecked]);
 
   useEffect(() => {
-    if (hasChecked && !isLoading) {
+    if (hasChecked && !isLoading && !isRedirecting) {
       if (requireAuth && !isAuthenticated) {
         console.log('🔒 Redirecting to login - user not authenticated');
-        router.replace(redirectTo);
+        setIsRedirecting(true);
+        // Use window.location.href for hard redirect to prevent infinite loops
+        window.location.href = redirectTo;
       } else if (!requireAuth && isAuthenticated) {
         // If on auth page but already authenticated, redirect to dashboard
         if (pathname === '/login' || pathname === '/register') {
-          router.replace('/');
+          console.log('🔄 User authenticated on auth page, redirecting to home');
+          setIsRedirecting(true);
+          window.location.href = '/';
         }
       }
     }
-  }, [isAuthenticated, isLoading, hasChecked, requireAuth, redirectTo, router, pathname]);
+  }, [isAuthenticated, isLoading, hasChecked, requireAuth, redirectTo, pathname, isRedirecting]);
 
   // Show loading state
   if (isLoading || !hasChecked) {

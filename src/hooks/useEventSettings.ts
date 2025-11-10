@@ -172,7 +172,7 @@ export const useEventSettings = (eventId: string) => {
 
   // Initialize auth token
   useEffect(() => {
-    const token = localStorage.getItem('authToken') || ''
+    const token = localStorage.getItem('rc-token') || ''
     setAuthToken(token)
   }, [])
 

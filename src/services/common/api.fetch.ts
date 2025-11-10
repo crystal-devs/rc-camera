@@ -110,6 +110,13 @@ axios.interceptors.response.use(
       }
     }
 
+    // Handle 403 Forbidden - user doesn't have permission
+    if (error.response?.status === 403) {
+      console.error('403 Forbidden - User does not have permission for this resource');
+      // Don't redirect, let the component handle the error
+      return Promise.reject(error);
+    }
+
     return Promise.reject(error);
   }
 );

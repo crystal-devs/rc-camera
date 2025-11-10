@@ -695,9 +695,8 @@ export const useStore = create<SettingsState & SettingsActions>()(
 
             logout: () => {
                 // Clear auth token and user data from localStorage
-                removeLocalStorageValue('authToken');
-                removeLocalStorageValue('userData');
                 removeLocalStorageValue('rc-token');
+                removeLocalStorageValue('userData');
                 removeLocalStorageValue('event-app-storage');
                 removeLocalStorageValue('app-settings');
 

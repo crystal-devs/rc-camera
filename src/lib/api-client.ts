@@ -36,8 +36,19 @@ class ApiClient {
     // Response interceptor for error handling
     this.axiosInstance.interceptors.response.use(
       (response) => response,
-      (error) => {
+      async (error) => {
         if (error.response?.status === 401) {
+          // Try to refresh token first
+          const refreshed = await this.tryRefreshToken();
+          if (refreshed) {
+            // Retry the original request with new token
+            const originalRequest = error.config;
+            if (originalRequest) {
+              originalRequest.headers.Authorization = `Bearer ${this.getAuthToken()}`;
+              return this.axiosInstance(originalRequest);
+            }
+          }
+          // If refresh failed, handle unauthorized
           this.handleUnauthorized();
         }
         return Promise.reject(error);
@@ -47,15 +58,38 @@ class ApiClient {
 
   private getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('authToken');
+      return localStorage.getItem('rc-token');
     }
     return null;
+  }
+
+  private async tryRefreshToken(): Promise<boolean> {
+    try {
+      const storedTokens = localStorage.getItem('rc-tokens');
+      if (!storedTokens) return false;
+
+      const tokens = JSON.parse(storedTokens);
+      if (!tokens.refreshToken) return false;
+
+      // Import refresh function dynamically to avoid circular imports
+      const { refreshAccessToken } = await import('@/services/apis/auth.api');
+      const newTokens = await refreshAccessToken();
+
+      return !!newTokens;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      return false;
+    }
   }
 
   private handleUnauthorized() {
     // Clear token and redirect to login
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('authToken');
+      localStorage.removeItem('rc-token');
+      localStorage.removeItem('rc-tokens');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('csrf-token');
+      // Use hard redirect to prevent infinite loops
       window.location.href = '/login';
     }
   }

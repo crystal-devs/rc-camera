@@ -63,7 +63,6 @@ export class AuthManager {
   clearAuthData(): void {
     localStorage.removeItem("rc-tokens");
     localStorage.removeItem("rc-token");
-    localStorage.removeItem("authToken");
     localStorage.removeItem("userData");
     localStorage.removeItem("csrf-token");
   }
@@ -90,7 +89,10 @@ export class AuthManager {
 
   // Check if user is authenticated
   isAuthenticated(): boolean {
-    return !this.isTokenExpired() && !!this.getAccessToken() && !!this.getCurrentUser();
+    const hasValidToken = !this.isTokenExpired() && !!this.getAccessToken();
+    const hasUser = !!this.getCurrentUser();
+    console.log('Auth check:', { hasValidToken, hasUser, tokenExpired: this.isTokenExpired() });
+    return hasValidToken && hasUser;
   }
 
   // Handle token refresh with deduplication

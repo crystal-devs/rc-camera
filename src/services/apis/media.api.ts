@@ -123,7 +123,11 @@ export const getEventMediaWithPagination = async (
             timeout: 15000,
         });
 
+        console.log('Media API Response Status:', response.status);
+        console.log('Media API Response Headers:', response.headers);
+
         console.log('API Response:', response.status, response.data);
+        console.log('Auth token being used:', authToken ? `${authToken.substring(0, 20)}...` : 'No token');
 
         if (response.data && response.data.status === true) {
             // Return the full response structure
@@ -246,6 +250,12 @@ export async function bulkUpdateMediaStatus(
             status,
             reason: options.reason,
             hide_reason: options.hideReason
+        }, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000, // 30 seconds for bulk operations
         });
 
         console.log('✅ Bulk status update completed via dedicated endpoint:', {

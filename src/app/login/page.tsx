@@ -56,29 +56,7 @@ const LoginPage = () => {
         }
     }, [inviteToken, inviteType, inviteAction]);
 
-    useEffect(() => {
-        // Check if user is already authenticated
-        if (isAuthenticated && !isLoading) {
-            // DON'T redirect if we have invite context - let LoginForm handle it
-            if (inviteToken && (inviteType || localStorage.getItem('inviteContext'))) {
-                console.log('User authenticated with invite context - LoginForm will handle redirect');
-                return;
-            }
-
-            // Only redirect for non-invite scenarios
-            localStorage.removeItem('inviteContext');
-
-            const redirectAfterLogin = localStorage.getItem('redirectAfterLogin');
-            if (redirectAfterLogin) {
-                localStorage.removeItem('redirectAfterLogin');
-                window.location.href = redirectAfterLogin;
-            } else if (redirectUrl) {
-                window.location.href = decodeURIComponent(redirectUrl);
-            } else {
-                window.location.href = '/';
-            }
-        }
-    }, [isAuthenticated, isLoading, inviteToken, inviteType, redirectUrl]);
+    // AuthGuard handles redirects now - no manual redirect logic needed
 
     // Show loading while checking authentication state
     if (isLoading) {

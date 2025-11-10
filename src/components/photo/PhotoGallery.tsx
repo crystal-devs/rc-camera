@@ -27,9 +27,9 @@ import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { UploadProgressTab } from '../progress/upload-progress';
 import UploadButton from '../guest/UploadButton';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryKeys';
-import { bulkDeleteMedia } from '@/services/apis/media.api';
+import { bulkDeleteMedia, bulkUpdateMediaStatus } from '@/services/apis/media.api';
 import { useAuthToken } from '@/hooks/use-auth';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
@@ -249,6 +249,118 @@ export default function OptimizedPhotoGallery({
   const deleteMutation = useDeleteMedia(eventId);
   const { getCachedPhotoCount } = useGalleryUtils(eventId);
 
+  // Bulk status update mutation
+  const bulkStatusMutation = useMutation({
+    mutationFn: async (params: {
+      mediaIds: string[];
+      status: 'approved' | 'pending' | 'rejected' | 'hidden';
+      reason?: string;
+    }) => {
+      if (!token) throw new Error('Authentication required');
+      console.log('🔄 Bulk updating media status:', {
+        eventId,
+        count: params.mediaIds.length,
+        status: params.status,
+        reason: params.reason
+      });
+      return await bulkUpdateMediaStatus(eventId, params.mediaIds, params.status, token, {
+        reason: params.reason,
+        hideReason: params.status === 'hidden' ? params.reason : undefined
+      });
+    },
+    onSuccess: (result: any) => {
+      console.log('✅ Bulk status update completed:', result);
+      const params = bulkStatusMutation.variables as { status: string; mediaIds: string[] };
+
+      // Handle cache updates for bulk operations
+      if (result.data?.updatedMediaIds && result.data?.newStatus) {
+        const { updatedMediaIds, newStatus } = result.data;
+        const allStatuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+        const qualities = ['small', 'medium', 'large', 'original'];
+
+        // Remove from all old status caches
+        const removalPromises: Promise<any>[] = [];
+        for (const oldStatus of allStatuses) {
+          if (oldStatus === newStatus) continue; // Skip the new status
+
+          for (const quality of qualities) {
+            removalPromises.push(
+              Promise.resolve(
+                queryClient.setQueryData(
+                  [...queryKeys.eventPhotos(eventId, oldStatus), 'infinite', quality],
+                  (oldData: any) => {
+                    if (!oldData?.pages) return oldData;
+                    return {
+                      ...oldData,
+                      pages: oldData.pages.map((page: any) => ({
+                        ...page,
+                        photos: page.photos.filter((p: any) => !updatedMediaIds.includes(p.id))
+                      }))
+                    };
+                  }
+                )
+              )
+            );
+
+            removalPromises.push(
+              Promise.resolve(
+                queryClient.setQueryData(
+                  [...queryKeys.eventPhotos(eventId, oldStatus), quality],
+                  (oldData: any) => {
+                    if (!oldData) return oldData;
+                    return oldData.filter((p: any) => !updatedMediaIds.includes(p.id));
+                  }
+                )
+              )
+            );
+          }
+        }
+
+        // Invalidate new status cache to refetch
+        const invalidationPromises: Promise<any>[] = [];
+        for (const quality of qualities) {
+          invalidationPromises.push(
+            queryClient.invalidateQueries({
+              queryKey: [...queryKeys.eventPhotos(eventId, newStatus), 'infinite', quality],
+              exact: false,
+              refetchType: 'all'
+            })
+          );
+
+          invalidationPromises.push(
+            queryClient.invalidateQueries({
+              queryKey: [...queryKeys.eventPhotos(eventId, newStatus), quality],
+              exact: false,
+              refetchType: 'all'
+            })
+          );
+        }
+
+        // Invalidate counts
+        invalidationPromises.push(
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.eventCounts(eventId),
+            exact: false,
+            refetchType: 'all'
+          })
+        );
+
+        Promise.allSettled([...removalPromises, ...invalidationPromises]);
+      } else {
+        // Fallback to simple refetch if backend doesn't provide updatedMediaIds
+        refetchPhotos();
+        refetchCounts();
+      }
+
+      toast.success(`Successfully updated ${result.data?.modifiedCount || params?.mediaIds.length} media items to ${params?.status}`);
+      setSelectedPhotos(new Set());
+    },
+    onError: (error: any) => {
+      console.error('❌ Bulk status update failed:', error);
+      toast.error(error.message || 'Failed to update media status');
+    }
+  });
+
   // Progress panel handlers
   const handleRemoveProgressItem = useCallback((mediaId: string) => {
     stopMonitoring([mediaId]);
@@ -316,7 +428,7 @@ export default function OptimizedPhotoGallery({
       total: getCachedPhotoCount('approved') + getCachedPhotoCount('pending') + getCachedPhotoCount('rejected') + getCachedPhotoCount('hidden')
     },
     [mediaCounts, getCachedPhotoCount]
-  );
+  ) as { approved: number; pending: number; rejected: number; hidden: number; total: number; };
 
   // Event handlers
   const handleTabChange = useCallback((newTab: typeof activeTab) => {
@@ -532,6 +644,33 @@ export default function OptimizedPhotoGallery({
     }
   }, [selectedPhotos, photos, userPermissions.download]);
 
+  const handleBulkStatusUpdate = useCallback(async (status: 'approved' | 'pending' | 'rejected' | 'hidden', reason?: string) => {
+    if (!userPermissions.moderate) {
+      toast.error("You don't have permission to moderate photos.");
+      return;
+    }
+
+    if (selectedPhotos.size === 0) {
+      toast.error("No photos selected.");
+      return;
+    }
+
+    if (selectedPhotos.size > 100) {
+      toast.error("Cannot update more than 100 photos at once.");
+      return;
+    }
+
+    try {
+      await bulkStatusMutation.mutateAsync({
+        mediaIds: Array.from(selectedPhotos),
+        status,
+        reason
+      });
+    } catch (error) {
+      console.error('Bulk status update failed:', error);
+    }
+  }, [selectedPhotos, userPermissions.moderate, bulkStatusMutation]);
+
   const handleLoadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
@@ -622,6 +761,42 @@ export default function OptimizedPhotoGallery({
               </Button>
               {selectedPhotos.size > 0 && (
                 <>
+                  {userPermissions.moderate && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleBulkStatusUpdate('approved')}
+                        className="text-green-600"
+                      >
+                        Approve ({selectedPhotos.size})
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleBulkStatusUpdate('pending')}
+                        className="text-yellow-600"
+                      >
+                        Pending ({selectedPhotos.size})
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleBulkStatusUpdate('rejected')}
+                        className="text-orange-600"
+                      >
+                        Reject ({selectedPhotos.size})
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleBulkStatusUpdate('hidden')}
+                        className="text-gray-600"
+                      >
+                        Hide ({selectedPhotos.size})
+                      </Button>
+                    </>
+                  )}
                   {userPermissions.download && (
                     <Button
                       variant="outline"
@@ -786,11 +961,13 @@ export default function OptimizedPhotoGallery({
         </div>
       </div>
 
-      {(updateStatusMutation.isPending || uploadMutation.isPending) && (
+      {(updateStatusMutation.isPending || uploadMutation.isPending || bulkStatusMutation.isPending) && (
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-blue-700 dark:text-blue-300">
-            {uploadMutation.isPending ? 'Starting upload...' : 'Processing status updates...'}
+            {uploadMutation.isPending ? 'Starting upload...' :
+             bulkStatusMutation.isPending ? 'Updating media status...' :
+             'Processing status updates...'}
           </span>
         </div>
       )}

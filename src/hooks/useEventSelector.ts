@@ -33,7 +33,7 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
 
   // Get auth token
   const authToken = typeof window !== 'undefined'
-    ? (localStorage.getItem('authToken') || localStorage.getItem('rc-token') || '')
+    ? (localStorage.getItem('rc-token') || '')
     : '';
 
   // React Query for server state management

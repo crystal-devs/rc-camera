@@ -173,7 +173,6 @@ export const logoutUser = async (): Promise<void> => {
         // Clear all stored auth data
         localStorage.removeItem("rc-tokens");
         localStorage.removeItem("rc-token");
-        localStorage.removeItem("authToken");
         localStorage.removeItem("userData");
         localStorage.removeItem("csrf-token");
     }
