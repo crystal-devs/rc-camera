@@ -119,6 +119,35 @@ export const createEventBulkDownload = async (
 };
 
 /**
+ * Create a bulk download request for guest users (share token-based)
+ */
+export const createGuestBulkDownload = async (
+  shareToken: string,
+  eventId: string,
+  quality: 'thumbnail' | 'medium' | 'large' | 'original' = 'original'
+): Promise<BulkDownloadResponse> => {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  const response = await fetch(`${API_BASE_URL}/download/guest/${shareToken}/bulk`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      eventId,
+      quality,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
+/**
  * Get download status and URL
  */
 export const getDownloadStatus = async (
@@ -131,7 +160,7 @@ export const getDownloadStatus = async (
     headers.Authorization = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}/download/bulk-download/${jobId}/status`, {
+  const response = await fetch(`${API_BASE_URL}/download/status/${jobId}`, {
     method: 'GET',
     headers,
   });
@@ -204,44 +233,130 @@ export const cancelDownload = async (
  * Download the ZIP file directly to user's device
  */
 export const downloadZipFile = async (downloadUrl: string, filename?: string): Promise<void> => {
+  console.log('🚀 [DOWNLOAD] Starting download process...');
+  console.log('🔗 [DOWNLOAD] URL:', downloadUrl.substring(0, 100) + '...');
+  console.log('📁 [DOWNLOAD] Filename:', filename);
+
+  // Check if URL is expired by parsing the X-Amz-Date parameter
   try {
+    const url = new URL(downloadUrl);
+    const amzDate = url.searchParams.get('X-Amz-Date');
+    const expires = url.searchParams.get('X-Amz-Expires');
+
+    if (amzDate && expires) {
+      // Parse AWS date format (YYYYMMDDTHHMMSSZ)
+      const dateMatch = amzDate.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+      if (dateMatch) {
+        const [, year, month, day, hour, minute, second] = dateMatch;
+        const signedAt = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+        const expiresAt = new Date(signedAt.getTime() + (parseInt(expires) * 1000));
+        const now = new Date();
+
+        console.log('⏰ [DOWNLOAD] URL signed at:', signedAt.toISOString());
+        console.log('⏰ [DOWNLOAD] URL expires at:', expiresAt.toISOString());
+        console.log('⏰ [DOWNLOAD] Current time:', now.toISOString());
+        console.log('⏰ [DOWNLOAD] Time remaining:', Math.floor((expiresAt.getTime() - now.getTime()) / 1000), 'seconds');
+
+        if (now > expiresAt) {
+          console.error('❌ [DOWNLOAD] Presigned URL has expired!');
+          console.error('❌ [DOWNLOAD] This is a BACKEND ISSUE - URL expired before download');
+          throw new Error('Download URL has expired. This is a server-side issue that needs to be fixed.');
+        }
+      }
+    }
+  } catch (parseError) {
+    console.warn('⚠️ [DOWNLOAD] Could not parse URL expiration:', parseError);
+  }
+
+  try {
+    console.log('📡 [DOWNLOAD] Fetching from S3 presigned URL...');
+
     // For S3 presigned URLs, we need to handle CORS and authentication
     const response = await fetch(downloadUrl, {
       method: 'GET',
       // Don't set credentials for S3 presigned URLs as they include auth in the URL
+      mode: 'cors', // Explicitly set CORS mode
     });
 
+    console.log('📡 [DOWNLOAD] Response status:', response.status, response.statusText);
+    console.log('📡 [DOWNLOAD] Response headers:', Object.fromEntries(response.headers.entries()));
+    console.log('📡 [DOWNLOAD] Response ok:', response.ok);
+
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ [DOWNLOAD] HTTP error response:', errorText);
+
+      // Check if it's an S3 expiration error
+      if (errorText.includes('AccessDenied') && errorText.includes('Request has expired')) {
+        console.error('❌ [DOWNLOAD] S3 URL EXPIRED - BACKEND BUG!');
+        throw new Error('Download URL expired. Backend needs to generate fresh URLs when download is ready.');
+      }
+
       throw new Error(`Download failed: ${response.status} ${response.statusText}`);
     }
 
+    // Check content type
+    const contentType = response.headers.get('content-type');
+    const contentLength = response.headers.get('content-length');
+    console.log('📋 [DOWNLOAD] Content type:', contentType);
+    console.log('📏 [DOWNLOAD] Content length:', contentLength);
+
     // Get the blob from the response
+    console.log('🗜️ [DOWNLOAD] Converting response to blob...');
     const blob = await response.blob();
+    console.log('📦 [DOWNLOAD] Blob created successfully');
+    console.log('📏 [DOWNLOAD] Blob size:', blob.size, 'bytes');
+    console.log('🏷️ [DOWNLOAD] Blob type:', blob.type);
+
+    if (blob.size === 0) {
+      console.error('❌ [DOWNLOAD] Blob is empty!');
+      throw new Error('Downloaded file is empty');
+    }
 
     // Create a temporary URL for the blob
     const blobUrl = window.URL.createObjectURL(blob);
+    console.log('🔗 [DOWNLOAD] Created blob URL:', blobUrl);
 
     // Create a temporary link element to trigger download
     const link = document.createElement('a');
     link.href = blobUrl;
     link.download = filename || `event-photos-${Date.now()}.zip`;
+    link.style.display = 'none';
+    link.target = '_blank'; // Open in new tab as backup
 
     // Append to body, click, then remove
     document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    console.log('🖱️ [DOWNLOAD] Link element added to DOM');
 
-    // Clean up the blob URL
-    window.URL.revokeObjectURL(blobUrl);
+    console.log('🚀 [DOWNLOAD] Attempting programmatic download...');
+    // Try programmatic download first
+    link.click();
+    console.log('✅ [DOWNLOAD] Programmatic download triggered');
+
+    // No backup methods needed - programmatic download should work
+
+    // Cleanup after a longer delay to ensure download starts
+    setTimeout(() => {
+      console.log('🧹 [DOWNLOAD] Starting cleanup...');
+      document.body.removeChild(link);
+      // Clean up the blob URL
+      window.URL.revokeObjectURL(blobUrl);
+      console.log('✅ [DOWNLOAD] Cleanup completed');
+    }, 3000);
+
+    console.log('🎉 [DOWNLOAD] Download process completed successfully');
+
   } catch (error) {
-    console.error('Direct download failed:', error);
-    // If direct download fails, try opening in new tab as fallback
-    try {
-      window.open(downloadUrl, '_blank');
-      console.log('Opened download URL in new tab as fallback');
-    } catch (fallbackError) {
-      console.error('Fallback download also failed:', fallbackError);
-      throw new Error('Download failed. Please try again or contact support.');
+    console.error('❌ [DOWNLOAD] Direct download failed:', error);
+
+    // If it's an expiration error, provide clear backend instructions
+    if (error instanceof Error && (error.message.includes('expired') || error.message.includes('AccessDenied'))) {
+      console.error('🔧 [BACKEND FIX NEEDED]');
+      console.error('🔧 The presigned URL expired before download completed');
+      console.error('🔧 Backend should generate fresh URLs when status is "completed"');
+      console.error('🔧 Or increase X-Amz-Expires from 3600 to 86400 (24 hours)');
     }
+
+    throw error; // Re-throw the error for proper handling
   }
 };

@@ -24,7 +24,10 @@ export class AuthManager {
       const now = Date.now();
       const bufferTime = 5 * 60 * 1000; // 5 minutes buffer
 
-      return (tokens.expiresAt * 1000) - now < bufferTime;
+      // Parse ISO string to timestamp (expiresAt is stored as string)
+      const expiresAt = new Date(tokens.expiresAt).getTime();
+
+      return expiresAt - now < bufferTime;
     } catch {
       return true;
     }
@@ -99,13 +102,16 @@ export class AuthManager {
   async refreshTokenIfNeeded(): Promise<AuthTokens | null> {
     if (this.isRefreshing && this.refreshPromise) {
       // Return existing refresh promise if already refreshing
+      console.log('🔄 Already refreshing, returning existing promise');
       return this.refreshPromise;
     }
 
     if (!this.isTokenExpired()) {
+      console.log('✅ Token not expired, no refresh needed');
       return this.getStoredTokens();
     }
 
+    console.log('🔄 Token expired, starting refresh...');
     this.isRefreshing = true;
 
     // Import refreshAccessToken dynamically to avoid circular dependencies
@@ -116,7 +122,14 @@ export class AuthManager {
       this.refreshPromise = null;
     });
 
-    return this.refreshPromise;
+    const result = await this.refreshPromise;
+    if (result) {
+      console.log('✅ Token refresh successful');
+    } else {
+      console.log('❌ Token refresh failed');
+    }
+
+    return result;
   }
 
   // Validate token format and basic structure

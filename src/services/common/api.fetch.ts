@@ -78,9 +78,11 @@ axios.interceptors.response.use(
       isRefreshing = true;
 
       try {
+        console.log('🔄 Starting token refresh due to 401 error');
         const newTokens = await authManager.refreshTokenIfNeeded();
 
         if (newTokens) {
+          console.log('✅ Token refresh successful, retrying request');
           // Update the authorization header
           originalRequest.headers.authorization = `jwt ${newTokens.accessToken}`;
 
@@ -90,6 +92,7 @@ axios.interceptors.response.use(
           // Retry the original request
           return axios(originalRequest);
         } else {
+          console.log('❌ Token refresh failed, redirecting to login');
           // Refresh failed, redirect to login
           authManager.clearAuthData();
           if (typeof window !== 'undefined') {
@@ -98,6 +101,7 @@ axios.interceptors.response.use(
           return Promise.reject(error);
         }
       } catch (refreshError) {
+        console.log('❌ Token refresh error:', refreshError);
         // Refresh failed, redirect to login
         processQueue(refreshError, null);
         authManager.clearAuthData();

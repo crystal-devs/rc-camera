@@ -128,6 +128,18 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
                                 <Settings2Icon className="mr-2 h-4 w-4" />
                                 <span>Settings</span>
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => router.push('/settings')}>
+                                <Settings2Icon className="mr-2 h-4 w-4" />
+                                <span>Help and Support</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => router.push('/settings')}>
+                                <Settings2Icon className="mr-2 h-4 w-4" />
+                                <span>Feature Request</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => router.push('/settings')}>
+                                <Settings2Icon className="mr-2 h-4 w-4" />
+                                <span>Report Issue</span>
+                            </DropdownMenuItem>
 
                             <DropdownMenuSeparator />
 
