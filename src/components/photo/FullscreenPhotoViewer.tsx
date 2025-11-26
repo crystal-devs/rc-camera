@@ -1,5 +1,6 @@
-// components/photo/FullscreenPhotoViewer.tsx - Updated with full screen and info sheet
+// components/photo/FullscreenPhotoViewer.tsx - Updated with Portal, mobile fixes, and TS fixes
 import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, InfoIcon, TrashIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +40,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isHighResLoading, setIsHighResLoading] = useState(false);
   const [photoInfoOpen, setPhotoInfoOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -82,13 +84,13 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
       const photo = photos[index];
       const urls = photo.progressiveUrls;
 
-      if (urls?.high) {
+      if (urls?.full) {
         // Create link preload element
         const link = document.createElement('link');
         link.rel = 'preload';
         link.as = 'image';
-        link.href = urls.high;
-        link.imageSrcset = `${urls.thumbnail} 800w, ${urls.display} 1600w, ${urls.high} 2400w`;
+        link.href = urls.full;
+        link.imageSrcset = `${urls.thumbnail} 800w, ${urls.display} 1600w, ${urls.full} 2400w`;
         link.imageSizes = '100vw';
         document.head.appendChild(link);
 
@@ -300,6 +302,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   // Setup effect
   useEffect(() => {
+    setMounted(true);
     setIsFullscreenActive(true);
     document.body.style.overflow = 'hidden';
     resetControlsTimeout();
@@ -335,7 +338,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     };
   }, [setIsFullscreenActive, handleKeyDown, resetControlsTimeout, handleTouchStart, handleTouchMove, handleTouchEnd]);
 
-  if (!selectedPhoto) return null;
+  if (!selectedPhoto || !mounted) return null;
 
   const canGoPrev = selectedPhotoIndex !== null && selectedPhotoIndex > 0;
   const canGoNext = selectedPhotoIndex !== null && selectedPhotoIndex < photos.length - 1;
@@ -349,17 +352,17 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     return 'Loading...';
   };
 
-  return (
+  const content = (
     <div
-      className="fixed inset-0 z-50 bg-black m-0 p-0"
+      className="fixed inset-0 z-[100] bg-black m-0 p-0 overflow-hidden"
       data-photo-viewer
-      style={{ margin: 0, padding: 0, width: '100vw', height: '100vh' }}
+      style={{ margin: 0, padding: 0, width: '100vw', height: '100dvh' }}
     >
       {/* Header controls */}
       <div className={`absolute top-0 left-0 right-0 z-10 transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full'
         }`}>
         <div className="bg-gradient-to-b from-black/80 to-transparent">
-          <div className="flex items-center justify-between p-4 text-white">
+          <div className="flex items-center justify-between p-4 text-white safe-area-top">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
@@ -476,11 +479,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           <div className="relative w-full h-full flex items-center justify-center">
             {/* Progressive Image Display with Metadata-based Sizing */}
             <div
-              className="relative flex items-center justify-center"
-              style={{
-                width: '100vw',
-                height: '100vh'
-              }}
+              className="relative flex items-center justify-center w-full h-full"
             >
 
               {/* Main high-quality image at original dimensions */}
@@ -498,7 +497,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                 sizes="100vw"
                 src={getImageUrls.high || getImageUrls.display}
                 alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
-                className="relative max-w-full max-h-full object-contain"
+                className="relative w-full h-full object-contain"
                 style={{
                   opacity: imageLoaded ? 1 : 0,
                   transition: 'opacity 0.3s ease-out'
@@ -545,10 +544,13 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           src: originalUrl,
           title: selectedPhoto?.id || '',
           takenBy: selectedPhoto.takenBy?.toString(),
-          uploadedBy: selectedPhoto.uploadedBy?.toString() || '',
+          uploadedBy: '', // Photo type doesn't have uploadedBy
           uploadedAt: selectedPhoto.createdAt?.toString() || '',
-          takenAt: selectedPhoto.metadata?.timestamp?.toString() || '',
-          location: selectedPhoto.metadata?.location || {},
+          takenAt: selectedPhoto.createdAt?.toString() || '', // Metadata doesn't have timestamp
+          location: selectedPhoto.metadata?.location ? {
+            name: `${selectedPhoto.metadata.location.lat}, ${selectedPhoto.metadata.location.lng}`,
+            address: ''
+          } : undefined,
           metadata: {
             width: selectedPhoto.metadata?.originalWidth,
             height: selectedPhoto.metadata?.originalHeight,
@@ -581,9 +583,14 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           80% { opacity: 1; transform: scale(1); }
           100% { opacity: 0; transform: scale(0.9); }
         }
+        .safe-area-top {
+          padding-top: env(safe-area-inset-top);
+        }
       `}</style>
     </div>
   );
+
+  return createPortal(content, document.body);
 };
 
 export { FullscreenPhotoViewer };

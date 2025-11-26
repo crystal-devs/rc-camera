@@ -188,6 +188,7 @@ const EventSettingsPage = () => {
             <SharingTab
               formData={formData}
               onInputChange={handleInputChange}
+              eventId={eventId as string}
             />
           </TabsContent>
 

@@ -135,8 +135,14 @@ export const getEventById = async (eventId: string, authToken: string): Promise<
         console.error('API error status:', error.response.status);
         console.error('API error data:', error.response.data);
 
-        if (error.response.status === 401 || error.response.status === 403) {
-          throw new Error('Authentication error. Please log in again.');
+        if (error.response.status === 401) {
+          throw new Error('Authentication required. Please log in to access this event.');
+        } else if (error.response.status === 403) {
+          // Handle invited_only access denied
+          const errorMessage = error.response.data?.error?.message ||
+                              error.response.data?.message ||
+                              'You are not invited to this event';
+          throw new Error(errorMessage);
         } else if (error.response.status === 404) {
           throw new Error('Event not found. It may have been deleted or is not accessible.');
         } else if (error.response.status >= 500) {
@@ -823,6 +829,89 @@ export const addGuests = async (
     );
   } catch (error) {
     console.error(`Error adding guests to event ${eventId}:`, error);
+    throw error;
+  }
+};
+
+// ============= INVITATION MANAGEMENT =============
+
+export interface InvitationData {
+  emails: string[];
+  role?: 'guest' | 'viewer';
+  message?: string;
+}
+
+export interface InvitationResponse {
+  status: boolean;
+  data?: {
+    invitations: Array<{
+      email: string;
+      status: 'pending' | 'accepted' | 'declined';
+      sent_at: string;
+      expires_at: string;
+    }>;
+  };
+  message?: string;
+  error?: { message: string };
+}
+
+// Send invitations to an event
+export const sendInvitations = async (
+  eventId: string,
+  invitationData: InvitationData,
+  authToken: string
+): Promise<InvitationResponse> => {
+  try {
+    console.log(`Sending invitations for event ${eventId}:`, invitationData);
+
+    const response = await axios.post(
+      `${API_BASE_URL}/event/${eventId}/invitations`,
+      invitationData,
+      {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      }
+    );
+
+    if (response.data?.status) {
+      return response.data;
+    } else {
+      throw new Error(response.data?.message || 'Failed to send invitations');
+    }
+  } catch (error) {
+    console.error(`Error sending invitations for event ${eventId}:`, error);
+    throw error;
+  }
+};
+
+// Get invitation status for an event
+export const getInvitations = async (
+  eventId: string,
+  authToken: string
+): Promise<InvitationResponse> => {
+  try {
+    console.log(`Fetching invitations for event ${eventId}`);
+
+    const response = await axios.get(
+      `${API_BASE_URL}/event/${eventId}/invitations`,
+      {
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        },
+        timeout: 10000
+      }
+    );
+
+    if (response.data?.status) {
+      return response.data;
+    } else {
+      throw new Error(response.data?.message || 'Failed to fetch invitations');
+    }
+  } catch (error) {
+    console.error(`Error fetching invitations for event ${eventId}:`, error);
     throw error;
   }
 };

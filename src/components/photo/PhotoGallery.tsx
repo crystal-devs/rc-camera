@@ -2,12 +2,13 @@
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
-import { XIcon, WifiIcon, WifiOffIcon, UploadIcon } from 'lucide-react';
+import { XIcon, WifiIcon, WifiOffIcon, UploadIcon, RefreshCcw, CheckIcon, EyeOffIcon, TrashIcon, DownloadIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   useEventMedia,
   useInfiniteEventMediaFlat,
@@ -17,9 +18,7 @@ import {
   useDeleteMedia,
   useGalleryUtils
 } from '@/hooks/useMediaQueries';
-import { StatusTabs } from '../album/StatusTabs';
 import { EmptyState } from '../album/EmptyState';
-import PhotoUploadDialog from '../album/PhotoUploadDialog';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
 import { OptimizedPhotoGrid } from './PhotoGrid';
@@ -54,8 +53,7 @@ export default function OptimizedPhotoGallery({
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false); // Kept for internal logic if needed, but primarily derived
   const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set());
 
   // Refs
@@ -125,7 +123,6 @@ export default function OptimizedPhotoGallery({
   const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
     onSuccess: (result) => {
       const { data } = result;
-      setUploadDialogOpen(false);
 
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
@@ -236,7 +233,6 @@ export default function OptimizedPhotoGallery({
     },
     onError: (error) => {
       console.error('Upload failed:', error);
-      setUploadDialogOpen(false);
       toast.error('Upload failed', {
         description: error.message || 'Please try again',
         duration: 5000
@@ -248,6 +244,9 @@ export default function OptimizedPhotoGallery({
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
   const { getCachedPhotoCount } = useGalleryUtils(eventId);
+
+  // Get auth token at component level (following Rules of Hooks)
+  const token = useAuthToken();
 
   // Bulk status update mutation
   const bulkStatusMutation = useMutation({
@@ -568,9 +567,6 @@ export default function OptimizedPhotoGallery({
     setSelectedPhotos(new Set());
   }, []);
 
-  // Get auth token at component level (following Rules of Hooks)
-  const token = useAuthToken();
-
   const handleBulkDelete = useCallback(async () => {
     if (!userPermissions.delete) {
       toast.error("You don't have permission to delete photos.");
@@ -727,238 +723,169 @@ export default function OptimizedPhotoGallery({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <StatusTabs
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            mediaCounts={displayCounts}
-            userPermissions={userPermissions}
-          />
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 no-scrollbar max-w-[calc(100vw-120px)] sm:max-w-none">
+            {[
+              { id: 'approved', label: 'Published', count: displayCounts.approved },
+              { id: 'pending', label: 'Pending', count: displayCounts.pending },
+              { id: 'rejected', label: 'Rejected', count: displayCounts.rejected },
+              { id: 'hidden', label: 'Hidden', count: displayCounts.hidden },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id as any)}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap",
+                  activeTab === tab.id
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                )}
+              >
+                {tab.label}
+                <span className={cn(
+                  "text-xs px-1.5 py-0.5 rounded-full",
+                  activeTab === tab.id
+                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    : "bg-background/50 text-muted-foreground"
+                )}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
 
-          <div className="text-xs text-gray-500">
-            Infinite scroll ({photos.length} loaded)
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleManualRefresh}
+            title="Refresh photos"
+          >
+            <RefreshCcw className="h-4 w-4" />
+          </Button>
+
+          <div className="text-xs text-gray-500 hidden sm:block">
+            {photos.length} photos loaded
           </div>
         </div>
 
-        {/* Selection Mode Toggle */}
+        {/* Selection Actions (Deselect) */}
         <div className="flex items-center gap-2">
-          {selectionMode && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={selectAllPhotos}
-                disabled={selectedPhotos.size === photos.length}
-              >
-                Select All
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={deselectAllPhotos}
-                disabled={selectedPhotos.size === 0}
-              >
-                Deselect All
-              </Button>
-              {selectedPhotos.size > 0 && (
-                <>
-                  {userPermissions.moderate && (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleBulkStatusUpdate('approved')}
-                        className="text-green-600"
-                      >
-                        Approve ({selectedPhotos.size})
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleBulkStatusUpdate('pending')}
-                        className="text-yellow-600"
-                      >
-                        Pending ({selectedPhotos.size})
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleBulkStatusUpdate('rejected')}
-                        className="text-orange-600"
-                      >
-                        Reject ({selectedPhotos.size})
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleBulkStatusUpdate('hidden')}
-                        className="text-gray-600"
-                      >
-                        Hide ({selectedPhotos.size})
-                      </Button>
-                    </>
-                  )}
-                  {userPermissions.download && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleBulkDownload}
-                      className="text-blue-600"
-                    >
-                      Download ({selectedPhotos.size})
-                    </Button>
-                  )}
-                  {userPermissions.delete && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleBulkDelete}
-                      className="text-red-600"
-                    >
-                      Delete ({selectedPhotos.size})
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
+          {selectedPhotos.size > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={deselectAllPhotos}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Deselect All
+            </Button>
           )}
-          <Button
-            variant={selectionMode ? "default" : "outline"}
-            size="sm"
-            onClick={toggleSelectionMode}
-          >
-            {selectionMode ? 'Exit Select' : 'Select'}
-          </Button>
         </div>
+      </div>
 
-        <UploadProgressTab
-          uploadProgress={uploadProgress}
-          isMonitoring={isMonitoring}
-          summary={summary}
-          onClearAll={handleClearAll}
-          onRemoveItem={handleRemoveProgressItem}
-          onRetryItem={handleRetryUpload}
-          onCancelItem={handleCancelUpload}
-          onPauseResumeItem={handlePauseResumeUpload}
-          className="transition-all duration-300"
-        />
+      <UploadProgressTab
+        uploadProgress={uploadProgress}
+        isMonitoring={isMonitoring}
+        summary={summary}
+        onClearAll={handleClearAll}
+        onRemoveItem={handleRemoveProgressItem}
+        onRetryItem={handleRetryUpload}
+        onCancelItem={handleCancelUpload}
+        onPauseResumeItem={handlePauseResumeUpload}
+        className="transition-all duration-300"
+      />
 
-        <div className="flex items-center gap-2">
-          {process.env.NODE_ENV === 'development' && (
-            <>
-              <ConnectionStatus />
-              <Button
-                onClick={handleManualRefresh}
-                variant="outline"
-                size="sm"
-                className="text-xs"
-              >
-                Refresh {/* Right now the refresh button is only for dev env, it will dissapear on prod */}
-              </Button>
-              {updateStatusMutation.isPending && (
-                <Badge variant="secondary" className="text-xs">
-                  Processing operations
-                </Badge>
-              )}
-            </>
-          )}
+      <div className="flex items-center gap-2">
+        {process.env.NODE_ENV === 'development' && (
+          <>
+            <ConnectionStatus />
+            {updateStatusMutation.isPending && (
+              <Badge variant="secondary" className="text-xs">
+                Processing operations
+              </Badge>
+            )}
+          </>
+        )}
 
-          {canUserUpload && (
-            <PhotoUploadDialog
-              open={uploadDialogOpen}
-              setOpen={setUploadDialogOpen}
-              isUploading={uploadMutation.isPending}
-              approvalMode={approvalMode}
-              onFileUpload={handleFileUpload}
-              fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
-              cameraInputRef={cameraInputRef as React.RefObject<HTMLInputElement>}
-            />
-          )}
+        <UploadButton
+          eventId={eventId}
+          onUploadComplete={(mediaData) => {
+            console.log('Guest upload completed:', mediaData);
 
-          <UploadButton
-            eventId={eventId}
-            onUploadComplete={(mediaData) => {
-              console.log('Guest upload completed:', mediaData);
-
-              // ✅ CORRECTED: Create temp photo with proper states
-              const tempPhoto: Photo = {
-                id: mediaData.mediaId,
-                albumId: undefined,
-                eventId: eventId,
-                takenBy: 'Guest',
-                imageUrl: mediaData.originalUrl,           // ✅ S3 URL - shows immediately
+            const tempPhoto: Photo = {
+              id: mediaData.mediaId,
+              albumId: undefined,
+              eventId: eventId,
+              takenBy: 'Guest',
+              imageUrl: mediaData.originalUrl,
+              thumbnail: mediaData.originalUrl,
+              createdAt: new Date(),
+              originalFilename: mediaData.fileName,
+              processingStatus: 'processing' as const,
+              processingProgress: 0,
+              approval: {
+                status: 'pending' as const,
+              },
+              processing: {
+                status: 'processing' as const,
+                variants_generated: false,
+              },
+              progressiveUrls: {
+                placeholder: mediaData.originalUrl,
                 thumbnail: mediaData.originalUrl,
-                createdAt: new Date(),
-                originalFilename: mediaData.fileName,
-                processingStatus: 'processing' as const,  // ✅ CORRECTED from 'completed'
-                processingProgress: 0,
-                approval: {
-                  status: 'pending' as const,  // ✅ CORRECTED from 'approved'
-                },
-                processing: {
-                  status: 'processing' as const,  // ✅ CORRECTED from 'completed'
-                  variants_generated: false,
-                },
-                progressiveUrls: {
-                  placeholder: mediaData.originalUrl,
-                  thumbnail: mediaData.originalUrl,
-                  display: mediaData.originalUrl,
-                  full: mediaData.originalUrl,
-                  original: mediaData.originalUrl,
-                },
-                metadata: {
-                  width: 0,
-                  height: 0,
-                },
-                stats: {
-                  views: 0,
-                  downloads: 0,
-                  shares: 0,
-                  likes: 0,
-                },
-              };
+                display: mediaData.originalUrl,
+                full: mediaData.originalUrl,
+                original: mediaData.originalUrl,
+              },
+              metadata: {
+                width: 0,
+                height: 0,
+              },
+              stats: {
+                views: 0,
+                downloads: 0,
+                shares: 0,
+                likes: 0,
+              },
+            };
 
-              // ✅ CORRECTED: Use 'pending' status in cache key, not 'approved'
-              const cacheKey = [...queryKeys.eventPhotos(eventId, 'pending'), 'infinite', gridQuality];
+            const cacheKey = [...queryKeys.eventPhotos(eventId, 'pending'), 'infinite', gridQuality];
 
-              queryClient.setQueryData(cacheKey, (oldData: any) => {
-                if (!oldData?.pages) {
-                  return {
-                    pages: [{
-                      photos: [tempPhoto],
-                      nextPage: undefined,
-                      hasMore: false
-                    }],
-                    pageParams: [1]
-                  };
-                }
-
-                const firstPage = oldData.pages[0] || { photos: [] };
+            queryClient.setQueryData(cacheKey, (oldData: any) => {
+              if (!oldData?.pages) {
                 return {
-                  ...oldData,
                   pages: [{
-                    ...firstPage,
-                    photos: [tempPhoto, ...(firstPage.photos || [])]
-                  }, ...oldData.pages.slice(1)]
+                    photos: [tempPhoto],
+                    nextPage: undefined,
+                    hasMore: false
+                  }],
+                  pageParams: [1]
                 };
-              });
-
-              // Also update regular query
-              const regularKey = [...queryKeys.eventPhotos(eventId, 'pending'), gridQuality];
-              queryClient.setQueryData(regularKey, (oldData: any) => {
-                if (!oldData) return [tempPhoto];
-                return [tempPhoto, ...oldData];
-              });
-
-              // Trigger monitoring and switch tab
-              if (mediaData.mediaId) {
-                startMonitoring([mediaData.mediaId], [mediaData.fileName]);
-                setActiveTab('pending');  // ✅ CORRECTED from 'approved'
               }
 
-              refetchCounts();
-            }}
-          />
-        </div>
+              const firstPage = oldData.pages[0] || { photos: [] };
+              return {
+                ...oldData,
+                pages: [{
+                  ...firstPage,
+                  photos: [tempPhoto, ...(firstPage.photos || [])]
+                }, ...oldData.pages.slice(1)]
+              };
+            });
+
+            const regularKey = [...queryKeys.eventPhotos(eventId, 'pending'), gridQuality];
+            queryClient.setQueryData(regularKey, (oldData: any) => {
+              if (!oldData) return [tempPhoto];
+              return [tempPhoto, ...oldData];
+            });
+
+            if (mediaData.mediaId) {
+              startMonitoring([mediaData.mediaId], [mediaData.fileName]);
+              setActiveTab('pending');
+            }
+
+            refetchCounts();
+          }}
+        />
       </div>
 
       {(updateStatusMutation.isPending || uploadMutation.isPending || bulkStatusMutation.isPending) && (
@@ -966,8 +893,8 @@ export default function OptimizedPhotoGallery({
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-blue-700 dark:text-blue-300">
             {uploadMutation.isPending ? 'Starting upload...' :
-             bulkStatusMutation.isPending ? 'Updating media status...' :
-             'Processing status updates...'}
+              bulkStatusMutation.isPending ? 'Updating media status...' :
+                'Processing status updates...'}
           </span>
         </div>
       )}
@@ -983,7 +910,9 @@ export default function OptimizedPhotoGallery({
           activeTab={activeTab}
           canUserUpload={canUserUpload}
           isUploading={uploadMutation.isPending}
-          onUploadClick={() => setUploadDialogOpen(true)}
+          onUploadClick={() => {
+            toast.info("Please use the 'Choose Files' button above to upload photos.");
+          }}
         />
       ) : (
         <>
@@ -995,10 +924,92 @@ export default function OptimizedPhotoGallery({
             onStatusUpdate={handleStatusUpdate}
             onDownload={handleDownload}
             onDelete={handleDelete}
-            selectionMode={selectionMode}
+            selectionMode={selectedPhotos.size > 0}
             selectedPhotos={selectedPhotos}
             onToggleSelection={togglePhotoSelection}
           />
+
+          {/* Floating Bulk Action Bar */}
+          {selectedPhotos.size > 0 && (
+            <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 w-[90%] max-w-2xl bg-background/80 backdrop-blur-md border shadow-lg rounded-full px-6 py-3 flex items-center justify-between animate-in slide-in-from-bottom-10 fade-in duration-300">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full hover:bg-muted"
+                    onClick={deselectAllPhotos}
+                  >
+                    <XIcon className="h-4 w-4" />
+                  </Button>
+                  <span className="font-medium text-sm">{selectedPhotos.size} selected</span>
+                </div>
+
+                <div className="h-6 w-px bg-border" />
+
+                <div className="flex items-center gap-1">
+                  {userPermissions.moderate && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleBulkStatusUpdate('approved')}
+                        className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                        title="Approve Selected"
+                      >
+                        <CheckIcon className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Approve</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleBulkStatusUpdate('rejected')}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        title="Reject Selected"
+                      >
+                        <XIcon className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Reject</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleBulkStatusUpdate('hidden')}
+                        className="text-gray-600 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        title="Hide Selected"
+                      >
+                        <EyeOffIcon className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Hide</span>
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                {userPermissions.download && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleBulkDownload}
+                    title="Download Selected"
+                  >
+                    <DownloadIcon className="h-4 w-4" />
+                  </Button>
+                )}
+                {userPermissions.delete && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleBulkDelete}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    title="Delete Selected"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           {hasNextPage && (
             <div className="flex justify-center pt-6">

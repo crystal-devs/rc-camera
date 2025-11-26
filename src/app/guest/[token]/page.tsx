@@ -153,7 +153,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         }));
       }
     } catch (err: any) {
-      console.error('Error fetching event details:', err);
+      // console.error('Error fetching event details:', err);
 
       if (err?.status === 401 || err?.response?.status === 401) {
         toast.error('Authentication required. Please sign in to access this event.');
@@ -348,7 +348,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   useEffect(() => {
     return () => {
       if (downloadJobId && isDownloading) {
-        console.log('Cleaning up download polling on unmount');
+        // console.log('Cleaning up download polling on unmount');
         setIsDownloading(false);
         setDownloadJobId(null);
         setDownloadProgress(null);
@@ -398,7 +398,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         toast.error(result.message || 'Upload failed');
       }
     } catch (error: any) {
-      console.error('Upload error:', error);
+      // console.error('Upload error:', error);
       toast.error(error.message || 'Upload failed. Please try again.');
     } finally {
       setUploading(false);
@@ -409,106 +409,28 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     setSelectedFiles(files => files.filter((_, i) => i !== index));
   };
 
-  // Bulk download functionality
-  const handleBulkDownload = useCallback(async () => {
-    console.log('🎯 [DOWNLOAD] handleBulkDownload called');
-    console.log('📊 [DOWNLOAD] Current state:', {
-      hasEventId: !!eventState.details?._id,
-      eventId: eventState.details?._id,
-      photoCount: photos.length,
-      shareToken: shareToken?.substring(0, 8) + '...',
-      isDownloading
-    });
-
-    if (!eventState.details?._id) {
-      console.log('❌ [DOWNLOAD] No event ID available');
-      toast.error('Event not loaded yet');
-      return;
-    }
-
-    if (photos.length === 0) {
-      console.log('❌ [DOWNLOAD] No photos available');
-      toast.error('No photos available to download');
-      return;
-    }
-
-    try {
-      console.log('🚀 [DOWNLOAD] Starting bulk download process...');
-      setIsDownloading(true);
-      toast.info('Starting bulk download...', { duration: 2000 });
-
-      console.log('📡 [DOWNLOAD] Calling createGuestBulkDownload API...');
-      const response = await createGuestBulkDownload(
-        shareToken,
-        eventState.details._id,
-        'original' // Use original quality for guest downloads
-      );
-
-      console.log('📡 [DOWNLOAD] API Response:', response);
-
-      if (response.status && response.data?.jobId) {
-        const jobId = response.data.jobId;
-        console.log('✅ [DOWNLOAD] Job created successfully:', jobId);
-
-        setDownloadJobId(jobId);
-        toast.success('Download started! Processing photos...', { duration: 3000 });
-
-        // Start polling for status
-        console.log('🔄 [DOWNLOAD] Starting status polling...');
-        const cleanup = pollDownloadStatus(jobId);
-
-        // Store cleanup function for component unmount
-        return () => cleanup();
-      } else {
-        console.log('❌ [DOWNLOAD] API returned error:', response);
-        throw new Error(response.message || 'Failed to start download');
-      }
-    } catch (error: any) {
-      console.error('❌ [DOWNLOAD] Bulk download error:', error);
-      toast.error(error.message || 'Failed to start download');
-      setIsDownloading(false);
-    }
-  }, [shareToken, eventState.details?._id, photos.length]);
-
+  // Poll download status - Defined BEFORE handleBulkDownload
   const pollDownloadStatus = useCallback((jobId: string) => {
     let pollInterval: NodeJS.Timeout;
     let timeoutId: NodeJS.Timeout;
     let pollCount = 0;
 
-    console.log('🔄 [DEBUG] Starting download polling for job:', jobId);
+    // console.log('🔄 [DEBUG] Starting download polling for job:', jobId);
 
     const poll = async () => {
       pollCount++;
-      console.log(`🔄 [DEBUG] Poll attempt #${pollCount} for job:`, jobId);
+      // console.log(`🔄 [DEBUG] Poll attempt #${pollCount} for job:`, jobId);
 
       try {
-        console.log('📡 [DEBUG] Calling getDownloadStatus API...');
+        // console.log('📡 [DEBUG] Calling getDownloadStatus API...');
         const response = await getDownloadStatus(jobId);
-        console.log('📡 [DEBUG] API Response received:', {
-          success: response.success,
-          hasData: !!response.data,
-          fullResponse: response
-        });
+        // console.log('📡 [DEBUG] API Response received:', { ... });
 
-        // THE ISSUE: The API response has success: undefined, but the data is there
-        // We need to check for response.data instead of response.success
         if (response.data) {
           const { status, progress, totalFiles, downloadUrl, currentStage } = response.data;
-
-          // Handle both possible field names for status
           const currentStatus = status || (response.data as any).jobStatus || 'processing';
 
-          console.log('📊 [DEBUG] Parsed status data:', {
-            rawStatus: status,
-            rawJobStatus: (response.data as any).jobStatus,
-            currentStatus,
-            progress,
-            totalFiles,
-            hasDownloadUrl: !!downloadUrl,
-            downloadUrlLength: downloadUrl?.length || 0,
-            currentStage,
-            fullData: response.data
-          });
+          // console.log('📊 [DEBUG] Parsed status data:', { ... });
 
           setDownloadProgress({
             status: currentStatus,
@@ -517,8 +439,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           });
 
           if (currentStatus === 'completed' && downloadUrl) {
-            console.log('✅ [DEBUG] Download completed! Starting download process...');
-            console.log('🔗 [DEBUG] Download URL:', downloadUrl.substring(0, 100) + '...');
+            // console.log('✅ [DEBUG] Download completed! Starting download process...');
 
             clearInterval(pollInterval);
             clearTimeout(timeoutId);
@@ -528,36 +449,33 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
             toast.success('Download ready! Starting download...', { duration: 2000 });
 
-            // Use setTimeout to ensure state updates complete before download
             setTimeout(async () => {
-              console.log('🚀 [DEBUG] Executing downloadZipFile...');
+              // console.log('🚀 [DEBUG] Executing downloadZipFile...');
               try {
-                // Download the file
                 await downloadZipFile(downloadUrl, `${eventState.details?.title || 'event'}_photos.zip`);
-                console.log('✅ [DEBUG] downloadZipFile completed successfully');
+                // console.log('✅ [DEBUG] downloadZipFile completed successfully');
                 toast.success('Download completed!', { duration: 3000 });
               } catch (downloadError) {
-                console.error('❌ [DEBUG] downloadZipFile failed:', downloadError);
+                // console.error('❌ [DEBUG] downloadZipFile failed:', downloadError);
                 toast.error('Download failed. Please try again.');
               }
             }, 100);
 
-            return; // Exit the function
+            return;
           } else if (currentStatus === 'failed') {
-            console.log('❌ [DEBUG] Download failed according to API');
+            // console.log('❌ [DEBUG] Download failed according to API');
             clearInterval(pollInterval);
             clearTimeout(timeoutId);
             setIsDownloading(false);
             setDownloadJobId(null);
             setDownloadProgress(null);
             toast.error('Download failed. Please try again.');
-            return; // Exit the function
+            return;
           } else {
-            console.log(`⏳ [DEBUG] Download still processing: ${currentStatus}, continuing to poll...`);
+            // console.log(`⏳ [DEBUG] Download still processing: ${currentStatus}, continuing to poll...`);
           }
-          // Continue polling if still processing
         } else {
-          console.log('❌ [DEBUG] Invalid API response, stopping polling:', response);
+          // console.log('❌ [DEBUG] Invalid API response, stopping polling:', response);
           clearInterval(pollInterval);
           clearTimeout(timeoutId);
           setIsDownloading(false);
@@ -566,7 +484,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           toast.error('Failed to check download status');
         }
       } catch (error) {
-        console.error('❌ [DEBUG] Status check error:', error);
+        // console.error('❌ [DEBUG] Status check error:', error);
         clearInterval(pollInterval);
         clearTimeout(timeoutId);
         setIsDownloading(false);
@@ -577,16 +495,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     };
 
     // Start polling immediately
-    console.log('▶️ [DEBUG] Starting first poll...');
     poll();
 
     // Set up interval for subsequent polls
     pollInterval = setInterval(poll, 2000); // Poll every 2 seconds
-    console.log('⏰ [DEBUG] Set up polling interval (2s)');
 
     // Cleanup after 10 minutes (timeout)
     timeoutId = setTimeout(() => {
-      console.log('⏰ [DEBUG] Download timeout reached after 10 minutes');
+      // console.log('⏰ [DEBUG] Download timeout reached after 10 minutes');
       clearInterval(pollInterval);
       if (isDownloading) {
         setIsDownloading(false);
@@ -598,11 +514,57 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     // Return cleanup function
     return () => {
-      console.log('🧹 [DEBUG] Cleaning up polling intervals');
+      // console.log('🧹 [DEBUG] Cleaning up polling intervals');
       clearInterval(pollInterval);
       clearTimeout(timeoutId);
     };
   }, [eventState.details?.title, isDownloading]);
+
+  // Bulk download functionality
+  const handleBulkDownload = useCallback(async () => {
+    // console.log('🎯 [DOWNLOAD] handleBulkDownload called');
+
+    if (!eventState.details?._id) {
+      toast.error('Event not loaded yet');
+      return;
+    }
+
+    if (photos.length === 0) {
+      toast.error('No photos available to download');
+      return;
+    }
+
+    try {
+      setIsDownloading(true);
+      toast.info('Starting bulk download...', { duration: 2000 });
+
+      const response = await createGuestBulkDownload(
+        shareToken,
+        eventState.details._id,
+        'original'
+      );
+
+      if (response.status && response.data?.jobId) {
+        const jobId = response.data.jobId;
+        // console.log('✅ [DOWNLOAD] Job created successfully:', jobId);
+
+        setDownloadJobId(jobId);
+        toast.success('Download started! Processing photos...', { duration: 3000 });
+
+        // Start polling for status
+        const cleanup = pollDownloadStatus(jobId);
+
+        // Store cleanup function for component unmount
+        return () => cleanup();
+      } else {
+        throw new Error(response.message || 'Failed to start download');
+      }
+    } catch (error: any) {
+      // console.error('❌ [DOWNLOAD] Bulk download error:', error);
+      toast.error(error.message || 'Failed to start download');
+      setIsDownloading(false);
+    }
+  }, [shareToken, eventState.details?._id, photos.length, pollDownloadStatus]);
 
   // Connection Status Component
   const ConnectionStatus = memo(() => {
@@ -674,7 +636,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     try {
       await claimContent();
     } catch (error) {
-      console.error('Manual claim failed:', error);
+      // console.error('Manual claim failed:', error);
     }
   }, [claimContent]);
 
@@ -749,7 +711,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         hasNextPage={hasNextPage}
         isLoadingMore={isLoadingMore}
         onLoadMore={loadMore}
-        onViewportChange={() => {}} // Handled internally by hook
+        onViewportChange={() => { }} // Handled internally by hook
         eventStyling={(eventState.details as any)?.styling_config}
       />
     );
@@ -869,25 +831,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             <div>Files: <span className="font-mono">{downloadProgress.totalFiles}</span></div>
             {downloadProgress.status === 'processing' && `Processing ${downloadProgress.totalFiles} files...`}
             {downloadProgress.status === 'completed' && 'Download ready!'}
-          </div>
-          {/* Debug Info */}
-          <div className="mt-2 pt-2 border-t border-gray-200">
-            <div className="text-xs text-gray-500 space-y-1">
-              <div>Job ID: <span className="font-mono text-xs">{downloadJobId?.substring(0, 8)}...</span></div>
-              <div>Check browser console for detailed logs</div>
-              <div className="text-xs text-blue-600 cursor-pointer" onClick={() => {
-                console.log('🔍 [DEBUG] Current download state:', {
-                  isDownloading,
-                  downloadJobId,
-                  downloadProgress,
-                  eventId: eventState.details?._id,
-                  photoCount: photos.length
-                });
-                toast.info('Debug info logged to console');
-              }}>
-                Click to log debug info
-              </div>
-            </div>
           </div>
           {/* Debug Info */}
           <div className="mt-2 pt-2 border-t border-gray-200">
@@ -1062,7 +1005,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           onPrev={() => navigatePhoto('prev')}
           onNext={() => navigatePhoto('next')}
           downloadPhoto={() => {
-            console.log('Downloading photo:', selectedPhoto);
+            // console.log('Downloading photo:', selectedPhoto);
           }}
         />
       )}

@@ -10,15 +10,18 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { EventFormData } from '@/types/events';
+import { InvitationManager } from './InvitationManager';
 
 interface SharingTabProps {
     formData: EventFormData;
     onInputChange: (field: string, value: any) => void;
+    eventId?: string;
 }
 
 export const SharingTab: React.FC<SharingTabProps> = ({
     formData,
-    onInputChange
+    onInputChange,
+    eventId
 }) => {
     const [copiedLink, setCopiedLink] = useState('');
 
@@ -189,6 +192,35 @@ export const SharingTab: React.FC<SharingTabProps> = ({
                                     Share this for viewing photos without joining
                                 </p>
                             </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Invitation Management Section */}
+            {formData.visibility === 'invited_only' && eventId && (
+                <>
+                    {/* Divider */}
+                    <div className="border-t border-border"></div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Left Column - Info */}
+                        <div className="space-y-3">
+                            <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
+                                <Users className="h-5 w-5 text-muted-foreground" />
+                                Guest Invitations
+                            </h3>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                                Invite specific guests to your private event. Only invited people can join.
+                            </p>
+                        </div>
+
+                        {/* Right Column - Invitation Manager */}
+                        <div className="lg:col-span-2">
+                            <InvitationManager
+                                eventId={eventId}
+                                isVisible={formData.visibility === 'invited_only'}
+                            />
                         </div>
                     </div>
                 </>

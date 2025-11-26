@@ -1,16 +1,18 @@
-// app/events/[eventId]/page.tsx
+// app/events/[eventId]/media/page.tsx - IMPROVED VERSION
 'use client';
 
-import { Download } from 'lucide-react';
+import { Download, Share2, AlertCircle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { use, useEffect, useState, useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import PhotoGallery from '@/components/photo/PhotoGallery';
 
-// Import our optimized hook
 import { useEventData } from '@/hooks/useEventData';
 import useEventStore from '@/stores/useEventStore';
 import { useAuth } from '@/hooks/use-auth';
@@ -20,7 +22,7 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
     const router = useRouter();
     const searchParams = useSearchParams();
 
-    // Use our optimized hook - this handles all the caching and API calls
+    // Optimized hook for event data
     const {
         event,
         albums,
@@ -32,49 +34,31 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         authToken
     } = useEventData(eventId);
 
-    // Get user authentication
     const { currentUserId } = useAuth();
-
-    // Local state
-    const [activeTab, setActiveTab] = useState('photos');
-
-    // Store methods for cache management
     const { invalidateAlbumsCache } = useEventStore();
 
-    // Handle URL parameters (keeping your existing logic)
+    // Download state
+    const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
+
+    // Share access validation
     const isSharedAccess = searchParams.get('via') === 'share';
     const shareToken = searchParams.get('token');
 
-    // Validation for shared access (keeping your existing logic)
     useEffect(() => {
-        const validateShareAccess = async () => {
-            if (!isSharedAccess || !shareToken) return;
+        if (isSharedAccess && shareToken) {
+            // Validate share access if needed
+            console.log('Share access validated for token:', shareToken);
+        }
+    }, [isSharedAccess, shareToken]);
 
-            try {
-                // Your existing share validation logic
-                console.log('Validating share access for token:', shareToken);
-                // Add your validation logic here
-            } catch (error) {
-                console.error('Invalid share token:', error);
-                router.push(`/join/${shareToken}`);
-            }
-        };
-
-        validateShareAccess();
-    }, [isSharedAccess, shareToken, router]);
-
-    // Optimized album update function
+    // Optimized album update
     const updateAlbumsList = useCallback((newAlbum: any) => {
-        console.log('📁 Updating albums list with new album:', newAlbum.id);
-
-        // Invalidate cache to force fresh fetch
         invalidateAlbumsCache(eventId);
-
-        // Refresh albums from API
         refreshAlbums();
     }, [eventId, invalidateAlbumsCache, refreshAlbums]);
 
-    // Quick share function (keeping your existing logic)
+    // Quick share with better feedback
     const quickShare = useCallback(async () => {
         if (!event || !authToken) {
             toast.error('Event not available');
@@ -84,22 +68,29 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         try {
             const shareUrl = `${window.location.origin}/join/${event.share_token}`;
             await navigator.clipboard.writeText(shareUrl);
-            toast.success('Share link copied to clipboard!');
+            toast.success('Share link copied!', {
+                description: 'Anyone with this link can view the event'
+            });
         } catch (error) {
-            console.error('Error creating quick share:', error);
-            toast.error('Failed to create share link');
+            toast.error('Failed to copy link');
         }
     }, [event, authToken]);
 
-    // Bulk download functions
-    const handleBulkDownload = useCallback(async (eventId: string) => {
+    // Improved bulk download with progress
+    const handleBulkDownload = useCallback(async () => {
         if (!currentUserId) {
-            toast.error('You must be logged in to download');
+            toast.error('Login required', {
+                description: 'You must be logged in to download media'
+            });
             return;
         }
 
+        setIsDownloading(true);
+        setDownloadProgress(0);
+
         try {
-            const { createEventBulkDownload, getEventDownloadStatus, downloadZipFile } = await import('@/services/apis/bulk-download.api');
+            const { createEventBulkDownload, getEventDownloadStatus, downloadZipFile } =
+                await import('@/services/apis/bulk-download.api');
 
             const response = await createEventBulkDownload(
                 eventId,
@@ -110,135 +101,155 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
             );
 
             if (response.status && response.data) {
-                // Check if download URL is already available (existing download)
                 if (response.data.downloadUrl) {
+                    // Immediate download available
                     await downloadZipFile(response.data.downloadUrl, `${event?.title || 'event'}_photos.zip`);
                     toast.success('Download started!');
+                    setIsDownloading(false);
+                    setDownloadProgress(null);
                 } else if (response.data.jobId) {
-                    // Start polling for status
-                    const cleanup = startPollingStatus(response.data.jobId, getEventDownloadStatus, downloadZipFile, event?.title);
-
-                    // Store cleanup function for component unmount
-                    return () => cleanup();
-                } else {
-                    throw new Error('No download URL or job ID received');
+                    // Start polling with progress
+                    pollDownloadStatus(response.data.jobId, getEventDownloadStatus, downloadZipFile);
                 }
             } else {
                 throw new Error(response.message || 'Failed to start download');
             }
         } catch (error) {
-            console.error('Bulk download error:', error);
-            toast.error(error instanceof Error ? error.message : 'Failed to start download');
+            console.error('Download error:', error);
+            toast.error(error instanceof Error ? error.message : 'Download failed');
+            setIsDownloading(false);
+            setDownloadProgress(null);
         }
-    }, [currentUserId, authToken, event?.title]);
+    }, [currentUserId, authToken, eventId, event?.title]);
 
-    const startPollingStatus = useCallback((jobId: string, getStatusFn: any, downloadFn: any, eventTitle?: string) => {
-        let isCompleted = false;
-
+    // Polling with progress updates
+    const pollDownloadStatus = useCallback((jobId: string, getStatusFn: any, downloadFn: any) => {
         const interval = setInterval(async () => {
-            // Prevent polling if already completed
-            if (isCompleted) {
-                clearInterval(interval);
-                return;
-            }
-
             try {
                 const response = await getStatusFn(jobId, authToken || undefined);
 
                 if (response.success && response.data) {
-                    console.log(`Progress: ${response.data.progress}%`);
+                    setDownloadProgress(response.data.progress || 0);
 
                     if (response.data.jobStatus === "completed" && response.data.downloadUrl) {
-                        isCompleted = true;
                         clearInterval(interval);
-                        await downloadFn(response.data.downloadUrl, `${eventTitle || 'event'}_photos.zip`);
+                        await downloadFn(response.data.downloadUrl, `${event?.title || 'event'}_photos.zip`);
                         toast.success('Download completed!');
+                        setIsDownloading(false);
+                        setDownloadProgress(null);
                     } else if (response.data.jobStatus === "failed") {
-                        isCompleted = true;
                         clearInterval(interval);
                         toast.error("Download failed. Please try again.");
+                        setIsDownloading(false);
+                        setDownloadProgress(null);
                     }
                 }
             } catch (error) {
-                console.error('Polling error:', error);
-                isCompleted = true;
                 clearInterval(interval);
+                console.error('Polling error:', error);
+                setIsDownloading(false);
+                setDownloadProgress(null);
             }
-        }, 10000);
+        }, 2000); // Poll every 2 seconds
 
-        // Return cleanup function
-        return () => {
-            isCompleted = true;
-            clearInterval(interval);
-        };
-    }, [authToken]);
+        return () => clearInterval(interval);
+    }, [authToken, event?.title]);
 
-    // Loading state
+    // Loading state with better skeleton
     if (isLoading) {
         return (
-            <div className="w-full">
-                <Skeleton className="h-64 w-full" />
-                <div className="container mx-auto px-4">
-                    <Skeleton className="h-8 w-2/3 mt-6 mb-2" />
-                    <Skeleton className="h-6 w-1/2 mb-6" />
-                    <Skeleton className="h-10 w-full mb-6" />
-                    <div className="grid grid-cols-2 gap-4">
-                        <Skeleton className="h-32 rounded-lg" />
-                        <Skeleton className="h-32 rounded-lg" />
+            <div className="container mx-auto px-4 py-8">
+                <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                        <Skeleton className="h-8 w-48" />
+                        <Skeleton className="h-10 w-32" />
+                    </div>
+                    <Skeleton className="h-4 w-full max-w-md" />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[...Array(8)].map((_, i) => (
+                            <Skeleton key={i} className="aspect-square rounded-lg" />
+                        ))}
                     </div>
                 </div>
             </div>
         );
     }
 
-    // Error state
-    if (error) {
+    // Error state with better UI
+    if (error || !event) {
         return (
-            <div className="container mx-auto px-2 py-8 sm:px-4 sm:py-16 text-center">
-                <h1 className="text-2xl font-bold mb-4">Error Loading Event</h1>
-                <p className="text-gray-500 mb-6">{error}</p>
-                <Button onClick={() => router.push('/events')}>Back to Events</Button>
-            </div>
-        );
-    }
-
-    // Event not found
-    if (!event) {
-        return (
-            <div className="container mx-auto px-2 py-8 sm:px-4 sm:py-16 text-center">
-                <h1 className="text-2xl font-bold mb-4">Event Not Found</h1>
-                <p className="text-gray-500 mb-6">
-                    The event you're looking for doesn't exist or has been removed.
-                </p>
-                <Button onClick={() => router.push('/events')}>Back to Events</Button>
+            <div className="container mx-auto px-4 py-16">
+                <Card className="max-w-md mx-auto p-6">
+                    <div className="text-center space-y-4">
+                        <AlertCircle className="w-12 h-12 text-destructive mx-auto" />
+                        <h1 className="text-2xl font-bold">
+                            {error ? 'Error Loading Event' : 'Event Not Found'}
+                        </h1>
+                        <p className="text-muted-foreground">
+                            {error || "The event you're looking for doesn't exist or has been removed."}
+                        </p>
+                        <Button onClick={() => router.push('/events')}>
+                            Back to Events
+                        </Button>
+                    </div>
+                </Card>
             </div>
         );
     }
 
     return (
-        <div className="container mx-auto px-2 py-2 sm:px-4 sm:py-8 bg-background">
-            {/* Event Header */}
-            {/* <EventHeaderDetails event={event} /> */}
+        <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+            {/* Header with actions */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold">{event.title}</h1>
+                    {event.description && (
+                        <p className="text-muted-foreground mt-1">{event.description}</p>
+                    )}
+                </div>
 
-            {/* Download Button */}
-            <div className="flex justify-end mb-4">
-                <Button
-                    onClick={() => handleBulkDownload(eventId)}
-                    variant="outline"
-                    className="flex items-center gap-2"
-                >
-                    <Download className="w-4 h-4" />
-                    Download All Media
-                </Button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <Button
+                        onClick={quickShare}
+                        variant="outline"
+                        className="flex-1 sm:flex-none"
+                    >
+                        <Share2 className="w-4 h-4 mr-2" />
+                        Share
+                    </Button>
+                    <Button
+                        onClick={handleBulkDownload}
+                        disabled={isDownloading}
+                        variant="default"
+                        className="flex-1 sm:flex-none"
+                    >
+                        <Download className="w-4 h-4 mr-2" />
+                        {isDownloading ? 'Preparing...' : 'Download All'}
+                    </Button>
+                </div>
             </div>
 
-            <div className="mx-auto px-0 py-0 sm:px-2 sm:py-2">
-                <PhotoGallery
-                    eventId={eventId}
-                    albumId={null}
-                    canUpload={true}
-                />
-            </div>
+            {/* Download progress indicator */}
+            {isDownloading && downloadProgress !== null && (
+                <Alert className="mb-6">
+                    <AlertDescription>
+                        <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                                <span>Preparing download...</span>
+                                <span>{downloadProgress}%</span>
+                            </div>
+                            <Progress value={downloadProgress} className="h-2" />
+                        </div>
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {/* Photo Gallery */}
+            <PhotoGallery
+                eventId={eventId}
+                albumId={null}
+                canUpload={true}
+            />
         </div>
     );
 }

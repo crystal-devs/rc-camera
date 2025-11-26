@@ -1,11 +1,20 @@
-// components/OptimizedProgressiveImage.tsx - ENHANCED for instant feedback
+// components/OptimizedProgressiveImage.tsx - ENHANCED for Google Photos style UX
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { CameraIcon, CheckIcon, XIcon, EyeOffIcon, TrashIcon, DownloadIcon, ClockIcon } from 'lucide-react';
+import { CameraIcon, CheckIcon, XIcon, EyeOffIcon, TrashIcon, DownloadIcon, MoreVertical, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Photo } from '@/types/PhotoGallery.types';
 import { useProgressiveImage, useIntersection } from '@/hooks/useProgressiveImage';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from '@/lib/utils';
 
 interface OptimizedProgressiveImageProps {
   photo: Photo;
@@ -44,10 +53,9 @@ export const OptimizedProgressiveImage = ({
   const imgRef = useRef<HTMLImageElement>(null);
 
   // Intersection observer for lazy loading
-  // Fix: useIntersection expects RefObject<Element>, so cast imgRef appropriately
   const isInView = useIntersection(imgRef as React.RefObject<Element>, {
     threshold: 0.1,
-    rootMargin: '100px' // Increased for better UX
+    rootMargin: '100px'
   });
 
   const handleImageLoad = () => {
@@ -58,345 +66,156 @@ export const OptimizedProgressiveImage = ({
     console.error('Failed to load image:', src);
   };
 
-  // 🚀 PROCESSING STATE: Special handling for uploading/processing photos
   const isUploading = photo.status === 'uploading' || photo.isTemporary;
-  const isProcessing = photo.processing && !photo.isTemporary;
-
-  // Get status-based actions for moderators
-  const getStatusActions = () => {
-    if (!userPermissions.moderate || isUploading) return [];
-
-    const actions = [];
-
-    switch (currentTab) {
-      case 'pending':
-        actions.push(
-          <Button
-            key="approve"
-            size="sm"
-            variant="outline"
-            className="h-7 w-7 p-0 bg-green-500 hover:bg-green-600 border-none shadow-md"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStatusUpdate(photo.id, 'approved');
-            }}
-            title="Approve Photo"
-          >
-            <CheckIcon className="h-3.5 w-3.5 text-white" />
-          </Button>
-        );
-        actions.push(
-          <Button
-            key="hide"
-            size="sm"
-            variant="outline"
-            className="h-7 w-7 p-0 bg-gray-500 hover:bg-gray-600 border-none shadow-md"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm('Hide this photo?')) {
-                onStatusUpdate(photo.id, 'hidden');
-              }
-            }}
-            title="Hide Photo"
-          >
-            <EyeOffIcon className="h-3.5 w-3.5 text-white" />
-          </Button>
-        );
-        break;
-
-      case 'approved':
-        actions.push(
-          <Button
-            key="hide"
-            size="sm"
-            variant="outline"
-            className="h-7 w-7 p-0 bg-gray-500 hover:bg-gray-600 border-none shadow-md"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm('Hide this photo?')) {
-                onStatusUpdate(photo.id, 'hidden');
-              }
-            }}
-            title="Hide Photo"
-          >
-            <EyeOffIcon className="h-3.5 w-3.5 text-white" />
-          </Button>
-        );
-        // actions.push(
-        //   <Button
-        //     key="reject"
-        //     size="sm"
-        //     variant="outline"
-        //     className="h-7 w-7 p-0 bg-red-500 hover:bg-red-600 border-none shadow-md"
-        //     onClick={(e) => {
-        //       e.stopPropagation();
-        //       if (confirm('Reject this photo?')) {
-        //         onStatusUpdate(photo.id, 'rejected');
-        //       }
-        //     }}
-        //     title="Reject Photo"
-        //   >
-        //     <XIcon className="h-3.5 w-3.5 text-white" />
-        //   </Button>
-        // );
-        break;
-
-      case 'rejected':
-        actions.push(
-          <Button
-            key="approve"
-            size="sm"
-            variant="outline"
-            className="h-7 w-7 p-0 bg-green-500 hover:bg-green-600 border-none shadow-md"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStatusUpdate(photo.id, 'approved');
-            }}
-            title="Approve Photo"
-          >
-            <CheckIcon className="h-3.5 w-3.5 text-white" />
-          </Button>
-        );
-        break;
-
-      case 'hidden':
-        actions.push(
-          <Button
-            key="approve"
-            size="sm"
-            variant="outline"
-            className="h-7 w-7 p-0 bg-green-500 hover:bg-green-600 border-none shadow-md"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStatusUpdate(photo.id, 'approved');
-            }}
-            title="Approve Photo"
-          >
-            <CheckIcon className="h-3.5 w-3.5 text-white" />
-          </Button>
-        );
-        break;
-    }
-
-    return actions;
-  };
-
-  // Regular action buttons (download, delete) - disabled during upload
-  const getRegularActions = () => {
-    const actions = [];
-
-    if (userPermissions.download && onDownload && !isUploading) {
-      actions.push(
-        <Button
-          key="download"
-          size="sm"
-          variant="outline"
-          className="h-6 w-6 p-0 bg-blue-500 hover:bg-blue-600 border-none shadow-md"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDownload(photo);
-          }}
-          title="Download Photo"
-        >
-          <DownloadIcon className="h-3 w-3 text-white" />
-        </Button>
-      );
-    }
-
-    if (userPermissions.delete && onDelete && !isUploading) {
-      actions.push(
-        <Button
-          key="delete"
-          size="sm"
-          variant="outline"
-          className="h-6 w-6 p-0 bg-red-600 hover:bg-red-700 border-none shadow-md"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (confirm('Delete this photo permanently?')) {
-              onDelete(photo.id);
-            }
-          }}
-          title="Delete Photo"
-        >
-          <TrashIcon className="h-3 w-3 text-white" />
-        </Button>
-      );
-    }
-
-    return actions;
-  };
 
   const handleClick = useCallback((e: React.MouseEvent) => {
+    // If selection mode is active (at least one item selected), clicking photo toggles selection
     if (selectionMode) {
       e.stopPropagation();
       onToggleSelection?.(photo.id);
     } else if (!isUploading) {
+      // Otherwise open viewer
       onPhotoClick(photo, index);
     }
-  }, [selectionMode, isUploading, onToggleSelection, photo.id, onPhotoClick, index]);
+  }, [selectionMode, isUploading, onToggleSelection, photo.id, onPhotoClick, index, photo]);
+
+  const handleCheckboxClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleSelection?.(photo.id);
+  }, [onToggleSelection, photo.id]);
 
   return (
     <div
       ref={imgRef}
-      className={`group relative aspect-square overflow-hidden rounded bg-card cursor-pointer transition-all duration-200 ${!isUploading ? 'hover:shadow-md' : ''
-        } ${isUploading ? 'ring-2 ring-blue-500 ring-opacity-50' : ''} ${selectionMode && isSelected ? 'ring-2 ring-blue-500' : ''}`}
+      className={cn(
+        "group relative aspect-square overflow-hidden rounded-lg bg-muted cursor-pointer transition-all duration-200",
+        !isUploading && "hover:shadow-md",
+        isSelected && "ring-2 ring-primary ring-offset-2",
+        isUploading && "opacity-70"
+      )}
       onClick={handleClick}
     >
-      {/* Only render image when in view */}
       {isInView && (
         <>
-          {/* 🚀 UPLOADING STATE: Special visual feedback */}
-          {isUploading && (
-            <div className="absolute inset-0 bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center z-10">
-              <div className="text-center">
-                <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
-                  Uploading...
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* 🚀 PROCESSING STATE: Show processing indicator */}
-          {/* {isProcessing && (
-            <div className="absolute top-2 left-2 z-20">
-              <Badge variant="secondary" className="text-xs bg-yellow-500 text-white">
-                <ClockIcon className="h-3 w-3 mr-1" />
-                Processing
-              </Badge>
-            </div>
-          )} */}
-
-          {/* Placeholder blur image - shows immediately */}
+          {/* Placeholder */}
           {!imageLoaded && placeholder && !isUploading && (
             <img
               src={placeholder}
               alt=""
               className="absolute inset-0 w-full h-full object-cover filter blur-sm scale-110 opacity-50"
-              style={{ willChange: 'auto' }}
             />
           )}
 
-          {/* Main optimized image */}
-          {/* <img
-            src={src}
-            alt={`Photo ${index + 1}`}
-            className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'
-              } ${isUploading ? 'opacity-75' : ''}`}
-            onLoad={handleImageLoad}
-            onError={handleImageError}
-            loading="lazy"
-            decoding="async"
-            onContextMenu={(e) => e.preventDefault()}
-          /> */}
-
+          {/* Main Image */}
           <img
             srcSet={
               photo.progressiveUrls
                 ? `${photo.progressiveUrls.thumbnail} 400w,
-                  ${photo.progressiveUrls.display} 800w,
-                  ${photo.progressiveUrls.full} 1600w`
-                  : undefined
+                  ${photo.progressiveUrls.display} 800w`
+                : undefined
             }
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
             src={photo.progressiveUrls?.display || photo.imageUrl}
             alt={`Photo ${index + 1}`}
-            className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'
-              } ${isUploading ? 'opacity-75' : ''}`}
+            className={cn(
+              "w-full h-full object-cover transition-opacity duration-300",
+              imageLoaded ? 'opacity-100' : 'opacity-0'
+            )}
             onLoad={handleImageLoad}
             onError={handleImageError}
             loading="lazy"
             decoding="async"
-            onContextMenu={(e) => e.preventDefault()}
           />
-          {/* Loading state */}
-          {!imageLoaded && !error && !isUploading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-card">
-              <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
-            </div>
-          )}
 
-          {/* Error state */}
-          {error && !isUploading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-card">
-              <CameraIcon className="h-8 w-8 text-gray-400 mb-1" />
-              <span className="text-xs text-gray-500 text-center px-2">Failed to load</span>
-            </div>
-          )}
-
-          {/* 🚀 OPTIMIZATION INDICATOR: Show when using optimized variants */}
-          {/* {isOptimized && quality && process.env.NODE_ENV === 'development' && (
-            <div className="absolute bottom-1 left-1 z-20">
-              <Badge variant="secondary" className="text-xs bg-green-500 text-white">
-                {quality.toUpperCase()}
-              </Badge>
-            </div>
-          )} */}
-
-          {/* Selection checkbox - Only show in selection mode */}
-          {selectionMode && (
-            <div className="absolute top-2 left-2 z-20">
-              <div
-                className={`w-5 h-5 rounded border-2 flex items-center justify-center cursor-pointer transition-all ${
-                  isSelected
-                    ? 'bg-blue-500 border-blue-500 text-white'
-                    : 'bg-white/80 border-gray-300 hover:bg-white'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleSelection?.(photo.id);
-                }}
-              >
-                {isSelected && <CheckIcon className="w-3 h-3" />}
+          {/* Selection Checkbox - Visible on Hover or Selected */}
+          {!isUploading && (
+            <div
+              className={cn(
+                "absolute top-2 left-2 z-20 transition-opacity duration-200",
+                isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+              )}
+              onClick={handleCheckboxClick}
+            >
+              <div className={cn(
+                "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shadow-sm",
+                isSelected
+                  ? "bg-primary border-primary text-primary-foreground"
+                  : "bg-black/20 border-white/50 hover:bg-black/40 hover:border-white"
+              )}>
+                {isSelected && <CheckIcon className="w-3.5 h-3.5" />}
               </div>
             </div>
           )}
 
-          {/* Status actions overlay - Only show when not uploading and not in selection mode */}
+          {/* More Actions Menu - Visible on Hover */}
           {!isUploading && !selectionMode && (
-            <>
-              {/* Desktop status actions - Bottom center */}
-              <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 hidden md:flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {getStatusActions()}
-              </div>
+            <div className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full bg-black/20 hover:bg-black/40 text-white backdrop-blur-sm"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
 
-              {/* Regular actions overlay - Top right */}
-              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {getRegularActions()}
-              </div>
+                  {userPermissions.moderate && (
+                    <>
+                      {currentTab !== 'approved' && (
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusUpdate(photo.id, 'approved'); }}>
+                          <CheckIcon className="mr-2 h-4 w-4 text-green-500" /> Approve
+                        </DropdownMenuItem>
+                      )}
+                      {currentTab !== 'rejected' && (
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusUpdate(photo.id, 'rejected'); }}>
+                          <XIcon className="mr-2 h-4 w-4 text-red-500" /> Reject
+                        </DropdownMenuItem>
+                      )}
+                      {currentTab !== 'hidden' && (
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusUpdate(photo.id, 'hidden'); }}>
+                          <EyeOffIcon className="mr-2 h-4 w-4 text-gray-500" /> Hide
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
 
-              {/* Mobile actions - Always visible on mobile */}
-              <div className="absolute bottom-2 left-2 md:hidden flex gap-1">
-                {getStatusActions()}
-              </div>
+                  {userPermissions.download && onDownload && (
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDownload(photo); }}>
+                      <DownloadIcon className="mr-2 h-4 w-4" /> Download
+                    </DropdownMenuItem>
+                  )}
 
-              <div className="absolute bottom-2 right-2 md:hidden flex gap-1">
-                {getRegularActions()}
-              </div>
-            </>
+                  {userPermissions.delete && onDelete && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm('Delete permanently?')) onDelete(photo.id);
+                      }}
+                      className="text-red-600 focus:text-red-600"
+                    >
+                      <TrashIcon className="mr-2 h-4 w-4" /> Delete
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
 
-          {/* 🚀 UPLOAD PROGRESS: Show file info during upload */}
-          {isUploading && photo.size && (
-            <div className="absolute bottom-2 left-2 right-2 z-20">
-              <div className="bg-card rounded-md p-2 text-xs">
-                <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {photo.filename}
-                </p>
-                <p className="text-gray-500">
-                  {photo.size} • {photo.dimensions || 'Processing...'}
-                </p>
-              </div>
+          {/* Uploading Overlay */}
+          {isUploading && (
+            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center text-white p-2">
+              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mb-2" />
+              <span className="text-xs font-medium truncate w-full text-center">{photo.filename}</span>
             </div>
           )}
         </>
-      )}
-
-      {/* Placeholder when not in view */}
-      {!isInView && (
-        <div className="w-full h-full bg-card flex items-center justify-center">
-          <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
-        </div>
       )}
     </div>
   );
