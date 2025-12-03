@@ -3,6 +3,7 @@
 import { useGoogleLogin } from '@react-oauth/google';
 import { loginUser, registerUser, initializeCsrf, initiateGoogleOAuth, handleGoogleOAuthCallback } from '@/services/apis/auth.api';
 import { joinAsCoHost } from '@/services/apis/cohost.api';
+import { fetchEvents } from '@/services/apis/events.api';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
@@ -82,7 +83,7 @@ export function LoginForm({
       provider: "google"
     });
 
-    let finalRedirectUrl = '/'; // Default fallback
+    let finalRedirectUrl = '/events'; // Default fallback
     let shouldDelayRedirect = false;
 
     // Handle invite context if present (HIGHEST PRIORITY)
@@ -137,6 +138,25 @@ export function LoginForm({
       const currentRedirectUrl = localStorage.getItem('redirectAfterLogin');
       if (currentRedirectUrl && isValidRedirectUrl(currentRedirectUrl)) {
         finalRedirectUrl = currentRedirectUrl;
+      } else {
+        // NEW LOGIC: Fetch user events and redirect to the first one
+        try {
+          console.log('Fetching user events for redirect...');
+          const events = await fetchEvents(apiResult.token);
+          if (events && events.length > 0) {
+            // Sort events by creation date (newest first) or just take the first one
+            // Assuming the API returns them in a reasonable order or we just take the first
+            const firstEvent = events[0];
+            console.log(`Found ${events.length} events. Redirecting to first event: ${firstEvent._id || firstEvent.id}`);
+            finalRedirectUrl = `/events/${firstEvent._id || firstEvent.id}`;
+          } else {
+            console.log('No events found, redirecting to /events');
+            finalRedirectUrl = '/events';
+          }
+        } catch (error) {
+          console.warn('Error fetching events for redirect, fallback to /events', error);
+          finalRedirectUrl = '/events';
+        }
       }
     }
 
@@ -187,7 +207,7 @@ export function LoginForm({
       }
 
       // Handle redirect logic here (similar to handleSuccessfulLogin)
-      let finalRedirectUrl = '/';
+      let finalRedirectUrl = '/events';
       if (inviteContext) {
         if (inviteContext.type === 'cohost') {
           // Handle cohost logic
@@ -270,7 +290,7 @@ export function LoginForm({
       onSubmit={handleEmailAuth}
     >
       <div className="flex flex-col items-start gap-2 text-center">
-        <h1 className="text-2xl font-bold">
+        <h1 className="text-2xl font-bold text-neutral-900">
           {inviteContext ? 'Join Event' : 'Welcome Back'}
         </h1>
         {redirectUrl && !inviteContext && (
@@ -310,7 +330,7 @@ export function LoginForm({
         <Button
           type="button"
           variant="outline"
-          className="w-full h-12 py-4 px-3 md:text-md"
+          className="w-full h-12 py-4 px-3 md:text-md bg-white border-neutral-200 text-neutral-900 hover:bg-neutral-50 hover:text-neutral-900"
           onClick={() => googleLogin()}
           disabled={isLoading}
         >
@@ -327,8 +347,8 @@ export function LoginForm({
           }
         </Button>
 
-        <div className="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
-          <span className="bg-neutral-50 text-muted-foreground relative z-10 px-2">
+        <div className="after:border-neutral-200 relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
+          <span className="bg-neutral-50 text-neutral-500 relative z-10 px-2">
             Or continue with
           </span>
         </div>
@@ -340,7 +360,7 @@ export function LoginForm({
               type="text"
               placeholder="Full Name"
               required={!isLoginMode}
-              className='h-12 py-4 px-3 md:text-md bg-white'
+              className='h-12 py-4 px-3 md:text-md bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400'
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
             />
@@ -352,7 +372,7 @@ export function LoginForm({
             type="email"
             placeholder="m@example.com"
             required
-            className='h-12 py-4 px-3 md:text-md bg-white'
+            className='h-12 py-4 px-3 md:text-md bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400'
             value={formData.email}
             onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
           />
@@ -363,12 +383,12 @@ export function LoginForm({
             type="password"
             placeholder='Enter Password'
             required
-            className='h-12 py-4 px-3 md:text-md bg-white'
+            className='h-12 py-4 px-3 md:text-md bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400'
             value={formData.password}
             onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
           />
         </div>
-        <Button type="submit" className="w-full h-12 py-4 px-3 md:text-md" disabled={isLoading}>
+        <Button type="submit" className="w-full h-12 py-4 px-3 md:text-md bg-neutral-900 text-white hover:bg-neutral-800" disabled={isLoading}>
           {isLoading ? 'Please wait...' : (isLoginMode ? 'Log in' : 'Sign up')}
         </Button>
       </div>
@@ -385,12 +405,12 @@ export function LoginForm({
         </div>
       )}
 
-      <div className="text-center text-sm">
+      <div className="text-center text-sm text-neutral-600">
         Don&apos;t have an account?{" "}
         {isLoginMode ? (
           <button
             type="button"
-            className="underline underline-offset-4"
+            className="underline underline-offset-4 text-neutral-900 hover:text-neutral-700"
             onClick={() => setIsLoginMode(false)}
           >
             Sign up
@@ -400,7 +420,7 @@ export function LoginForm({
             Already have an account?{" "}
             <button
               type="button"
-              className="underline underline-offset-4"
+              className="underline underline-offset-4 text-neutral-900 hover:text-neutral-700"
               onClick={() => setIsLoginMode(true)}
             >
               Log in

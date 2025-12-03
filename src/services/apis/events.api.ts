@@ -61,10 +61,10 @@ const mapApiEventToEvent = (apiEvent: any): Event => {
 };
 
 // Fetch all events for the authenticated user
-export const fetchEvents = async (): Promise<Event[]> => {
+export const fetchEvents = async (token?: string): Promise<Event[]> => {
   try {
     const response = await axios.get(`${API_BASE_URL}/event`, {
-      headers: setHeader(),
+      headers: setHeader(token),
     });
 
     console.log('Full events API response:', response.data);
@@ -140,8 +140,8 @@ export const getEventById = async (eventId: string, authToken: string): Promise<
         } else if (error.response.status === 403) {
           // Handle invited_only access denied
           const errorMessage = error.response.data?.error?.message ||
-                              error.response.data?.message ||
-                              'You are not invited to this event';
+            error.response.data?.message ||
+            'You are not invited to this event';
           throw new Error(errorMessage);
         } else if (error.response.status === 404) {
           throw new Error('Event not found. It may have been deleted or is not accessible.');
@@ -798,120 +798,29 @@ export const addGuests = async (
   authToken: string
 ): Promise<any> => {
   if (!guestEmails || guestEmails.length === 0) {
-    console.log('No guests to add');
     return null;
   }
 
-  try {
-    console.log(`Adding guests to event ${eventId}:`, guestEmails);
-
-    // Deduplicate emails and normalize them (trim whitespace, convert to lowercase)
-    const normalizedEmails = guestEmails
-      .map(email => email.trim().toLowerCase())
-      .filter(email => email.length > 0); // Filter out empty strings
-
-    if (normalizedEmails.length === 0) {
-      console.log('No valid emails to add after normalization');
-      return null;
-    }
-
-    // Use the existing manageEventGuests function with 'add' action
-    return await manageEventGuests(
-      eventId,
-      normalizedEmails,
-      'add',
-      {
-        canView: true,
-        canUpload: true,
-        canDownload: true
-      },
-      authToken
-    );
-  } catch (error) {
-    console.error(`Error adding guests to event ${eventId}:`, error);
-    throw error;
-  }
+  return manageEventGuests(eventId, guestEmails, 'add', undefined, authToken);
 };
 
-// ============= INVITATION MANAGEMENT =============
-
-export interface InvitationData {
-  emails: string[];
-  role?: 'guest' | 'viewer';
-  message?: string;
-}
-
-export interface InvitationResponse {
-  status: boolean;
-  data?: {
-    invitations: Array<{
-      email: string;
-      status: 'pending' | 'accepted' | 'declined';
-      sent_at: string;
-      expires_at: string;
-    }>;
-  };
-  message?: string;
-  error?: { message: string };
-}
-
-// Send invitations to an event
-export const sendInvitations = async (
+/**
+ * Remove guests from an event
+ * This function removes guests from an event and updates the share token
+ * 
+ * @param eventId Event ID
+ * @param guestEmails List of guest emails to remove
+ * @param authToken Authentication token
+ * @returns Updated share token data
+ */
+export const removeGuests = async (
   eventId: string,
-  invitationData: InvitationData,
+  guestEmails: string[],
   authToken: string
-): Promise<InvitationResponse> => {
-  try {
-    console.log(`Sending invitations for event ${eventId}:`, invitationData);
-
-    const response = await axios.post(
-      `${API_BASE_URL}/event/${eventId}/invitations`,
-      invitationData,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 15000
-      }
-    );
-
-    if (response.data?.status) {
-      return response.data;
-    } else {
-      throw new Error(response.data?.message || 'Failed to send invitations');
-    }
-  } catch (error) {
-    console.error(`Error sending invitations for event ${eventId}:`, error);
-    throw error;
+): Promise<any> => {
+  if (!guestEmails || guestEmails.length === 0) {
+    return null;
   }
-};
 
-// Get invitation status for an event
-export const getInvitations = async (
-  eventId: string,
-  authToken: string
-): Promise<InvitationResponse> => {
-  try {
-    console.log(`Fetching invitations for event ${eventId}`);
-
-    const response = await axios.get(
-      `${API_BASE_URL}/event/${eventId}/invitations`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`
-        },
-        timeout: 10000
-      }
-    );
-
-    if (response.data?.status) {
-      return response.data;
-    } else {
-      throw new Error(response.data?.message || 'Failed to fetch invitations');
-    }
-  } catch (error) {
-    console.error(`Error fetching invitations for event ${eventId}:`, error);
-    throw error;
-  }
+  return manageEventGuests(eventId, guestEmails, 'remove', undefined, authToken);
 };

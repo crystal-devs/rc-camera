@@ -70,14 +70,9 @@ const LoginPage = () => {
         );
     }
 
-    // Only render login form if user is not authenticated
-    if (isAuthenticated) {
-        return null; // This shouldn't happen due to useEffect redirect, but just in case
-    }
-
     return (
         <GoogleOAuthProvider clientId={client_id}>
-            <div className="flex w-full min-h-screen bg-neutral-50 dark:bg-[#141414]">
+            <div className="flex w-full min-h-screen bg-neutral-50 text-neutral-900">
                 <div className="w-full grid md:grid-cols-2">
                     <div className="flex flex-1 w-full items-center justify-center">
                         <div className="w-full max-w-md space-y-6">
