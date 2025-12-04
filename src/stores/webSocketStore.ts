@@ -74,6 +74,7 @@ export interface WebSocketActions {
     syncSubscriptions: () => Promise<void>;
     retrySubscription: (eventId: string, shareToken?: string) => Promise<void>;
     resetConnection: () => void;
+    sendHeartbeat: () => void;
 }
 
 // ============================================================================
@@ -331,6 +332,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                             const syncInterval = setInterval(() => {
                                 if (get().isConnected && get().isAuthenticated) {
                                     get().syncSubscriptions();
+                                    get().sendHeartbeat();
                                 }
                             }, 30000);
 
@@ -708,6 +710,14 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     failedSubscriptions: new Set(),
                     retryCounts: new Map()
                 });
+            },
+
+            sendHeartbeat: () => {
+                const { socket, isConnected } = get();
+                if (socket && isConnected) {
+                    socket.emit('heartbeat', { timestamp: Date.now() });
+                    Logger.debug('💓 Heartbeat sent');
+                }
             }
         }),
         {
