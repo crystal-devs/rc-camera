@@ -4,6 +4,7 @@
 import { useEffect, useRef } from 'react';
 import { useWebSocketStore } from '@/stores/webSocketStore';
 import { useAuthToken } from '@/hooks/use-auth';
+import logger from '@/lib/logger';
 
 interface UseEventWebSocketOptions {
   userType?: 'admin' | 'guest' | 'photowall';
@@ -42,20 +43,25 @@ export function useEventWebSocket(
     const hasRequiredAuth = userType === 'admin' ? !!token : !!shareToken;
 
     if (!enabled || !eventId || !hasRequiredAuth) {
-      console.log('Missing requirements:', { enabled, eventId, hasRequiredAuth, userType, token: !!token, shareToken: !!shareToken });
+      logger.debug('WebSocket: Missing requirements', {
+        enabled,
+        eventId,
+        hasRequiredAuth,
+        userType
+      });
       return;
     }
 
-    console.log(`🎯 useEventWebSocket hook called for event: ${eventId}`);
+    logger.debug(`WebSocket: Hook called for event: ${eventId}`);
 
     const initializeConnection = async () => {
       // Prevent multiple hooks from initializing simultaneously
       if (globalInitializationInProgress && globalInitializationPromise) {
-        console.log('⏳ Global initialization in progress, waiting...');
+        logger.debug('WebSocket: Global initialization in progress, waiting...');
         try {
           await globalInitializationPromise;
         } catch (error) {
-          console.warn('⚠️ Global initialization failed:', error);
+          logger.warn('WebSocket: Global initialization failed', error);
         }
       }
 
@@ -63,7 +69,7 @@ export function useEventWebSocket(
 
       // Check if we already have the right subscription
       if (webSocketStore.isSubscribed(eventId) && currentSubscriptionRef.current === eventId) {
-        console.log(`✅ Already subscribed to event: ${eventId}`);
+        logger.debug(`WebSocket: Already subscribed to event: ${eventId}`);
         return;
       }
 
@@ -76,7 +82,7 @@ export function useEventWebSocket(
           throw new Error(`No auth token available for ${userType}`);
         }
 
-        console.log(`🔍 Current WebSocket state:`, {
+        logger.wsEvent('WebSocket state check', {
           isConnected: webSocketStore.isConnected,
           isAuthenticated: webSocketStore.isAuthenticated,
           isConnecting: webSocketStore.isConnecting,
@@ -86,19 +92,19 @@ export function useEventWebSocket(
 
         // Step 1: Ensure WebSocket is connected and authenticated
         if (!webSocketStore.isConnected || !webSocketStore.isAuthenticated) {
-          console.log('📡 WebSocket not ready, establishing connection...');
+          logger.info('WebSocket: Establishing connection...');
 
           globalInitializationPromise = webSocketStore.connect(authToken, userType, eventId);
           await globalInitializationPromise;
 
-          console.log('✅ WebSocket connection established');
+          logger.info('WebSocket: Connection established');
         } else {
-          console.log('✅ WebSocket already ready');
+          logger.debug('WebSocket: Already connected');
         }
 
         // Step 2: Subscribe to the event if not already subscribed
         if (mountedRef.current && eventId && !webSocketStore.isSubscribed(eventId)) {
-          console.log(`📝 Subscribing to event ${eventId}...`);
+          logger.debug(`WebSocket: Subscribing to event ${eventId}...`);
 
           // If we have a different subscription, switch to the new one
           if (currentSubscriptionRef.current && currentSubscriptionRef.current !== eventId) {
@@ -113,35 +119,35 @@ export function useEventWebSocket(
           }
 
           currentSubscriptionRef.current = eventId;
-          console.log(`✅ Successfully subscribed to event ${eventId}`);
+          logger.info(`WebSocket: Successfully subscribed to event ${eventId}`);
         } else if (webSocketStore.isSubscribed(eventId)) {
-          console.log(`✅ Already subscribed to event ${eventId}`);
+          logger.debug(`WebSocket: Already subscribed to event ${eventId}`);
           currentSubscriptionRef.current = eventId;
         }
 
         hasInitializedRef.current = true;
 
       } catch (error) {
-        console.error(`❌ Failed to initialize WebSocket for event ${eventId}:`, error);
+        logger.error(`WebSocket: Failed to initialize for event ${eventId}`, error);
 
         if (error instanceof Error) {
           const errorMessage = error.message.toLowerCase();
 
           // Handle rate limiting
           if (errorMessage.includes('rate limit')) {
-            console.log('🛑 Rate limited, will not retry automatically');
+            logger.warn('WebSocket: Rate limited, will not retry automatically');
             return;
           }
 
           // Handle auth errors
           if (errorMessage.includes('auth') || errorMessage.includes('token')) {
-            console.error('🔒 Authentication issue, check your token');
+            logger.error('WebSocket: Authentication issue, check your token');
             return;
           }
 
           // Handle subscription errors
           if (errorMessage.includes('subscription') || errorMessage.includes('timeout')) {
-            console.warn('📝 Subscription issue, marking as not initialized for retry');
+            logger.warn('WebSocket: Subscription issue, marking as not initialized for retry');
             hasInitializedRef.current = false;
             return;
           }
@@ -163,7 +169,7 @@ export function useEventWebSocket(
     return () => {
       // Unsubscribe when component unmounts or eventId changes
       if (currentSubscriptionRef.current && webSocketStore.isSubscribed && mountedRef.current) {
-        console.log(`📝 Unsubscribing from ${currentSubscriptionRef.current} due to cleanup`);
+        logger.debug(`WebSocket: Unsubscribing from ${currentSubscriptionRef.current} due to cleanup`);
 
         // Only unsubscribe if we're switching to a different event, not on unmount
         if (eventId !== currentSubscriptionRef.current) {
@@ -174,7 +180,7 @@ export function useEventWebSocket(
       }
       hasInitializedRef.current = false;
     };
-  }, [eventId, token, userType, shareToken, enabled]);
+  }, [eventId, token, userType, shareToken, enabled, webSocketStore]);
 
   // Provide additional subscription utilities
   const subscriptionUtils = {
@@ -186,9 +192,9 @@ export function useEventWebSocket(
       if (eventId && !webSocketStore.isSubscribed(eventId)) {
         try {
           await webSocketStore.subscribe(eventId, shareToken);
-          console.log(`✅ Retry subscription successful for ${eventId}`);
+          logger.info(`WebSocket: Retry subscription successful for ${eventId}`);
         } catch (error) {
-          console.error(`❌ Retry subscription failed for ${eventId}:`, error);
+          logger.error(`WebSocket: Retry subscription failed for ${eventId}`, error);
         }
       }
     }

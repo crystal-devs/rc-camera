@@ -63,6 +63,7 @@ const mapApiEventToEvent = (apiEvent: any): Event => {
 // Fetch all events for the authenticated user
 export const fetchEvents = async (token?: string): Promise<Event[]> => {
   try {
+
     const response = await axios.get(`${API_BASE_URL}/event`, {
       headers: setHeader(token),
     });
@@ -823,4 +824,86 @@ export const removeGuests = async (
   }
 
   return manageEventGuests(eventId, guestEmails, 'remove', undefined, authToken);
+};
+export interface InvitationResponse {
+  status: boolean;
+  message?: string;
+  data?: {
+    invitations: any[];
+    [key: string]: any;
+  };
+}
+
+/**
+ * Send invitations to guests
+ * @param eventId Event ID
+ * @param data Invitation data (emails, role, message)
+ * @param authToken Authentication token
+ * @returns API response
+ */
+export const sendInvitations = async (
+  eventId: string,
+  data: { emails: string[]; role: 'guest' | 'co-host'; message?: string },
+  authToken: string
+): Promise<InvitationResponse> => {
+  try {
+    console.log(`Sending invitations for event ${eventId}:`, data);
+    const url = `${API_BASE_URL}/event/${eventId}/invitations`;
+
+    const response = await axios.post(url, data, {
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+      timeout: 15000
+    });
+
+    console.log('Send invitations response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error(`Error sending invitations for event ${eventId}:`, error);
+    if (axios.isAxiosError(error) && error.response) {
+      return {
+        status: false,
+        message: error.response.data.message || (error as Error).message,
+        data: error.response.data
+      };
+    }
+    throw error;
+  }
+};
+
+/**
+ * Get invitations for an event
+ * @param eventId Event ID
+ * @param authToken Authentication token
+ * @returns API response with invitations list
+ */
+export const getInvitations = async (
+  eventId: string,
+  authToken: string
+): Promise<InvitationResponse> => {
+  try {
+    console.log(`Fetching invitations for event ${eventId}`);
+    const url = `${API_BASE_URL}/event/${eventId}/invitations`;
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+      timeout: 10000
+    });
+
+    console.log('Get invitations response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching invitations for event ${eventId}:`, error);
+    if (axios.isAxiosError(error) && error.response) {
+      return {
+        status: false,
+        message: error.response.data.message || (error as Error).message,
+        data: undefined
+      };
+    }
+    throw error;
+  }
 };

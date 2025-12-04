@@ -1,44 +1,162 @@
-// stores/webSocketStore.ts - Improved Architecture
+// stores/webSocketStore.ts - Industrial Standard Implementation with Race Condition Fix
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { io, Socket } from 'socket.io-client';
+
+// ============================================================================
+// Logger Utility - Environment Aware
+// ============================================================================
+const Logger = {
+    debug: (message: string, ...args: any[]) => {
+        if (process.env.NODE_ENV === 'development') {
+            console.debug(`🔍 [WS-Debug] ${message}`, ...args);
+        }
+    },
+    info: (message: string, ...args: any[]) => {
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`ℹ️ [WS-Info] ${message}`, ...args);
+        }
+    },
+    warn: (message: string, ...args: any[]) => {
+        console.warn(`⚠️ [WS-Warn] ${message}`, ...args);
+    },
+    error: (message: string, ...args: any[]) => {
+        console.error(`❌ [WS-Error] ${message}`, ...args);
+    }
+};
+
+export interface UserInfo {
+    id: string;
+    email: string;
+    name: string;
+    role?: string;
+    [key: string]: any;
+}
+
+export interface AuthData {
+    token?: string;
+    shareToken?: string;
+    userType: 'admin' | 'guest' | 'photowall';
+    eventId?: string;
+    guestName?: string;
+}
+
+export interface SubscriptionError {
+    eventId: string;
+    message: string;
+    code?: string;
+}
 
 export interface WebSocketState {
     socket: Socket | null;
     isConnected: boolean;
     isAuthenticated: boolean;
-    subscriptions: Set<string>; // Changed from currentRooms to subscriptions
+    subscriptions: Set<string>;
     connectionError: string | null;
-    userInfo: any | null;
+    userInfo: UserInfo | null;
     userType: 'admin' | 'guest' | 'photowall' | null;
     reconnectAttempts: number;
     lastConnectionTime: number;
     isConnecting: boolean;
-    // New: Track subscription states
     pendingSubscriptions: Set<string>;
     failedSubscriptions: Set<string>;
+    retryCounts: Map<string, number>;
 }
 
 export interface WebSocketActions {
     connect: (authToken: string, userType: 'admin' | 'guest' | 'photowall', eventId?: string) => Promise<void>;
     disconnect: () => void;
-
-    // New subscription-based methods
     subscribe: (eventId: string, shareToken?: string) => Promise<void>;
     unsubscribe: (eventId: string) => Promise<void>;
     switchSubscription: (fromEventId: string, toEventId: string, shareToken?: string) => Promise<void>;
-
-    // Utility methods
     isSubscribed: (eventId: string) => boolean;
     reconnect: () => Promise<void>;
+    syncSubscriptions: () => Promise<void>;
+    retrySubscription: (eventId: string, shareToken?: string) => Promise<void>;
     resetConnection: () => void;
 }
 
-// Global connection promise to prevent multiple simultaneous connection attempts
-let connectionPromise: Promise<void> | null = null;
+// ============================================================================
+// Connection State Management - Industrial Standard Implementation
+// ============================================================================
+
+/**
+ * Connection states for state machine pattern
+ */
+enum ConnectionState {
+    IDLE = 'IDLE',
+    CONNECTING = 'CONNECTING',
+    CONNECTED = 'CONNECTED',
+    DISCONNECTING = 'DISCONNECTING',
+    DISCONNECTED = 'DISCONNECTED',
+    ERROR = 'ERROR'
+}
+
+/**
+ * Mutex lock for atomic connection operations
+ * Prevents race conditions when multiple components try to connect simultaneously
+ */
+class ConnectionMutex {
+    private locked: boolean = false;
+    private queue: Array<() => void> = [];
+
+    /**
+     * Acquire the lock. If already locked, waits in queue.
+     * @returns Promise that resolves when lock is acquired
+     */
+    async acquire(): Promise<void> {
+        return new Promise<void>((resolve) => {
+            if (!this.locked) {
+                this.locked = true;
+                resolve();
+            } else {
+                this.queue.push(resolve);
+            }
+        });
+    }
+
+    /**
+     * Release the lock and process next in queue
+     */
+    release(): void {
+        const next = this.queue.shift();
+        if (next) {
+            next();
+        } else {
+            this.locked = false;
+        }
+    }
+
+    /**
+     * Check if lock is currently held
+     */
+    isLocked(): boolean {
+        return this.locked;
+    }
+
+    /**
+     * Get queue length for monitoring
+     */
+    getQueueLength(): number {
+        return this.queue.length;
+    }
+
+    /**
+     * Force release (use only for cleanup/error recovery)
+     */
+    forceRelease(): void {
+        this.locked = false;
+        this.queue = [];
+    }
+}
+
+// Global singleton instances
+const connectionMutex = new ConnectionMutex();
+let currentConnectionState: ConnectionState = ConnectionState.IDLE;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
 const RATE_LIMIT_COOLDOWN = 30000;
+const CONNECTION_TIMEOUT = 15000;
 
 export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
     persist(
@@ -56,258 +174,374 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
             isConnecting: false,
             pendingSubscriptions: new Set(),
             failedSubscriptions: new Set(),
+            retryCounts: new Map(),
 
             // Actions
             connect: async (authToken: string, userType: 'admin' | 'guest' | 'photowall', eventId?: string) => {
-                const { socket, isConnected, isConnecting } = get();
+                // ============================================================
+                // CRITICAL SECTION: Mutex-protected connection establishment
+                // ============================================================
 
-                console.log(`🔍 Connect called - Connected: ${isConnected}, Authenticated: ${get().isAuthenticated}`);
-
-                // If already connected and authenticated, return immediately
-                if (socket?.connected && isConnected && get().isAuthenticated) {
-                    console.log('✅ Using existing WebSocket connection');
-                    return;
+                const queuePosition = connectionMutex.getQueueLength();
+                if (queuePosition > 0) {
+                    Logger.debug(`Connection request queued (position: ${queuePosition})`);
                 }
 
-                // If already connecting, wait for the existing connection attempt
-                if (isConnecting && connectionPromise) {
-                    console.log('⏳ Connection already in progress, waiting...');
-                    return connectionPromise;
-                }
+                // Acquire mutex lock - this is atomic and prevents race conditions
+                await connectionMutex.acquire();
 
-                // Rate limiting check
-                const now = Date.now();
-                const timeSinceLastAttempt = now - get().lastConnectionTime;
-                if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS && timeSinceLastAttempt < RATE_LIMIT_COOLDOWN) {
-                    const remainingTime = Math.ceil((RATE_LIMIT_COOLDOWN - timeSinceLastAttempt) / 1000);
-                    throw new Error(`Rate limited. Try again in ${remainingTime} seconds`);
-                }
+                try {
+                    const { socket, isConnected, isAuthenticated } = get();
 
-                if (timeSinceLastAttempt > RATE_LIMIT_COOLDOWN) {
-                    connectionAttempts = 0;
-                }
+                    Logger.debug(`[MUTEX ACQUIRED] Connection state check:`, {
+                        state: currentConnectionState,
+                        isConnected,
+                        isAuthenticated,
+                        socketConnected: socket?.connected,
+                        mutexLocked: connectionMutex.isLocked()
+                    });
 
-                connectionAttempts++;
-
-                // Clean up any existing socket
-                if (socket) {
-                    console.log('🧹 Cleaning up existing socket');
-                    socket.removeAllListeners();
-                    socket.disconnect();
-                    set({ socket: null });
-                }
-
-                console.log(`🔌 Creating new WebSocket connection for ${userType} (attempt ${connectionAttempts})`);
-
-                set({
-                    isConnecting: true,
-                    connectionError: null,
-                    lastConnectionTime: now,
-                    subscriptions: new Set(), // Reset subscriptions on new connection
-                    pendingSubscriptions: new Set(),
-                    failedSubscriptions: new Set()
-                });
-
-                if (!authToken) {
-                    set({ isConnecting: false });
-                    throw new Error(`No auth token provided for ${userType}`);
-                }
-
-                const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
-                console.log(`🌐 Connecting to: ${wsUrl}`);
-
-                const newSocket = io(wsUrl, {
-                    transports: ['websocket', 'polling'],
-                    timeout: 15000, // Increased timeout for better reliability
-                    reconnection: false,
-                    forceNew: true,
-                    auth: {
-                        token: userType === 'admin' ? authToken : undefined,
-                        shareToken: userType !== 'admin' ? authToken : undefined,
-                        userType
+                    // Fast path: Already connected and authenticated
+                    if (currentConnectionState === ConnectionState.CONNECTED &&
+                        socket?.connected &&
+                        isConnected &&
+                        isAuthenticated) {
+                        Logger.info('Using existing WebSocket connection (mutex protected)');
+                        return;
                     }
-                });
 
-                set({ socket: newSocket, userType });
+                    // Check if we're already connecting (shouldn't happen with mutex, but defensive)
+                    if (currentConnectionState === ConnectionState.CONNECTING) {
+                        Logger.warn('Already connecting (unexpected with mutex)');
+                        return;
+                    }
 
-                connectionPromise = new Promise<void>((resolve, reject) => {
-                    const cleanup = () => {
-                        set({ isConnecting: false });
-                        connectionPromise = null;
-                    };
+                    // Rate limiting check
+                    const now = Date.now();
+                    const timeSinceLastAttempt = now - get().lastConnectionTime;
+                    if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS && timeSinceLastAttempt < RATE_LIMIT_COOLDOWN) {
+                        const remainingTime = Math.ceil((RATE_LIMIT_COOLDOWN - timeSinceLastAttempt) / 1000);
+                        currentConnectionState = ConnectionState.ERROR;
+                        throw new Error(`Rate limited. Try again in ${remainingTime} seconds`);
+                    }
 
-                    const timeout = setTimeout(() => {
-                        console.log('⏰ Connection timeout reached');
-                        cleanup();
-                        reject(new Error('Connection timeout'));
-                    }, 15000);
-
-                    newSocket.on('connect', () => {
-                        console.log('✅ WebSocket connected:', newSocket.id);
-                        set({ isConnected: true, connectionError: null });
-
-                        const authData = userType === 'admin'
-                            ? { token: authToken, userType: 'admin', eventId: eventId || '' }
-                            : { shareToken: authToken, userType, guestName: 'Guest User', eventId: eventId || authToken };
-
-                        console.log('🔐 Sending authentication...');
-                        newSocket.emit('authenticate', authData);
-                    });
-
-                    newSocket.on('auth_success', (data) => {
-                        console.log('✅ WebSocket authenticated:', data);
-
-                        // DEBUGGING: Log the received user data
-                        console.log('🔍 Auth success user data:', {
-                            id: data.user?.id,
-                            name: data.user?.name,
-                            type: data.user?.type,
-                            fullData: data
-                        });
-
-                        clearTimeout(timeout);
-                        set({
-                            isAuthenticated: true,
-                            userInfo: data.user || data, // This should now include the ID
-                            connectionError: null,
-                            reconnectAttempts: 0
-                        });
+                    if (timeSinceLastAttempt > RATE_LIMIT_COOLDOWN) {
                         connectionAttempts = 0;
-                        cleanup();
-                        resolve();
+                    }
+
+                    connectionAttempts++;
+                    currentConnectionState = ConnectionState.CONNECTING;
+
+                    // Clean up any existing socket
+                    if (socket) {
+                        Logger.debug('Cleaning up existing socket');
+                        socket.offAny(); // CRITICAL: Remove catch-all listeners
+                        socket.removeAllListeners();
+                        socket.disconnect();
+                        set({ socket: null });
+                    }
+
+                    Logger.info(`Creating new WebSocket connection for ${userType} (attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS})`);
+
+                    set({
+                        isConnecting: true,
+                        connectionError: null,
+                        lastConnectionTime: now,
+                        subscriptions: new Set(),
+                        pendingSubscriptions: new Set(),
+                        failedSubscriptions: new Set()
                     });
 
-                    newSocket.on('auth_error', (error) => {
-                        console.error('❌ WebSocket auth failed:', error);
-                        clearTimeout(timeout);
-                        set({
-                            connectionError: error.message || 'Authentication failed',
-                            isAuthenticated: false
-                        });
-                        cleanup();
-                        reject(new Error(error.message || 'Authentication failed'));
+                    if (!authToken) {
+                        currentConnectionState = ConnectionState.ERROR;
+                        set({ isConnecting: false });
+                        throw new Error(`No auth token provided for ${userType}`);
+                    }
+
+                    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
+                    Logger.info(`Connecting to: ${wsUrl}`);
+
+                    const newSocket = io(wsUrl, {
+                        transports: ['websocket', 'polling'],
+                        timeout: CONNECTION_TIMEOUT,
+                        reconnection: false,
+                        forceNew: true,
+                        auth: {
+                            token: userType === 'admin' ? authToken : undefined,
+                            shareToken: userType !== 'admin' ? authToken : undefined,
+                            userType
+                        }
                     });
 
-                    // New: Handle subscription confirmations
-                    newSocket.on('subscription_success', (data) => {
-                        const eventId = data.eventId || data;
-                        console.log(`✅ Subscription confirmed: ${eventId}`);
+                    set({ socket: newSocket, userType });
 
-                        const newSubscriptions = new Set(get().subscriptions);
-                        const newPending = new Set(get().pendingSubscriptions);
+                    // Setup connection promise with timeout
+                    await new Promise<void>((resolve, reject) => {
+                        const cleanup = () => {
+                            set({ isConnecting: false });
+                        };
 
-                        newSubscriptions.add(eventId);
-                        newPending.delete(eventId);
+                        const timeout = setTimeout(() => {
+                            Logger.warn('Connection timeout reached');
+                            currentConnectionState = ConnectionState.ERROR;
+                            cleanup();
+                            reject(new Error('Connection timeout'));
+                        }, CONNECTION_TIMEOUT);
 
-                        set({
-                            subscriptions: newSubscriptions,
-                            pendingSubscriptions: newPending
+                        newSocket.on('connect', () => {
+                            Logger.info('WebSocket connected:', newSocket.id);
+                            set({ isConnected: true, connectionError: null });
+
+                            // Build auth data - only include eventId if it's provided
+                            const authData: AuthData = userType === 'admin'
+                                ? {
+                                    token: authToken,
+                                    userType: 'admin',
+                                    ...(eventId && { eventId }) // Only add if truthy
+                                }
+                                : {
+                                    shareToken: authToken,
+                                    userType,
+                                    guestName: 'Guest User',
+                                    ...(eventId && { eventId }) // Only add if truthy
+                                };
+
+                            Logger.debug('Sending authentication with data:', {
+                                userType,
+                                hasToken: !!authToken,
+                                hasEventId: !!eventId,
+                                eventId: eventId || 'none'
+                            });
+                            newSocket.emit('authenticate', authData);
                         });
-                    });
 
-                    newSocket.on('subscription_error', (data) => {
-                        const eventId = data.eventId || data;
-                        console.error(`❌ Subscription failed: ${eventId}`, data);
+                        newSocket.on('auth_success', (data: { user: UserInfo } | UserInfo) => {
+                            Logger.info('WebSocket authenticated:', data);
+                            clearTimeout(timeout);
 
-                        const newPending = new Set(get().pendingSubscriptions);
-                        const newFailed = new Set(get().failedSubscriptions);
+                            currentConnectionState = ConnectionState.CONNECTED;
+                            set({
+                                isAuthenticated: true,
+                                userInfo: 'user' in data ? data.user : data,
+                                connectionError: null,
+                                reconnectAttempts: 0
+                            });
 
-                        newPending.delete(eventId);
-                        newFailed.add(eventId);
+                            // Start periodic sync every 30 seconds
+                            const syncInterval = setInterval(() => {
+                                if (get().isConnected && get().isAuthenticated) {
+                                    get().syncSubscriptions();
+                                }
+                            }, 30000);
 
-                        set({
-                            pendingSubscriptions: newPending,
-                            failedSubscriptions: newFailed
+                            // Store interval ID for cleanup
+                            (newSocket as any)._syncInterval = syncInterval;
+
+                            connectionAttempts = 0;
+                            cleanup();
+                            resolve();
                         });
-                    });
 
-                    newSocket.on('disconnect', (reason) => {
-                        console.log('🔌 WebSocket disconnected:', reason);
-                        set({
-                            isConnected: false,
-                            isAuthenticated: false,
-                            subscriptions: new Set(),
-                            pendingSubscriptions: new Set(),
-                            failedSubscriptions: new Set()
+                        newSocket.on('auth_error', (error: Error) => {
+                            Logger.error('WebSocket auth failed:', error);
+                            clearTimeout(timeout);
+
+                            currentConnectionState = ConnectionState.ERROR;
+                            set({
+                                connectionError: error.message || 'Authentication failed',
+                                isAuthenticated: false
+                            });
+
+                            cleanup();
+                            reject(new Error(error.message || 'Authentication failed'));
                         });
 
-                        if (process.env.NODE_ENV === 'production') {
+                        // Subscription event handlers
+                        newSocket.on('subscription_success', (data: { eventId: string } | string) => {
+                            const eventId = typeof data === 'string' ? data : data.eventId;
+                            Logger.info(`Subscription confirmed: ${eventId}`);
+
+                            const newSubscriptions = new Set(get().subscriptions);
+                            const newPending = new Set(get().pendingSubscriptions);
+
+                            newSubscriptions.add(eventId);
+                            newPending.delete(eventId);
+
+                            set({
+                                subscriptions: newSubscriptions,
+                                pendingSubscriptions: newPending
+                            });
+                        });
+
+                        newSocket.on('subscription_error', (data: SubscriptionError | string) => {
+                            const eventId = typeof data === 'string' ? data : data.eventId;
+                            Logger.error(`Subscription failed: ${eventId}`, data);
+
+                            const newPending = new Set(get().pendingSubscriptions);
+                            const newFailed = new Set(get().failedSubscriptions);
+
+                            newPending.delete(eventId);
+                            newFailed.add(eventId);
+
+                            set({
+                                pendingSubscriptions: newPending,
+                                failedSubscriptions: newFailed
+                            });
+
+                            // Trigger retry logic
+                            get().retrySubscription(eventId, (data as any)?.shareToken);
+                        });
+
+                        // Sync complete handler
+                        newSocket.on('sync_complete', (data: { synced: string[] }) => {
+                            Logger.info('Subscription sync complete:', data);
+
+                            // Update local state to match server
+                            set({
+                                subscriptions: new Set(data.synced),
+                                pendingSubscriptions: new Set(),
+                                failedSubscriptions: new Set()
+                            });
+                        });
+
+                        newSocket.on('disconnect', (reason) => {
+                            Logger.info('WebSocket disconnected:', reason);
+                            currentConnectionState = ConnectionState.DISCONNECTED;
+
+                            // Clear periodic sync interval
+                            if ((newSocket as any)._syncInterval) {
+                                clearInterval((newSocket as any)._syncInterval);
+                            }
+
+                            set({
+                                isConnected: false,
+                                isAuthenticated: false,
+                                subscriptions: new Set(),
+                                pendingSubscriptions: new Set(),
+                                failedSubscriptions: new Set()
+                            });
+
+                            // Enable reconnection in all environments for better DX
                             if (reason === 'io server disconnect' || reason === 'transport close') {
                                 setTimeout(() => {
                                     const currentState = get();
                                     if (currentState.reconnectAttempts < 3) {
-                                        console.log('🔄 Attempting auto-reconnect...');
+                                        Logger.info('Attempting auto-reconnect...');
                                         currentState.reconnect();
                                     }
                                 }, 5000);
                             }
+                        });
+
+                        newSocket.on('connect_error', (error) => {
+                            Logger.error('WebSocket connection error:', error);
+                            const errorMessage = error.message || error.toString();
+                            set({ connectionError: errorMessage });
+
+                            if (errorMessage.toLowerCase().includes('rate limit')) {
+                                clearTimeout(timeout);
+                                currentConnectionState = ConnectionState.ERROR;
+                                cleanup();
+                                reject(new Error('Rate limit exceeded'));
+                                return;
+                            }
+
+                            const attempts = get().reconnectAttempts + 1;
+                            set({ reconnectAttempts: attempts });
+
+                            if (attempts >= 3) {
+                                clearTimeout(timeout);
+                                currentConnectionState = ConnectionState.ERROR;
+                                cleanup();
+                                reject(new Error(`Connection failed after ${attempts} attempts: ${errorMessage}`));
+                            }
+                        });
+
+                        // Event logging (only in development)
+                        if (process.env.NODE_ENV === 'development') {
+                            newSocket.onAny((eventName, ...args) => {
+                                Logger.debug(`Socket event: ${eventName}`, args);
+                            });
                         }
                     });
 
-                    newSocket.on('connect_error', (error) => {
-                        console.error('❌ WebSocket connection error:', error);
-                        const errorMessage = error.message || error.toString();
-                        set({ connectionError: errorMessage });
-
-                        if (errorMessage.toLowerCase().includes('rate limit')) {
-                            clearTimeout(timeout);
-                            cleanup();
-                            reject(new Error('Rate limit exceeded'));
-                            return;
-                        }
-
-                        const attempts = get().reconnectAttempts + 1;
-                        set({ reconnectAttempts: attempts });
-
-                        if (attempts >= 3) {
-                            clearTimeout(timeout);
-                            cleanup();
-                            reject(new Error(`Connection failed after ${attempts} attempts: ${errorMessage}`));
-                        }
-                    });
-
-                    // Comprehensive event logging
-                    newSocket.onAny((eventName, ...args) => {
-                        console.log(`📡 Socket event: ${eventName}`, args);
-                    });
-                });
-
-                return connectionPromise;
+                } catch (error) {
+                    currentConnectionState = ConnectionState.ERROR;
+                    Logger.error('Connection failed:', error);
+                    throw error;
+                } finally {
+                    // CRITICAL: Always release the mutex
+                    connectionMutex.release();
+                    Logger.debug(`[MUTEX RELEASED] Queue length: ${connectionMutex.getQueueLength()}`);
+                }
             },
 
-            // New: Subscription-based room management
+            retrySubscription: async (eventId: string, shareToken?: string) => {
+                const { retryCounts, subscribe } = get();
+                const currentRetries = retryCounts.get(eventId) || 0;
+                const MAX_RETRIES = 3;
+
+                if (currentRetries >= MAX_RETRIES) {
+                    console.error(`❌ Max retries reached for subscription: ${eventId}`);
+                    return;
+                }
+
+                const delay = Math.pow(2, currentRetries) * 1000; // 1s, 2s, 4s
+                Logger.info(`Retrying subscription for ${eventId} in ${delay}ms (Attempt ${currentRetries + 1}/${MAX_RETRIES})`);
+
+                // Update retry count
+                const newRetryCounts = new Map(retryCounts);
+                newRetryCounts.set(eventId, currentRetries + 1);
+                set({ retryCounts: newRetryCounts });
+
+                setTimeout(() => {
+                    subscribe(eventId, shareToken);
+                }, delay);
+            },
+
+            // Subscription-based room management
             subscribe: async (eventId: string, shareToken?: string) => {
                 const { socket, isAuthenticated, subscriptions, pendingSubscriptions } = get();
 
-                console.log(`📝 Attempting to subscribe to: ${eventId}`);
+                Logger.debug(`Attempting to subscribe to: ${eventId}`);
 
                 if (!socket || !socket.connected || !isAuthenticated) {
                     throw new Error('WebSocket not ready for subscriptions');
                 }
 
                 if (subscriptions.has(eventId)) {
-                    console.log(`✅ Already subscribed to: ${eventId}`);
+                    Logger.debug(`Already subscribed to: ${eventId}`);
                     return;
                 }
 
                 if (pendingSubscriptions.has(eventId)) {
-                    console.log(`⏳ Subscription already pending for: ${eventId}`);
+                    Logger.debug(`Subscription already pending for: ${eventId}`);
                     return;
                 }
 
                 // Add to pending
                 const newPending = new Set(pendingSubscriptions);
                 newPending.add(eventId);
-                set({ pendingSubscriptions: newPending });
 
-                console.log(`📝 Subscribing to: ${eventId}`);
+                // Initialize retry count if not present
+                const newRetryCounts = new Map(get().retryCounts);
+                if (!newRetryCounts.has(eventId)) {
+                    newRetryCounts.set(eventId, 0);
+                }
+
+                set({
+                    pendingSubscriptions: newPending,
+                    retryCounts: newRetryCounts
+                });
+
+                Logger.info(`Subscribing to: ${eventId}`);
                 socket.emit('subscribe_to_event', { eventId, shareToken });
 
                 // Set timeout for subscription
                 setTimeout(() => {
                     const currentPending = get().pendingSubscriptions;
                     if (currentPending.has(eventId)) {
-                        console.warn(`⚠️ Subscription timeout for: ${eventId}`);
+                        Logger.warn(`Subscription timeout for: ${eventId}`);
                         const newPending = new Set(currentPending);
                         const newFailed = new Set(get().failedSubscriptions);
 
@@ -318,6 +552,9 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                             pendingSubscriptions: newPending,
                             failedSubscriptions: newFailed
                         });
+
+                        // Trigger retry on timeout
+                        get().retrySubscription(eventId, shareToken);
                     }
                 }, 8000);
             },
@@ -329,7 +566,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     return;
                 }
 
-                console.log(`📝 Unsubscribing from: ${eventId}`);
+                Logger.info(`Unsubscribing from: ${eventId}`);
                 socket.emit('unsubscribe_from_event', { eventId });
 
                 const newSubscriptions = new Set(subscriptions);
@@ -338,10 +575,10 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
             },
 
             switchSubscription: async (fromEventId: string, toEventId: string, shareToken?: string) => {
-                console.log(`🔄 Switching subscription from ${fromEventId} to ${toEventId}`);
+                Logger.info(`Switching subscription from ${fromEventId} to ${toEventId}`);
 
                 if (fromEventId === toEventId) {
-                    console.log('✅ Same event, no switch needed');
+                    Logger.debug('Same event, no switch needed');
                     return;
                 }
 
@@ -352,7 +589,6 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                 }
 
                 try {
-                    // Instead of sequential operations, do them in parallel
                     const promises = [];
 
                     if (fromEventId && get().subscriptions.has(fromEventId)) {
@@ -364,9 +600,9 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     }
 
                     await Promise.allSettled(promises);
-                    console.log(`✅ Successfully switched subscriptions: ${fromEventId} → ${toEventId}`);
+                    Logger.info(`Successfully switched subscriptions: ${fromEventId} → ${toEventId}`);
                 } catch (error) {
-                    console.error(`❌ Subscription switch failed:`, error);
+                    Logger.error(`Subscription switch failed:`, error);
                     throw error;
                 }
             },
@@ -375,10 +611,25 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                 return get().subscriptions.has(eventId);
             },
 
+            syncSubscriptions: async () => {
+                const { socket, subscriptions, isAuthenticated, isConnected } = get();
+
+                if (!socket || !isConnected || !isAuthenticated) {
+                    Logger.warn('Cannot sync: WebSocket not ready');
+                    return;
+                }
+
+                Logger.info('Syncing subscriptions with server...');
+
+                socket.emit('sync_subscriptions', {
+                    subscriptions: Array.from(subscriptions)
+                });
+            },
+
             reconnect: async () => {
                 const { userType } = get();
                 if (!userType) {
-                    console.warn('⚠️ Cannot reconnect: no user type stored');
+                    Logger.warn('Cannot reconnect: no user type stored');
                     return;
                 }
 
@@ -387,27 +638,30 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     : null;
 
                 if (!authToken) {
-                    console.warn('⚠️ Cannot reconnect: no auth token found');
+                    Logger.warn('Cannot reconnect: no auth token found');
                     return;
                 }
 
                 try {
                     await get().connect(authToken, userType);
                 } catch (error) {
-                    console.error('❌ Reconnection failed:', error);
+                    Logger.error('Reconnection failed:', error);
                 }
             },
 
             resetConnection: () => {
                 const { socket } = get();
-                console.log('🔄 Resetting WebSocket connection');
+                Logger.info('Resetting WebSocket connection');
 
                 if (socket) {
+                    socket.offAny(); // CRITICAL: Remove catch-all listeners
                     socket.removeAllListeners();
                     socket.disconnect();
                 }
 
-                connectionPromise = null;
+                // Force release mutex in case of stuck state
+                connectionMutex.forceRelease();
+                currentConnectionState = ConnectionState.IDLE;
                 connectionAttempts = 0;
 
                 set({
@@ -421,20 +675,25 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     reconnectAttempts: 0,
                     isConnecting: false,
                     pendingSubscriptions: new Set(),
-                    failedSubscriptions: new Set()
+                    failedSubscriptions: new Set(),
+                    retryCounts: new Map()
                 });
             },
 
             disconnect: () => {
                 const { socket } = get();
-                console.log('🔌 Manually disconnecting WebSocket');
+                Logger.info('Manually disconnecting WebSocket');
+
+                currentConnectionState = ConnectionState.DISCONNECTING;
 
                 if (socket) {
+                    socket.offAny(); // CRITICAL: Remove catch-all listeners
                     socket.removeAllListeners();
                     socket.disconnect();
                 }
 
-                connectionPromise = null;
+                connectionMutex.forceRelease();
+                currentConnectionState = ConnectionState.DISCONNECTED;
                 connectionAttempts = 0;
 
                 set({
@@ -446,19 +705,21 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     userInfo: null,
                     isConnecting: false,
                     pendingSubscriptions: new Set(),
-                    failedSubscriptions: new Set()
+                    failedSubscriptions: new Set(),
+                    retryCounts: new Map()
                 });
             }
         }),
         {
             name: 'websocket-store',
-            version: 2, // Increment version for new subscription model
+            version: 3, // Incremented for mutex implementation
             partialize: (state) => ({
                 userType: state.userType,
                 lastConnectionTime: state.lastConnectionTime,
             }),
             onRehydrateStorage: () => (state) => {
                 if (state) {
+                    // Reset runtime state on rehydration
                     state.socket = null;
                     state.isConnected = false;
                     state.isAuthenticated = false;
@@ -469,6 +730,10 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     state.isConnecting = false;
                     state.pendingSubscriptions = new Set();
                     state.failedSubscriptions = new Set();
+
+                    // Reset global state
+                    currentConnectionState = ConnectionState.IDLE;
+                    connectionMutex.forceRelease();
                 }
             }
         }

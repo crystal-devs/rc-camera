@@ -45,7 +45,7 @@ export default function EventDashboardPage() {
 
     // Initialize auth token
     React.useEffect(() => {
-        const token = localStorage.getItem('authToken') || '';
+        const token = localStorage.getItem('rc-token') || '';
         setAuthToken(token);
     }, []);
 

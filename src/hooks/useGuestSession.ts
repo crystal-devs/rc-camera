@@ -5,6 +5,7 @@ import { useCallback, useMemo } from 'react';
 import { useGuestContext } from '@/lib/guest/GuestContext';
 import { GuestSession, GuestIdentity, GuestSessionStatus } from '@/types/guest';
 import { logger } from '@/lib/logger/Logger';
+import { authManager } from '@/lib/auth-manager';
 
 /**
  * Main hook to access guest session
@@ -51,8 +52,8 @@ export function useIsGuest(): {
 } {
     const { isGuest, isLoading } = useGuestContext();
 
-    // Check if user is authenticated (has auth token)
-    const hasAuthToken = typeof window !== 'undefined' && !!localStorage.getItem('rc-token');
+    // Check if user is authenticated using AuthManager
+    const hasAuthToken = authManager.isAuthenticated();
 
     return {
         isGuest,

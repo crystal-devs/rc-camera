@@ -1,6 +1,8 @@
 import axios from "axios"
 import { LOGIN_ROUTE, REGISTER_ROUTE, REFRESH_TOKEN_ROUTE, LOGOUT_ROUTE, VERIFY_USER_ROUTE, CSRF_TOKEN_ROUTE, GOOGLE_OAUTH_ROUTE } from "./z.all-routes"
 import { setHeader } from "../common/api.fetch";
+import { csrfService } from '@/lib/csrf-service';
+import logger from '@/lib/logger';
 
 export interface UserData {
     id?: string;
@@ -32,11 +34,17 @@ export interface RegisterCredentials {
 
 export const loginUser = async (credentials: LoginCredentials): Promise<{ user: UserData; tokens: AuthTokens }> => {
     try {
+        // Get CSRF token first
+        const csrfHeaders = await csrfService.getHeaders();
+
         const { data } = await axios.post(LOGIN_ROUTE, credentials, {
-            headers: setHeader(undefined, "application/json", true)
+            headers: {
+                ...setHeader(undefined, "application/json", false),
+                ...csrfHeaders
+            }
         });
 
-        console.log("Login API response:", data);
+        logger.debug('Login API response received');
 
         // Check if the response indicates success (status: true)
         if (data.status === true) {
@@ -47,7 +55,6 @@ export const loginUser = async (credentials: LoginCredentials): Promise<{ user: 
             // Store tokens securely
             const tokens: AuthTokens = { accessToken, refreshToken, expiresAt };
             localStorage.setItem("rc-tokens", JSON.stringify(tokens));
-            localStorage.setItem("rc-token", accessToken); // Keep for backward compatibility
 
             // Store user data
             const userDataToStore: UserData = {
@@ -59,29 +66,35 @@ export const loginUser = async (credentials: LoginCredentials): Promise<{ user: 
             };
             localStorage.setItem("userData", JSON.stringify(userDataToStore));
 
-            // Get new CSRF token after successful login
-            await getCsrfToken();
+            // Refresh CSRF token after successful login
+            await csrfService.refreshToken();
+            logger.info('User logged in successfully', { userId: user.id });
 
             return { user: userDataToStore, tokens };
         }
 
         // If status is not true, treat it as an error
-        console.log("Login failed with response:", data);
+        logger.warn('Login failed', { message: data.message });
         throw new Error(data.message || "Login failed");
     } catch (err: any) {
-        console.error("Login error:", err);
-        console.error("Error response:", err.response?.data);
+        logger.error('Login error', err);
         throw new Error(err.response?.data?.message || "Failed to authenticate user");
     }
 }
 
 export const registerUser = async (credentials: RegisterCredentials): Promise<{ user: UserData; tokens: AuthTokens }> => {
     try {
+        // Get CSRF token first
+        const csrfHeaders = await csrfService.getHeaders();
+
         const { data } = await axios.post(REGISTER_ROUTE, credentials, {
-            headers: setHeader(undefined, "application/json", true)
+            headers: {
+                ...setHeader(undefined, "application/json", false),
+                ...csrfHeaders
+            }
         });
 
-        console.log("Register API response:", data);
+        logger.debug('Register API response received');
 
         // Check if the response indicates success (status: true)
         if (data.status === true) {
@@ -92,7 +105,6 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
             // Store tokens securely
             const tokens: AuthTokens = { accessToken, refreshToken, expiresAt };
             localStorage.setItem("rc-tokens", JSON.stringify(tokens));
-            localStorage.setItem("rc-token", accessToken); // Keep for backward compatibility
 
             // Store user data
             const userDataToStore: UserData = {
@@ -104,18 +116,18 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
             };
             localStorage.setItem("userData", JSON.stringify(userDataToStore));
 
-            // Get new CSRF token after successful registration
-            await getCsrfToken();
+            // Refresh CSRF token after successful registration
+            await csrfService.refreshToken();
+            logger.info('User registered successfully', { userId: user.id });
 
             return { user: userDataToStore, tokens };
         }
 
         // If status is not true, treat it as an error
-        console.log("Registration failed with response:", data);
+        logger.warn('Registration failed', { message: data.message });
         throw new Error(data.message || "Registration failed");
     } catch (err: any) {
-        console.error("Registration error:", err);
-        console.error("Error response:", err.response?.data);
+        logger.error('Registration error', err);
         throw new Error(err.response?.data?.message || "Failed to register user");
     }
 }
@@ -130,27 +142,25 @@ export const refreshAccessToken = async (): Promise<AuthTokens | null> => {
 
         const { data } = await axios.post(REFRESH_TOKEN_ROUTE, {
             refreshToken: tokens.refreshToken
-        }, {
-            headers: setHeader(undefined, "application/json", true)
         });
 
         if (data.status === true && data.data) {
             const newTokens: AuthTokens = {
                 accessToken: data.data.token,
-                refreshToken: data.data.refreshToken || tokens.refreshToken, // Use new refresh token if provided
+                refreshToken: data.data.refreshToken || tokens.refreshToken,
                 expiresAt: data.data.expiresAt
             };
 
             // Update stored tokens
             localStorage.setItem("rc-tokens", JSON.stringify(newTokens));
-            localStorage.setItem("rc-token", newTokens.accessToken); // Keep for backward compatibility
+            localStorage.setItem("rc-token", newTokens.accessToken);
 
             return newTokens;
         }
 
         return null;
     } catch (err) {
-        console.error("Token refresh error:", err);
+        logger.error("Token refresh error", err);
         return null;
     }
 }
@@ -167,40 +177,41 @@ export const logoutUser = async (): Promise<void> => {
             });
         }
     } catch (err) {
-        console.error("Logout error:", err);
-        // Continue with local cleanup even if server logout fails
+        logger.error("Logout error", err);
     } finally {
         // Clear all stored auth data
         localStorage.removeItem("rc-tokens");
         localStorage.removeItem("rc-token");
         localStorage.removeItem("userData");
-        localStorage.removeItem("csrf-token");
+        sessionStorage.removeItem("csrf-token");
+        csrfService.clearToken();
     }
 }
 
 export const initiateGoogleOAuth = (): void => {
-    // Redirect to Google OAuth endpoint
     window.location.href = `${GOOGLE_OAUTH_ROUTE}?redirect_uri=${encodeURIComponent(window.location.origin + '/auth/callback')}`;
 }
 
 export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: UserData; tokens: AuthTokens }> => {
     try {
+        const csrfHeaders = await csrfService.getHeaders();
+
         const { data } = await axios.post(`${GOOGLE_OAUTH_ROUTE}/callback`, {
             code,
             redirectUri: window.location.origin + '/auth/callback'
         }, {
-            headers: setHeader(undefined, "application/json", true)
+            headers: {
+                ...setHeader(undefined, "application/json", false),
+                ...csrfHeaders
+            }
         });
 
         if (data.status === true && data.data) {
             const { user, token: accessToken, refreshToken, expiresAt } = data.data;
 
-            // Store tokens securely
             const tokens: AuthTokens = { accessToken, refreshToken, expiresAt };
             localStorage.setItem("rc-tokens", JSON.stringify(tokens));
-            localStorage.setItem("rc-token", accessToken); // Keep for backward compatibility
 
-            // Store user data
             const userDataToStore: UserData = {
                 id: user.id,
                 name: user.name,
@@ -210,15 +221,15 @@ export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: U
             };
             localStorage.setItem("userData", JSON.stringify(userDataToStore));
 
-            // Get new CSRF token after successful login
-            await getCsrfToken();
+            await csrfService.refreshToken();
+            logger.info('Google OAuth successful', { userId: user.id });
 
             return { user: userDataToStore, tokens };
         }
 
         throw new Error(data.message || "Google OAuth failed");
     } catch (err: any) {
-        console.error("Google OAuth callback error:", err);
+        logger.error("Google OAuth callback error", err);
         throw new Error(err.response?.data?.message || "Failed to complete Google authentication");
     }
 }
@@ -229,9 +240,6 @@ export const getUserData = (): UserData | null => {
         if (!userDataString) return null;
 
         const userData = JSON.parse(userDataString);
-
-        // Ensure the data has the required fields for the UserData type
-        // Even if some fields are missing, we'll ensure a consistent shape
         return {
             id: userData.id,
             name: userData.name || 'User',
@@ -240,59 +248,56 @@ export const getUserData = (): UserData | null => {
             provider: userData.provider || 'google'
         };
     } catch (error) {
-        console.error("Error retrieving user data:", error);
+        logger.error("Error retrieving user data", error);
         return null;
     }
 }
 
 export const logout = () => {
-    // Use the new logout function instead
-    logoutUser().catch(err => console.error("Logout error:", err));
+    logoutUser().catch(err => logger.error("Logout error", err));
 }
 
 export const verifyUser = async (router?: any) => {
-    try{
+    try {
         await axios.get(VERIFY_USER_ROUTE, {
             headers: setHeader()
         })
         return true
-    }catch(error){
-        console.log(error)
-        // router.push('/login')
+    } catch (error) {
+        logger.error('Verify user error', error);
         return false
     }
 }
 
 export const verifyUserAndIfNotThenRedirectToLogin = async (router: any) => {
-    try{
+    try {
         await axios.get(VERIFY_USER_ROUTE, {
             headers: setHeader()
         })
         return true
-    }catch(error){
-        console.log(error)
+    } catch (error) {
+        logger.error('Verify user error', error);
         router.push('/login')
         return false
     }
 };
 
-// CSRF Token utilities
+// CSRF Token utilities (for backward compatibility)
 export const getCsrfToken = async () => {
     try {
-        const response = await axios.get(CSRF_TOKEN_ROUTE);
-        const csrfToken = response.data.csrfToken;
-        if (csrfToken) {
-            localStorage.setItem('csrf-token', csrfToken);
-        }
-        return csrfToken;
+        const token = await csrfService.getToken();
+        return token;
     } catch (error) {
-        console.error('Failed to get CSRF token:', error);
+        logger.error('Failed to get CSRF token', error);
         return null;
     }
 };
 
 export const initializeCsrf = async () => {
-    const csrfToken = await getCsrfToken();
-    return csrfToken;
+    try {
+        await csrfService.getToken();
+        logger.info('CSRF initialized');
+    } catch (error) {
+        logger.warn('CSRF initialization failed', error);
+    }
 };
-

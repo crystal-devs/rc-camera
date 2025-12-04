@@ -237,7 +237,15 @@ const removeLocalStorageValue = (key: string): void => {
 
 // Helper function to get auth token
 export const getAuthToken = (): string | null => {
-    return getLocalStorageValue('rc-token');
+    const tokensStr = getLocalStorageValue('rc-tokens');
+    if (!tokensStr) return null;
+    
+    try {
+        const tokens = JSON.parse(tokensStr);
+        return tokens.accessToken || null;
+    } catch {
+        return null;
+    }
 };
 
 // Helper function to get user data from localStorage
@@ -695,7 +703,7 @@ export const useStore = create<SettingsState & SettingsActions>()(
 
             logout: () => {
                 // Clear auth token and user data from localStorage
-                removeLocalStorageValue('rc-token');
+                removeLocalStorageValue('rc-tokens');
                 removeLocalStorageValue('userData');
                 removeLocalStorageValue('event-app-storage');
                 removeLocalStorageValue('app-settings');
@@ -740,7 +748,7 @@ export const useStore = create<SettingsState & SettingsActions>()(
                     state.setHydrated(true);
 
                     // Check if we have auth data in localStorage after rehydration
-                    const authToken = getLocalStorageValue('rc-token');
+                    const authToken = getAuthToken(); // Uses rc-tokens.accessToken
                     const userData = getUserDataFromStorage();
 
                     if (authToken && userData) {
@@ -759,12 +767,10 @@ export const useStore = create<SettingsState & SettingsActions>()(
                 requireAuthForSettings: state.requireAuthForSettings,
                 privateProfile: state.privateProfile,
                 autoSave: state.autoSave,
-                // Don't persist auth state - we'll handle it separately
-                // isAuthenticated: state.isAuthenticated,
-                // userData: state.userData,
-                subscription: state.subscription,
-                usage: state.usage,
-                availablePlans: state.availablePlans,
+                // ❌ REMOVED: Don't persist subscription, usage, plans (fetch from API)
+                // subscription: state.subscription,
+                // usage: state.usage,
+                // availablePlans: state.availablePlans,
             }),
         }
     )

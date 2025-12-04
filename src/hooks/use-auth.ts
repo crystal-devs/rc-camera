@@ -1,7 +1,9 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { authManager } from '@/lib/auth-manager';
+import logger from '@/lib/logger';
 
 export const useAuth = () => {
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -9,39 +11,23 @@ export const useAuth = () => {
   const router = useRouter();
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('rc-token');
-    if (storedToken) {
-      setAuthToken(storedToken);
-    } else {
-      toast.error("You need to be logged in");
-      router.push('/events');
-    }
-  }, [router]);
+    const initAuth = async () => {
+      await authManager.init();
 
-  useEffect(() => {
-    const getUserId = () => {
-      // If you store user ID in localStorage
-      const userId = localStorage.getItem('userId');
-      if (userId) {
-        setCurrentUserId(userId);
-        return;
-      }
+      if (authManager.isAuthenticated()) {
+        const token = authManager.getAuthToken();
+        const userId = authManager.getUserId();
 
-      // If you need to decode it from the auth token
-      const token = localStorage.getItem('rc-token');
-      if (token) {
-        try {
-          // Decode JWT token to get user ID
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          setCurrentUserId(payload.userId || payload.user_id || payload.id);
-        } catch (error) {
-          console.error('Error decoding token:', error);
-        }
+        setAuthToken(token);
+        setCurrentUserId(userId || '');
+      } else {
+        toast.error("You need to be logged in");
+        router.push('/events');
       }
     };
 
-    getUserId();
-  }, []);
+    initAuth();
+  }, [router]);
 
   return {
     authToken,
@@ -52,50 +38,73 @@ export const useAuth = () => {
 export const useAuthToken = () => {
   // Initialize with null to prevent SSR/hydration issues
   const [token, setToken] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const tokenRef = useRef<string | null>(null); // Track current token
 
   // Initialize token after component mounts to avoid hydration mismatch
   useEffect(() => {
-    // Try to get token from localStorage
-    try {
-      const tokenFromStorage = localStorage.getItem('rc-token');
-      console.log('useAuthToken: Initial token check -', tokenFromStorage ? 'Found' : 'Not found');
-      setToken(tokenFromStorage);
+    if (isInitialized) return;
 
-      // Check for token in storage changes (for multi-tab support)
-      const handleStorageChange = (e: StorageEvent) => {
-        if (e.key === 'rc-token') {
-          console.log('useAuthToken: Token changed in another tab');
-          setToken(e.newValue);
-        }
-      };
+    const initToken = async () => {
+      try {
+        // Initialize auth manager
+        await authManager.init();
+        const currentToken = authManager.getAuthToken();
 
-      // Poll localStorage periodically as an additional safety measure
-      // This helps in cases where the storage event might not fire
-      const intervalId = setInterval(() => {
-        try {
-          const currentToken = localStorage.getItem('rc-token');
-          if (currentToken !== token) {
-            console.log('useAuthToken: Token updated via polling');
-            setToken(currentToken);
+        logger.debug('useAuthToken: Initial token check', {
+          hasToken: !!currentToken,
+          mode: authManager.getCurrentState().mode
+        });
+
+        setToken(currentToken);
+        tokenRef.current = currentToken; // Store in ref
+        setIsInitialized(true);
+
+        // Listen for storage events from other tabs
+        const handleStorageChange = (e: StorageEvent) => {
+          if (e.key === 'auth_event') {
+            logger.debug('useAuthToken: Auth changed in another tab');
+            // Re-initialize to get updated token
+            authManager.init().then(() => {
+              const newToken = authManager.getAuthToken();
+              if (newToken !== tokenRef.current) {
+                setToken(newToken);
+                tokenRef.current = newToken;
+              }
+            });
           }
-        } catch (e) {
-          console.error('Error polling for token:', e);
-        }
-      }, 3000);
+        };
 
-      // Listen for storage events
-      window.addEventListener('storage', handleStorageChange);
+        // Poll for auth changes (fallback) - use ref to avoid re-creating interval
+        const intervalId = setInterval(async () => {
+          try {
+            const currentToken = authManager.getAuthToken();
+            // Only update if actually changed
+            if (currentToken !== tokenRef.current) {
+              logger.debug('useAuthToken: Token updated via polling');
+              setToken(currentToken);
+              tokenRef.current = currentToken;
+            }
+          } catch (e) {
+            logger.error('Error polling for token', e);
+          }
+        }, 3000);
 
-      return () => {
-        window.removeEventListener('storage', handleStorageChange);
-        clearInterval(intervalId);
-      };
-    } catch (e) {
-      console.error('Error in useAuthToken initialization:', e);
-      // Return a cleanup function even in the error case to satisfy TypeScript
-      return () => { };
-    }
-  }, [token]);
+        // Listen for storage events
+        window.addEventListener('storage', handleStorageChange);
+
+        return () => {
+          window.removeEventListener('storage', handleStorageChange);
+          clearInterval(intervalId);
+        };
+      } catch (e) {
+        logger.error('Error in useAuthToken initialization', e);
+        return () => { };
+      }
+    };
+
+    initToken();
+  }, [isInitialized]); // Only depend on isInitialized, not token!
 
   return token;
 };

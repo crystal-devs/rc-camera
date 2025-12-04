@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useCallback, useMemo, useState, useEffect } from 'react';
 import { fetchEvents } from '@/services/apis/events.api';
 import useEventStore from '@/stores/useEventStore';
+import { useAuthToken } from '@/hooks/use-auth';
 import type { Event as StoreEvent } from '@/stores/useEventStore';
 import type { Event } from '@/types/backend-types/event.type';
 
@@ -31,10 +32,8 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [hasInitialized, setHasInitialized] = useState(false);
 
-  // Get auth token
-  const authToken = typeof window !== 'undefined'
-    ? (localStorage.getItem('rc-token') || '')
-    : '';
+  // Get auth token from AuthManager (Reactive)
+  const authToken = useAuthToken();
 
   // React Query for server state management
   const {
@@ -43,8 +42,8 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
     error: eventsError,
     refetch: refetchEvents
   } = useQuery<Event[]>({
-    queryKey: ['events'],
-    queryFn: fetchEvents,
+    queryKey: ['events', authToken],
+    queryFn: () => fetchEvents(authToken || ''),
     enabled: !!authToken,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
@@ -102,7 +101,7 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
         if (found) eventToSelect = found;
       }
 
-      console.log('🎯 Auto-selecting event:', eventToSelect.title);
+
       setSelectedEvent(eventToSelect as unknown as StoreEvent, eventToSelect.user_role);
       setHasInitialized(true);
     };
@@ -112,7 +111,7 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
 
   // Event selection handler
   const selectEvent = useCallback((event: any) => {
-    console.log('🎯 Selecting event:', event.title);
+
 
     // Update store
     setSelectedEvent(event, event.user_role);
@@ -129,7 +128,7 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
   // Create new event handler
   const createNewEvent = useCallback(() => {
     // This would typically open a modal or navigate to create page
-    console.log('📝 Creating new event...');
+
     // Implementation depends on your create flow
   }, []);
 
@@ -145,7 +144,11 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
     allEvents: events || [],
 
     // State
-    isLoading: isLoadingEvents || isLoadingEvent,
+    // Consider loading if:
+    // 1. React Query is loading (initial fetch)
+    // 2. Event store is loading (selecting event)
+    // 3. Auth token is not yet available (initializing auth)
+    isLoading: isLoadingEvents || isLoadingEvent || !authToken,
     error: eventsError,
     searchTerm,
     hasEvents: (events?.length ?? 0) > 0,
@@ -157,6 +160,6 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
     refreshEvents,
 
     // Utilities
-    authToken
+    authToken: authToken || ''
   };
 };

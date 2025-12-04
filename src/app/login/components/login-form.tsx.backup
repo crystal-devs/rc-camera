@@ -70,11 +70,9 @@ export function LoginForm({
   }, []);
 
   const handleSuccessfulLogin = async (profile: any, apiResult: any) => {
-    const accessToken = apiResult?.tokens?.accessToken || apiResult?.token;
-    if (!accessToken) {
-      console.error('No access token!', apiResult);
-      toast.error('Authentication failed');
-      return;
+    // Store auth token from API result
+    if (apiResult?.token) {
+      localStorage.setItem('authToken', apiResult.token);
     }
 
     // Update store with login
@@ -95,7 +93,7 @@ export function LoginForm({
           console.log('🔄 Attempting to join as co-host with token:', inviteContext.token);
 
           // Auto-join as co-host
-          const cohostResponse = await joinAsCoHost(inviteContext.token, accessToken);
+          const cohostResponse = await joinAsCoHost(inviteContext.token, apiResult.token);
 
           console.log('📊 Co-host API response:', cohostResponse);
 
@@ -144,7 +142,7 @@ export function LoginForm({
         // NEW LOGIC: Fetch user events and redirect to the first one
         try {
           console.log('Fetching user events for redirect...');
-          const events = await fetchEvents(accessToken);
+          const events = await fetchEvents(apiResult.token);
           if (events && events.length > 0) {
             // Sort events by creation date (newest first) or just take the first one
             // Assuming the API returns them in a reasonable order or we just take the first
