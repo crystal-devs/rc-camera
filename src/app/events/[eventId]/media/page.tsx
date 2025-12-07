@@ -31,10 +31,11 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         isLoading,
         error,
         refreshAlbums,
-        authToken
+        authToken,
+        isInitialized
     } = useEventData(eventId);
 
-    const { currentUserId } = useAuth();
+    const { currentUserId, isLoading: isAuthLoading } = useAuth();
     const { invalidateAlbumsCache } = useEventStore();
 
     // Download state
@@ -45,12 +46,27 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
     const isSharedAccess = searchParams.get('via') === 'share';
     const shareToken = searchParams.get('token');
 
+    // Handle authentication and access control
     useEffect(() => {
+        // If it's a shared link, we don't need to force login
         if (isSharedAccess && shareToken) {
-            // Validate share access if needed
             console.log('Share access validated for token:', shareToken);
+            return;
         }
-    }, [isSharedAccess, shareToken]);
+
+        // Wait for auth initialization
+        if (!isInitialized || isAuthLoading) return;
+
+        // Only redirect if:
+        // 1. Not loading auth
+        // 2. Not authenticated
+        // 3. Not a shared access link
+        if (!isLoading && !currentUserId && !authToken) {
+            console.log('Redirecting to login from media page');
+            const returnUrl = encodeURIComponent(window.location.pathname);
+            router.push(`/login?returnUrl=${returnUrl}`);
+        }
+    }, [isSharedAccess, shareToken, isLoading, currentUserId, authToken, router, isInitialized, isAuthLoading]);
 
     // Optimized album update
     const updateAlbumsList = useCallback((newAlbum: any) => {

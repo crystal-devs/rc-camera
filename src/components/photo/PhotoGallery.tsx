@@ -808,8 +808,14 @@ export default function OptimizedPhotoGallery({
 
         <UploadButton
           eventId={eventId}
-          onUploadComplete={(mediaData) => {
+          onUploadComplete={(mediaData: any) => {
             console.log('Guest upload completed:', mediaData);
+
+            // Extract approval status from backend response
+            const approvalStatus = mediaData.approval?.status ||
+              (mediaData.approval_status ? 'approved' : 'pending');
+
+            console.log('🔍 Approval status from backend:', approvalStatus, mediaData.approval);
 
             const tempPhoto: Photo = {
               id: mediaData.mediaId,
@@ -822,8 +828,8 @@ export default function OptimizedPhotoGallery({
               originalFilename: mediaData.fileName,
               processingStatus: 'processing' as const,
               processingProgress: 0,
-              approval: {
-                status: 'pending' as const,
+              approval: mediaData.approval || {
+                status: approvalStatus as any,
               },
               processing: {
                 status: 'processing' as const,
@@ -848,7 +854,14 @@ export default function OptimizedPhotoGallery({
               },
             };
 
-            const cacheKey = [...queryKeys.eventPhotos(eventId, 'pending'), 'infinite', gridQuality];
+            // Determine correct tab based on actual approval status
+            const targetStatus = (approvalStatus === 'approved' || approvalStatus === 'auto_approved')
+              ? 'approved'
+              : 'pending';
+
+            console.log('🔍 Caching photo under tab:', targetStatus);
+
+            const cacheKey = [...queryKeys.eventPhotos(eventId, targetStatus), 'infinite', gridQuality];
 
             queryClient.setQueryData(cacheKey, (oldData: any) => {
               if (!oldData?.pages) {
@@ -872,7 +885,7 @@ export default function OptimizedPhotoGallery({
               };
             });
 
-            const regularKey = [...queryKeys.eventPhotos(eventId, 'pending'), gridQuality];
+            const regularKey = [...queryKeys.eventPhotos(eventId, targetStatus), gridQuality];
             queryClient.setQueryData(regularKey, (oldData: any) => {
               if (!oldData) return [tempPhoto];
               return [tempPhoto, ...oldData];
@@ -880,7 +893,6 @@ export default function OptimizedPhotoGallery({
 
             if (mediaData.mediaId) {
               startMonitoring([mediaData.mediaId], [mediaData.fileName]);
-              setActiveTab('pending');
             }
 
             refetchCounts();

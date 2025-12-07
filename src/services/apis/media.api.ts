@@ -1326,7 +1326,7 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
         processingProgress: mediaItem.processing?.progress || 0, // Fixed: was 'media', should be 'mediaItem'
 
         approval: {
-            status: mediaItem.approval_status || mediaItem.approval?.status,
+            status: mediaItem.approval?.status || (mediaItem.approval_status ? 'approved' : 'pending'),
             approved_at: mediaItem.approval?.approved_at,
             approved_by: mediaItem.approval?.approved_by,
             rejection_reason: mediaItem.approval?.rejection_reason

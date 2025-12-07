@@ -48,12 +48,20 @@ export const useInfiniteMediaQuery = ({
             }
 
             // Filter only approved photos
-            const approvedPhotos = response.data.filter((photo: any) =>
-                photo.approval_status === 'approved' || photo.approval_status === 'auto_approved'
-            );
+            const approvedPhotos = response.data.filter((photo: any) => {
+                const status = photo.approval?.status || (photo.approval_status ? 'approved' : 'pending');
+                return status === 'approved' || status === 'auto_approved' || photo.approval_status === true;
+            });
 
             // Transform photos to TransformedPhoto format
-            const transformedPhotos = approvedPhotos.map(transformApiPhoto);
+            const transformedPhotos = approvedPhotos.map((photo: any) => transformApiPhoto({
+                ...photo,
+                albumId: photo.album_id,
+                eventId: photo.event_id,
+                imageUrl: photo.url,
+                thumbnail: photo.thumbnail_url || photo.url,
+                createdAt: photo.created_at
+            } as any));
 
             // Simple pagination logic
             const hasNext = (response as any).other?.pagination?.hasNext ?? (approvedPhotos.length === limit);

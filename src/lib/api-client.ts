@@ -1,6 +1,7 @@
 // src/lib/api-client.ts - Centralized API Client with Interceptors
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { buildApiUrl } from './api-routes';
+import { authManager } from './auth-manager';
 
 export interface ApiResponse<T = any> {
   status: boolean;
@@ -57,10 +58,7 @@ class ApiClient {
   }
 
   private getAuthToken(): string | null {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('rc-token');
-    }
-    return null;
+    return authManager.getAuthToken();
   }
 
   private async tryRefreshToken(): Promise<boolean> {
@@ -85,12 +83,10 @@ class ApiClient {
   private handleUnauthorized() {
     // Clear token and redirect to login
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('rc-token');
-      localStorage.removeItem('rc-tokens');
-      localStorage.removeItem('userData');
-      localStorage.removeItem('csrf-token');
-      // Use hard redirect to prevent infinite loops
-      window.location.href = '/login';
+      authManager.logout().then(() => {
+        // Use hard redirect to prevent infinite loops
+        window.location.href = '/login';
+      });
     }
   }
 

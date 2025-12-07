@@ -18,6 +18,7 @@ import {
   uploadMultipleMedia
 } from '@/services/apis/media.api';
 import { useAuthToken } from '@/hooks/use-auth';
+import { authManager } from '@/lib/auth-manager';
 import { queryKeys } from '@/lib/queryKeys';
 import { Photo } from '@/types/PhotoGallery.types';
 
@@ -205,6 +206,10 @@ export function useUploadMultipleMedia(
 
   return useMutation({
     mutationFn: async (files: File[]) => {
+      // Ensure specific token is used or fallback to auth manager
+      await authManager.init();
+      const token = authManager.getAuthToken();
+
       if (!token) throw new Error('Authentication required');
       if (!files || files.length === 0) throw new Error('No files selected');
 
@@ -225,7 +230,7 @@ export function useUploadMultipleMedia(
 
           const previewUrl = URL.createObjectURL(file);
           const dimensions = await getImageDimensions(file);
-          
+
           return {
             file,
             tempId: `temp_${Date.now()}_${index}`,
@@ -245,9 +250,9 @@ export function useUploadMultipleMedia(
       }
 
       const uploadResults = await uploadMultipleMedia(
-        validFiles.map(p => p!.file), 
-        eventId, 
-        albumId, 
+        validFiles.map(p => p!.file),
+        eventId,
+        albumId,
         token
       );
 
@@ -301,7 +306,7 @@ async function getImageDimensions(file: File): Promise<{ width: number; height: 
 
     const img = new Image();
     const url = URL.createObjectURL(file);
-    
+
     img.onload = () => {
       URL.revokeObjectURL(url);
       resolve({
@@ -309,12 +314,12 @@ async function getImageDimensions(file: File): Promise<{ width: number; height: 
         height: img.naturalHeight
       });
     };
-    
+
     img.onerror = () => {
       URL.revokeObjectURL(url);
       resolve(null);
     };
-    
+
     img.src = url;
   });
 }
@@ -341,6 +346,9 @@ export function useUpdateMediaStatus(eventId: string) {
       status: 'approved' | 'pending' | 'rejected' | 'hidden';
       reason?: string;
     }) => {
+      await authManager.init();
+      const token = authManager.getAuthToken();
+
       if (!token) throw new Error('Authentication required');
       console.log('🔍 Updating media status:', { mediaId, status });
       return await updateMediaStatus(mediaId, status, token, {
@@ -348,7 +356,7 @@ export function useUpdateMediaStatus(eventId: string) {
         hideReason: reason
       });
     },
-    
+
     onSuccess: async (_, { status, mediaId }) => {
       console.log('✅ Media status updated successfully');
 
@@ -368,7 +376,7 @@ export function useUpdateMediaStatus(eventId: string) {
                 [...queryKeys.eventPhotos(eventId, s), 'infinite', q],
                 (oldData: any) => {
                   if (!oldData?.pages) return oldData;
-                  
+
                   return {
                     ...oldData,
                     pages: oldData.pages.map((page: any) => ({
@@ -457,7 +465,7 @@ export function useUpdateMediaStatus(eventId: string) {
 
       toast.success(`Photo ${statusAction} successfully`);
     },
-    
+
     onError: (error: Error, { status }) => {
       console.error('❌ Failed to update media status:', error);
       const statusAction = {
@@ -485,11 +493,14 @@ export function useDeleteMedia(eventId: string) {
 
   return useMutation({
     mutationFn: async (mediaId: string) => {
+      await authManager.init();
+      const token = authManager.getAuthToken();
+
       if (!token) throw new Error('Authentication required');
       console.log('🔍 Deleting media:', mediaId);
       return await deleteMedia(mediaId, token);
     },
-    
+
     onSuccess: async (_, mediaId) => {
       console.log('✅ Media deleted successfully');
 
@@ -509,7 +520,7 @@ export function useDeleteMedia(eventId: string) {
                 [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
                 (oldData: any) => {
                   if (!oldData?.pages) return oldData;
-                  
+
                   return {
                     ...oldData,
                     pages: oldData.pages.map((page: any) => ({
@@ -573,7 +584,7 @@ export function useDeleteMedia(eventId: string) {
 
       toast.success('Photo deleted successfully');
     },
-    
+
     onError: (error) => {
       console.error('❌ Failed to delete media:', error);
       toast.error('Failed to delete photo');
@@ -657,13 +668,13 @@ export function useGalleryUtils(eventId: string) {
     let data = queryClient.getQueryData<Photo[]>(
       [...queryKeys.eventPhotos(eventId, status), 'small']
     );
-    
+
     if (!data) {
       data = queryClient.getQueryData<Photo[]>(
         queryKeys.eventPhotos(eventId, status)
       );
     }
-    
+
     return data?.length || 0;
   }, [eventId, queryClient]);
 

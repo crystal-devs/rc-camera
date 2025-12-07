@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { updateEvent, deleteEvent } from '@/services/apis/events.api'
 import { uploadCoverImage } from '@/services/apis/media.api'
 import useEventStore, { Event } from '@/stores/useEventStore'
+import { getAuthToken } from '@/lib/store'
 
 // Form data interface
 interface EventFormData {
@@ -172,7 +173,7 @@ export const useEventSettings = (eventId: string) => {
 
   // Initialize auth token
   useEffect(() => {
-    const token = localStorage.getItem('rc-token') || ''
+    const token = getAuthToken() || ''
     setAuthToken(token)
   }, [])
 

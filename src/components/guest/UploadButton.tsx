@@ -9,6 +9,7 @@ import { API_BASE_URL } from '@/lib/api-config';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { getBulkUploadUrls } from '@/services/apis/media.api';
 import { useAuthToken } from '@/hooks/use-auth';
+import { authManager } from '@/lib/auth-manager';
 import { cn } from '@/lib/utils';
 
 interface UploadButtonProps {
@@ -73,8 +74,12 @@ export default function UploadButton({ eventId, onUploadComplete, className }: U
         fileType: file.type
       }));
 
+      // Fetch token directly to ensure it's fresh
+      await authManager.init();
+      const currentToken = authManager.getAuthToken();
+
       // Get bulk upload URLs
-      const response = await getBulkUploadUrls(eventId, fileData, authToken || '');
+      const response = await getBulkUploadUrls(eventId, fileData, currentToken || '');
       const { uploadUrls } = response.data;
 
       // Upload files concurrently
@@ -102,7 +107,7 @@ export default function UploadButton({ eventId, onUploadComplete, className }: U
             },
             {
               headers: {
-                'Authorization': `Bearer ${authToken}`,
+                'Authorization': `Bearer ${currentToken}`,
                 'Content-Type': 'application/json',
               },
             }
@@ -119,8 +124,7 @@ export default function UploadButton({ eventId, onUploadComplete, className }: U
 
           if (onUploadComplete) {
             onUploadComplete({
-              mediaId: responseData.mediaId,
-              originalUrl: responseData.originalUrl,
+              ...responseData,  // Pass all backend data including approval
               uploadId: responseData.upload_id || uploadData.uploadId,
               fileName: file.name
             });

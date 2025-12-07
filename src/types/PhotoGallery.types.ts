@@ -4,11 +4,11 @@ export interface Photo {
   id: string;
   albumId?: string;
   eventId: string;
-  
+
   // 🚀 CORE URLs: Backend provides these optimized URLs
   imageUrl: string;      // Current best URL (preview during upload, high-quality when ready)
   thumbnailUrl?: string; // Legacy support - remove eventually
-  
+
   // 🚀 NEW: Image variants from backend (matches Media model)
   image_variants?: {
     original: {
@@ -36,7 +36,7 @@ export interface Photo {
   isTemporary?: boolean;        // Flag for client-side preview photos
   status?: 'uploading' | 'processing' | 'completed' | 'failed'; // Current status
   uploadProgress?: number;      // 0-100 for upload progress
-  
+
   // 🔧 BACKEND PROCESSING: Maps to backend processing schema
   processing?: boolean | {      // Simplified for frontend + backend compatibility
     status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -56,7 +56,7 @@ export interface Photo {
     rejection_reason?: string;
     auto_approval_reason?: string;
   };
-  
+
   // Legacy approval fields (for backward compatibility)
   approvalStatus?: 'pending' | 'approved' | 'rejected' | 'hidden';
 
@@ -99,7 +99,7 @@ export interface Photo {
   uploaded_by?: string;    // User ID
   uploader_type?: 'registered_user' | 'guest';
   uploader_display_name?: string;
-  
+
   // 🔧 GUEST UPLOADER: From backend
   guest_uploader?: {
     guest_id: string;
@@ -219,7 +219,7 @@ export interface PhotoGalleryProps {
     delete: boolean;
   };
   approvalMode?: 'auto' | 'manual';
-  
+
   // 🚀 NEW: Upload configuration
   uploadConfig?: {
     maxFileSize?: number;        // In bytes
@@ -228,7 +228,7 @@ export interface PhotoGalleryProps {
     autoProcess?: boolean;       // Auto-process uploads
     showProgress?: boolean;      // Show upload progress
   };
-  
+
   // 🚀 NEW: Display configuration
   displayConfig?: {
     gridColumns?: {
@@ -278,34 +278,34 @@ export const transformBackendPhoto = (backendPhoto: any): Photo => {
     imageUrl: backendPhoto.url,
     thumbnailUrl: backendPhoto.thumbnailUrl, // Legacy
     image_variants: backendPhoto.image_variants,
-    
+
     // Status and processing
     processing: backendPhoto.processing,
     approval: backendPhoto.approval,
-    approvalStatus: backendPhoto.approval?.status || backendPhoto.approval_status,
-    
+    approvalStatus: backendPhoto.approval?.status || (backendPhoto.approval_status ? 'approved' : 'pending'),
+
     // Metadata
     metadata: backendPhoto.metadata,
     originalFilename: backendPhoto.original_filename,
     filename: backendPhoto.original_filename,
     size_mb: backendPhoto.size_mb,
     format: backendPhoto.format,
-    dimensions: backendPhoto.metadata ? 
+    dimensions: backendPhoto.metadata ?
       `${backendPhoto.metadata.width}x${backendPhoto.metadata.height}` : undefined,
-    
+
     // Uploader info
-    uploadedBy: backendPhoto.uploader_display_name || 
-                backendPhoto.guest_uploader?.name || 
-                'Unknown',
+    uploadedBy: backendPhoto.uploader_display_name ||
+      backendPhoto.guest_uploader?.name ||
+      'Unknown',
     uploaded_by: backendPhoto.uploaded_by,
     uploader_type: backendPhoto.uploader_type,
     guest_uploader: backendPhoto.guest_uploader,
-    
+
     // Timestamps
     createdAt: backendPhoto.created_at,
     created_at: backendPhoto.created_at,
     updated_at: backendPhoto.updated_at,
-    
+
     // Engagement
     stats: backendPhoto.stats || {
       views: 0,
@@ -314,7 +314,7 @@ export const transformBackendPhoto = (backendPhoto: any): Photo => {
       likes: 0,
       comments_count: 0
     },
-    
+
     // Flags
     content_flags: backendPhoto.content_flags,
     upload_context: backendPhoto.upload_context
@@ -323,7 +323,7 @@ export const transformBackendPhoto = (backendPhoto: any): Photo => {
 
 // 🔧 UTILITY: Get best image URL for context
 export const getBestImageUrl = (
-  photo: Photo, 
+  photo: Photo,
   context: PhotoContext = 'thumbnail',
   supportsWebP: boolean = true
 ): string => {
@@ -371,11 +371,11 @@ export const getBestImageUrl = (
 // 🔧 UTILITY: Check if photo is still processing
 export const isPhotoProcessing = (photo: Photo): boolean => {
   if (photo.isTemporary || photo.status === 'uploading') return true;
-  
+
   if (typeof photo.processing === 'object' && photo.processing) {
     return photo.processing.status === 'processing' || photo.processing.status === 'pending';
   }
-  
+
   return photo.processing === true;
 };
 
@@ -384,7 +384,7 @@ export const getProcessingStatusMessage = (photo: Photo): string => {
   if (photo.isTemporary || photo.status === 'uploading') {
     return 'Uploading...';
   }
-  
+
   if (typeof photo.processing === 'object' && photo.processing) {
     switch (photo.processing.status) {
       case 'pending': return 'Queued for processing';
@@ -394,7 +394,7 @@ export const getProcessingStatusMessage = (photo: Photo): string => {
       default: return 'Unknown status';
     }
   }
-  
+
   if (photo.processing === true) return 'Processing...';
   return 'Ready';
 };

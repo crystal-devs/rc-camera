@@ -8,21 +8,32 @@ import logger from '@/lib/logger';
 export const useAuth = () => {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const router = useRouter();
 
   useEffect(() => {
     const initAuth = async () => {
-      await authManager.init();
+      try {
+        await authManager.init();
 
-      if (authManager.isAuthenticated()) {
-        const token = authManager.getAuthToken();
-        const userId = authManager.getUserId();
+        if (authManager.isAuthenticated()) {
+          const token = authManager.getAuthToken();
+          const userId = authManager.getUserId();
 
-        setAuthToken(token);
-        setCurrentUserId(userId || '');
-      } else {
-        toast.error("You need to be logged in");
-        router.push('/events');
+          setAuthToken(token);
+          setCurrentUserId(userId || '');
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+          setAuthToken(null);
+          setCurrentUserId('');
+        }
+      } catch (error) {
+        console.error("Auth initialization failed:", error);
+        setIsAuthenticated(false);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -31,7 +42,9 @@ export const useAuth = () => {
 
   return {
     authToken,
-    currentUserId
+    currentUserId,
+    isAuthenticated,
+    isLoading
   };
 };
 
