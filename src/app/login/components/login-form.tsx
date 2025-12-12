@@ -259,7 +259,8 @@ export function LoginForm({
             const registerResult = await registerUser({
               name: profile.name,
               email: profile.email,
-              password: profile.sub // Use Google sub as password for registration
+              password: profile.sub, // Use Google sub as password for registration
+              provider: "google"
             });
 
             // Registration successful, handle login

@@ -15,7 +15,7 @@ import PhotoGallery from '@/components/photo/PhotoGallery';
 
 import { useEventData } from '@/hooks/useEventData';
 import useEventStore from '@/stores/useEventStore';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function OptimizedEventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
     const { eventId } = use(params);
@@ -35,8 +35,9 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         isInitialized
     } = useEventData(eventId);
 
-    const { currentUserId, isLoading: isAuthLoading } = useAuth();
+    const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
     const { invalidateAlbumsCache } = useEventStore();
+    const currentUserId = user?.id; // Derive ID from user object
 
     // Download state
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
@@ -55,18 +56,18 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         }
 
         // Wait for auth initialization
-        if (!isInitialized || isAuthLoading) return;
+        if (isAuthLoading) return;
 
         // Only redirect if:
         // 1. Not loading auth
         // 2. Not authenticated
         // 3. Not a shared access link
-        if (!isLoading && !currentUserId && !authToken) {
+        if (!isAuthenticated) {
             console.log('Redirecting to login from media page');
             const returnUrl = encodeURIComponent(window.location.pathname);
             router.push(`/login?returnUrl=${returnUrl}`);
         }
-    }, [isSharedAccess, shareToken, isLoading, currentUserId, authToken, router, isInitialized, isAuthLoading]);
+    }, [isSharedAccess, shareToken, isAuthenticated, router, isAuthLoading]);
 
     // Optimized album update
     const updateAlbumsList = useCallback((newAlbum: any) => {

@@ -68,6 +68,12 @@ export const OptimizedProgressiveImage = ({
 
   const isUploading = photo.status === 'uploading' || photo.isTemporary;
 
+  // Determine current status for conditional actions
+  const status = photo.approval?.status || photo.approvalStatus || 'pending';
+  const isApproved = status === 'approved' || status === 'auto_approved';
+  const isRejected = status === 'rejected';
+  const isHidden = status === 'hidden';
+
   const handleClick = useCallback((e: React.MouseEvent) => {
     // If selection mode is active (at least one item selected), clicking photo toggles selection
     if (selectionMode) {
@@ -167,17 +173,17 @@ export const OptimizedProgressiveImage = ({
 
                   {userPermissions.moderate && (
                     <>
-                      {currentTab !== 'approved' && (
+                      {!isApproved && (
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusUpdate(photo.id, 'approved'); }}>
                           <CheckIcon className="mr-2 h-4 w-4 text-green-500" /> Approve
                         </DropdownMenuItem>
                       )}
-                      {currentTab !== 'rejected' && (
+                      {!isRejected && (
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusUpdate(photo.id, 'rejected'); }}>
                           <XIcon className="mr-2 h-4 w-4 text-red-500" /> Reject
                         </DropdownMenuItem>
                       )}
-                      {currentTab !== 'hidden' && (
+                      {!isHidden && (
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusUpdate(photo.id, 'hidden'); }}>
                           <EyeOffIcon className="mr-2 h-4 w-4 text-gray-500" /> Hide
                         </DropdownMenuItem>

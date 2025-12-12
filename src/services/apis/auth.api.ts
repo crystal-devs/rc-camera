@@ -3,6 +3,7 @@ import { LOGIN_ROUTE, REGISTER_ROUTE, REFRESH_TOKEN_ROUTE, LOGOUT_ROUTE, VERIFY_
 import { setHeader } from "../common/api.fetch";
 import { csrfService } from '@/lib/csrf-service';
 import logger from '@/lib/logger';
+import { authManager } from '@/lib/auth-manager';
 
 export interface UserData {
     id?: string;
@@ -30,6 +31,7 @@ export interface RegisterCredentials {
     name: string;
     email: string;
     password: string;
+    provider?: "google" | "email";
 }
 
 export const loginUser = async (credentials: LoginCredentials): Promise<{ user: UserData; tokens: AuthTokens }> => {
@@ -52,9 +54,15 @@ export const loginUser = async (credentials: LoginCredentials): Promise<{ user: 
             const responseData = data.data || data;
             const { user, token: accessToken, refreshToken, expiresAt } = responseData;
 
-            // Store tokens securely
+            // Store tokens securely via AuthManager
             const tokens: AuthTokens = { accessToken, refreshToken, expiresAt };
-            localStorage.setItem("rc-tokens", JSON.stringify(tokens));
+
+            await authManager.loginUser({
+                accessToken,
+                refreshToken,
+                expiresAt,
+                userId: user.id
+            });
 
             // Store user data
             const userDataToStore: UserData = {
@@ -210,7 +218,13 @@ export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: U
             const { user, token: accessToken, refreshToken, expiresAt } = data.data;
 
             const tokens: AuthTokens = { accessToken, refreshToken, expiresAt };
-            localStorage.setItem("rc-tokens", JSON.stringify(tokens));
+
+            await authManager.loginUser({
+                accessToken,
+                refreshToken,
+                expiresAt,
+                userId: user.id
+            });
 
             const userDataToStore: UserData = {
                 id: user.id,

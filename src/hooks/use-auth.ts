@@ -77,7 +77,6 @@ export const useAuthToken = () => {
         const handleStorageChange = (e: StorageEvent) => {
           if (e.key === 'auth_event') {
             logger.debug('useAuthToken: Auth changed in another tab');
-            // Re-initialize to get updated token
             authManager.init().then(() => {
               const newToken = authManager.getAuthToken();
               if (newToken !== tokenRef.current) {
@@ -88,26 +87,37 @@ export const useAuthToken = () => {
           }
         };
 
-        // Poll for auth changes (fallback) - use ref to avoid re-creating interval
+        // Listen for local events from AuthManager (same tab)
+        const handleLocalAuthUpdate = (e: Event) => {
+          const customEvent = e as CustomEvent;
+          logger.debug('useAuthToken: Auth updated locally', customEvent.detail);
+          const newToken = authManager.getAuthToken();
+          if (newToken !== tokenRef.current) {
+            setToken(newToken);
+            tokenRef.current = newToken;
+          }
+        };
+
+        // Poll for auth changes (fallback)
         const intervalId = setInterval(async () => {
           try {
             const currentToken = authManager.getAuthToken();
-            // Only update if actually changed
             if (currentToken !== tokenRef.current) {
-              logger.debug('useAuthToken: Token updated via polling');
+              // logger.debug('useAuthToken: Token updated via polling'); // Reduce noise
               setToken(currentToken);
               tokenRef.current = currentToken;
             }
           } catch (e) {
             logger.error('Error polling for token', e);
           }
-        }, 3000);
+        }, 1000); // Poll every 1s just in case
 
-        // Listen for storage events
         window.addEventListener('storage', handleStorageChange);
+        window.addEventListener('rc-auth-update', handleLocalAuthUpdate);
 
         return () => {
           window.removeEventListener('storage', handleStorageChange);
+          window.removeEventListener('rc-auth-update', handleLocalAuthUpdate);
           clearInterval(intervalId);
         };
       } catch (e) {

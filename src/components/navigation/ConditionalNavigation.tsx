@@ -106,7 +106,7 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
               `}</style>
 
               <div className="h-full overflow-y-auto custom-scrollbar">
-                <div className="p-4 h-full">
+                <div className="p-0 h-full sm:p-2">
                   {children}
                 </div>
               </div>

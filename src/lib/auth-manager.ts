@@ -428,6 +428,7 @@ export class AuthManager {
         if (typeof window === 'undefined') return;
 
         try {
+            // 1. Storage event for OTHER tabs
             const event = {
                 type: `auth_${type}`,
                 state,
@@ -436,6 +437,12 @@ export class AuthManager {
 
             localStorage.setItem('auth_event', JSON.stringify(event));
             localStorage.removeItem('auth_event'); // Trigger storage event
+
+            // 2. Custom event for THIS tab
+            window.dispatchEvent(new CustomEvent('rc-auth-update', {
+                detail: { type: `auth_${type}`, state }
+            }));
+
         } catch (error) {
             logger.error('Failed to broadcast auth event', error);
         }

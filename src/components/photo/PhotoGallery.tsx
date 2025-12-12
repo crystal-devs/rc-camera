@@ -962,36 +962,42 @@ export default function OptimizedPhotoGallery({
                 <div className="flex items-center gap-1">
                   {userPermissions.moderate && (
                     <>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleBulkStatusUpdate('approved')}
-                        className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
-                        title="Approve Selected"
-                      >
-                        <CheckIcon className="h-4 w-4 sm:mr-2" />
-                        <span className="hidden sm:inline">Approve</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleBulkStatusUpdate('rejected')}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        title="Reject Selected"
-                      >
-                        <XIcon className="h-4 w-4 sm:mr-2" />
-                        <span className="hidden sm:inline">Reject</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleBulkStatusUpdate('hidden')}
-                        className="text-gray-600 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-                        title="Hide Selected"
-                      >
-                        <EyeOffIcon className="h-4 w-4 sm:mr-2" />
-                        <span className="hidden sm:inline">Hide</span>
-                      </Button>
+                      {activeTab !== 'approved' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleBulkStatusUpdate('approved')}
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                          title="Approve Selected"
+                        >
+                          <CheckIcon className="h-4 w-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Approve</span>
+                        </Button>
+                      )}
+                      {activeTab !== 'rejected' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleBulkStatusUpdate('rejected')}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          title="Reject Selected"
+                        >
+                          <XIcon className="h-4 w-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Reject</span>
+                        </Button>
+                      )}
+                      {activeTab !== 'hidden' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleBulkStatusUpdate('hidden')}
+                          className="text-gray-600 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                          title="Hide Selected"
+                        >
+                          <EyeOffIcon className="h-4 w-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Hide</span>
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>
