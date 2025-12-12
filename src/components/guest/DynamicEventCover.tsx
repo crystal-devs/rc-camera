@@ -105,28 +105,20 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
 
   // Background style with theme integration
   const getBackgroundStyle = useMemo(() => {
-    if (!eventDetails?.cover_image?.url || !template.hasImage) {
-      return {
-        backgroundColor: themeColors.background,
-      };
-    }
-
-    const focalX = eventDetails.cover_image.focal_x || 50;
-    const focalY = eventDetails.cover_image.focal_y || 50;
-
     return {
-      backgroundImage: `url(${eventDetails.cover_image.url})`,
-      backgroundPosition: `${focalX}% ${focalY}%`,
+      // Hardcoded image as requested
+      backgroundImage: `url('https://images.unsplash.com/photo-1621801306185-8c0ccf9c8eb8?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D')`,
+      backgroundPosition: 'center 40%', // Optimized for this specific image
       backgroundSize: 'cover',
       backgroundRepeat: 'no-repeat',
     };
-  }, [eventDetails?.cover_image, template.hasImage, themeColors.background]);
+  }, [template.hasImage, themeColors.background]);
 
   // Themed overlay
   const getOverlayStyle = useMemo(() => {
     if (!template.hasImage) return {};
     return {
-      background: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.3))`,
+      background: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6))`,
     };
   }, [template.hasImage]);
 
@@ -223,7 +215,7 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
                   fontFamily: fontConfig.primary,
                 }}
               >
-                {eventDetails.title}
+                {eventDetails.title.toUpperCase()}
               </h1>
             </div>
 
@@ -254,7 +246,7 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
                   }}
                 >
                   <MapPin className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate max-w-64">{eventDetails.location.name}</span>
+                  <span className="truncate max-w-64">{eventDetails.location.name.toUpperCase()}</span>
                 </span>
               </div>
             )}
@@ -299,7 +291,7 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
                   fontFamily: fontConfig.primary,
                 }}
               >
-                {eventDetails.title}
+                {eventDetails.title.toUpperCase()}
               </h1>
 
               {/* {totalPhotos > 0 && (
@@ -344,14 +336,14 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
     return (
       <div className="space-y-4">
         <h1
-          className={`font-bold ${textSizes.title} ${fadeInClass}`}
+          className={`font-semibold ${textSizes.title} ${fadeInClass}`}
           style={{
             color: textColors.primary,
             fontFamily: fontConfig.primary,
             transitionDelay: '200ms'
           }}
         >
-          {eventDetails.title}
+          {eventDetails.title.toUpperCase()}
         </h1>
 
         {/* Event metadata */}
@@ -377,12 +369,12 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
             </span>
           )}
 
-          {totalPhotos > 0 && (
+          {/* {totalPhotos > 0 && (
             <span className="flex items-center gap-2">
               <Users className="w-4 h-4 flex-shrink-0" />
               <span>{photoCount} of {totalPhotos} photos</span>
             </span>
-          )}
+          )} */}
         </div>
 
         {/* View Gallery Button for non-bottom layouts */}
@@ -390,7 +382,7 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
           <div className={`flex justify-center pt-2 ${fadeInClass}`} style={{ transitionDelay: '600ms' }}>
             <button
               onClick={scrollToGallery}
-              className="flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 px-6 py-2 rounded-sm transition-all duration-300 hover:scale-105 active:scale-95"
               style={{
                 backgroundColor: isTextOverlaid ? 'rgba(255, 255, 255, 0.2)' : themeColors.accent,
                 color: isTextOverlaid ? '#FFFFFF' : themeColors.surface,
@@ -399,8 +391,7 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
                 border: isTextOverlaid ? '1px solid rgba(255, 255, 255, 0.3)' : 'none'
               }}
             >
-              <Eye className="w-5 h-5" />
-              <span className="font-medium">View Gallery</span>
+              <span className="font-normal">VIEW GALLERY</span>
             </button>
           </div>
         )}

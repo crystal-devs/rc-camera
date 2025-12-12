@@ -16,6 +16,7 @@ import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
 import { FullscreenPhotoViewer } from '@/components/photo/FullscreenPhotoViewer';
 import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
+import { GuestHeader } from '@/components/guest/GuestHeader';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
 import { NotificationBanner } from '@/components/guest/NotificationBanner';
@@ -734,7 +735,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   if (!shareToken) {
     notFound();
   }
-
+console.log(eventState, 'eventStateeventState')
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
       {/* Notification Banner for buffered changes */}
@@ -787,63 +788,55 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         totalPhotos={totalPhotos}
       />
 
-      {/* Bulk Download Button - Fixed position in header */}
-      {photos.length > 0 && (
-        <div className="fixed top-4 right-4 z-40">
-          <Button
-            onClick={handleBulkDownload}
-            disabled={isDownloading}
-            className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center gap-2"
-          >
-            {isDownloading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {downloadProgress ? `${downloadProgress.progress}%` : 'Preparing...'}
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4" />
-                Download All ({photos.length})
-              </>
-            )}
-          </Button>
-        </div>
-      )}
+      {/* Sticky Guest Header */}
+      <GuestHeader
+        eventDetails={eventState.details}
+        onDownload={handleBulkDownload}
+        isDownloading={isDownloading}
+        totalPhotos={totalPhotos}
+      />
+
 
       {/* Download Progress Banner */}
-      {downloadProgress && (
-        <div className="fixed top-16 right-4 z-40 bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-80">
-          <div className="flex items-center gap-2 mb-2">
-            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-            <span className="text-sm font-medium text-gray-900">
-              Preparing Download...
-            </span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-            <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${downloadProgress.progress}%` }}
-            />
-          </div>
-          <div className="text-xs text-gray-600 space-y-1">
-            <div>Status: <span className="font-mono">{downloadProgress.status}</span></div>
-            <div>Progress: <span className="font-mono">{downloadProgress.progress}%</span></div>
-            <div>Files: <span className="font-mono">{downloadProgress.totalFiles}</span></div>
-            {downloadProgress.status === 'processing' && `Processing ${downloadProgress.totalFiles} files...`}
-            {downloadProgress.status === 'completed' && 'Download ready!'}
-          </div>
-          {/* Debug Info */}
-          <div className="mt-2 pt-2 border-t border-gray-200">
-            <div className="text-xs text-gray-500 space-y-1">
-              <div>Job ID: <span className="font-mono text-xs">{downloadJobId?.substring(0, 8)}...</span></div>
-              <div>Check console for detailed logs</div>
+      {
+        downloadProgress && (
+          <div className="fixed top-16 right-4 z-40 bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-80">
+            <div className="flex items-center gap-2 mb-2">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              <span className="text-sm font-medium text-gray-900">
+                Preparing Download...
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${downloadProgress.progress}%` }}
+              />
+            </div>
+            <div className="text-xs text-gray-600 space-y-1">
+              <div>Status: <span className="font-mono">{downloadProgress.status}</span></div>
+              <div>Progress: <span className="font-mono">{downloadProgress.progress}%</span></div>
+              <div>Files: <span className="font-mono">{downloadProgress.totalFiles}</span></div>
+              {downloadProgress.status === 'processing' && `Processing ${downloadProgress.totalFiles} files...`}
+              {downloadProgress.status === 'completed' && 'Download ready!'}
+            </div>
+            {/* Debug Info */}
+            <div className="mt-2 pt-2 border-t border-gray-200">
+              <div className="text-xs text-gray-500 space-y-1">
+                <div>Job ID: <span className="font-mono text-xs">{downloadJobId?.substring(0, 8)}...</span></div>
+                <div>Check console for detailed logs</div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Photo Gallery Section */}
-      <div className="max-w-full mx-auto px-0 pb-8">
+      <div className="max-w-full mx-auto px-4 pb-0" 
+      // style={{
+      //   backgroundColor: eventState.details?.styling_config?.theme.colors.background,
+      // }}
+      >
         {renderContent()}
       </div>
 
@@ -962,54 +955,58 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       </Dialog>
 
       {/* Floating Upload Button */}
-      {eventState.details?.default_guest_permissions?.upload && (
-        <div className="fixed bottom-20 right-6 z-30">
-          <Button
-            onClick={() => setShowUploadDialog(true)}
-            className="text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
-            style={{ backgroundColor: 'var(--color-accent, #007bff)' }}
-            title="Upload Photos"
-          >
-            <Plus className="w-6 h-6" />
-          </Button>
-        </div>
-      )}
+      {
+        eventState.details?.default_guest_permissions?.upload && (
+          <div className="fixed bottom-20 right-6 z-30">
+            <Button
+              onClick={() => setShowUploadDialog(true)}
+              className="text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
+              style={{ backgroundColor: 'var(--color-accent, #007bff)' }}
+              title="Upload Photos"
+            >
+              <Plus className="w-6 h-6" />
+            </Button>
+          </div>
+        )
+      }
 
       {/* Photo Viewer */}
-      {photoViewerOpen && selectedPhoto && (
-        <FullscreenPhotoViewer
-          selectedPhoto={{
-            ...selectedPhoto,
-            takenBy: 0, // Guest user ID
-            imageUrl: selectedPhoto.src,
-            createdAt: new Date(selectedPhoto.createdAt),
-            approval: {
-              ...selectedPhoto.approval,
-              approved_by: selectedPhoto.approval?.approved_by || undefined,
-              approved_at: selectedPhoto.approval?.approved_at ? new Date(selectedPhoto.approval.approved_at) : undefined
-            }
-          }}
-          selectedPhotoIndex={selectedPhotoIndex}
-          photos={photos.map(photo => ({
-            ...photo,
-            takenBy: 0, // Guest user ID
-            imageUrl: photo.src,
-            createdAt: new Date(photo.createdAt),
-            approval: {
-              ...photo.approval,
-              approved_by: photo.approval?.approved_by || undefined,
-              approved_at: photo.approval?.approved_at ? new Date(photo.approval.approved_at) : undefined
-            }
-          }))}
-          onClose={() => setPhotoViewerOpen(false)}
-          onPrev={() => navigatePhoto('prev')}
-          onNext={() => navigatePhoto('next')}
-          downloadPhoto={() => {
-            // console.log('Downloading photo:', selectedPhoto);
-          }}
-        />
-      )}
-    </div>
+      {
+        photoViewerOpen && selectedPhoto && (
+          <FullscreenPhotoViewer
+            selectedPhoto={{
+              ...selectedPhoto,
+              takenBy: 0, // Guest user ID
+              imageUrl: selectedPhoto.src,
+              createdAt: new Date(selectedPhoto.createdAt),
+              approval: {
+                ...selectedPhoto.approval,
+                approved_by: selectedPhoto.approval?.approved_by || undefined,
+                approved_at: selectedPhoto.approval?.approved_at ? new Date(selectedPhoto.approval.approved_at) : undefined
+              }
+            }}
+            selectedPhotoIndex={selectedPhotoIndex}
+            photos={photos.map(photo => ({
+              ...photo,
+              takenBy: 0, // Guest user ID
+              imageUrl: photo.src,
+              createdAt: new Date(photo.createdAt),
+              approval: {
+                ...photo.approval,
+                approved_by: photo.approval?.approved_by || undefined,
+                approved_at: photo.approval?.approved_at ? new Date(photo.approval.approved_at) : undefined
+              }
+            }))}
+            onClose={() => setPhotoViewerOpen(false)}
+            onPrev={() => navigatePhoto('prev')}
+            onNext={() => navigatePhoto('next')}
+            downloadPhoto={() => {
+              // console.log('Downloading photo:', selectedPhoto);
+            }}
+          />
+        )
+      }
+    </div >
   );
 }
 
