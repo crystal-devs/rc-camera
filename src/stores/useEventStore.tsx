@@ -136,6 +136,7 @@ interface EventStore {
   // Store management
   updateEventInStore: (eventId: string, updates: Partial<Event>) => void
   deleteEventFromStore: (eventId: string) => void
+  resetStore: () => void
 
   // Cache management
   clearExpiredCache: () => void
@@ -178,7 +179,7 @@ const ensurePhotowallSettings = (event: any): Event => {
 
   Object.keys(defaults).forEach(key => {
     if (currentSettings.hasOwnProperty(key)) {
-      mergedSettings[key] = currentSettings[key]
+      (mergedSettings as any)[key] = currentSettings[key]
     } else {
       needsUpdate = true
     }
@@ -556,7 +557,32 @@ const useEventStore = create<EventStore>()(
       // Loading state setters
       setLoadingEvent: (loading: boolean) => set({ isLoadingEvent: loading }),
       setLoadingAlbums: (loading: boolean) => set({ isLoadingAlbums: loading }),
-      setError: (error: string | null) => set({ error })
+      setError: (error: string | null) => set({ error }),
+      // Reset store state
+      resetStore: () => {
+        console.log('Resetting event store')
+        // Unsubscribe from any active WebSocket connections
+        const selectedEvent = get().selectedEvent;
+        if (selectedEvent && typeof window !== 'undefined') {
+          const webSocketStore = useWebSocketStore.getState();
+          if (webSocketStore.isAuthenticated && webSocketStore.isSubscribed(selectedEvent._id)) {
+            webSocketStore.unsubscribe(selectedEvent._id).catch(console.error);
+          }
+        }
+
+        set({
+          selectedEvent: null,
+          lastEventId: null,
+          userRole: null,
+          eventsCache: new Map(),
+          albumsCache: new Map(),
+          events: [],
+          currentEventAlbums: [],
+          isLoadingEvent: false,
+          isLoadingAlbums: false,
+          error: null
+        })
+      }
     }),
     {
       name: 'event-app-storage',

@@ -18,73 +18,82 @@ import {
 
 import useEventStore from '@/stores/useEventStore';
 
-// Navigation items
-const getNavItems = (selectedEventId: string | null) => {
-    const baseRoute = selectedEventId ? `/events/${selectedEventId}` : '';
-
-    return [
-        {
-            icon: <HomeIcon size={20} />,
-            label: 'Home',
-            href: `${baseRoute}`,
-            requiresEvent: true,
-        },
-        {
-            icon: <ImageIcon size={20} />,
-            label: 'Media',
-            href: `${baseRoute}/media`,
-            requiresEvent: true,
-        },
-        {
-            icon: <ImageIcon size={20} />,
-            label: 'Guests',
-            href: `${baseRoute}/guests`,
-            requiresEvent: true,
-        },
-        {
-            icon: <Settings2Icon size={20} />,
-            label: 'Event Settings',
-            href: `${baseRoute}/settings`,
-            requiresEvent: true,
-        },
-        {
-            icon: <Sparkles size={20} />,
-            label: 'AI Highlights',
-            href: `${baseRoute}/highlights`,
-            requiresEvent: true,
-        },
-        {
-            icon: <LayoutTemplate size={20} />,
-            label: 'Templates',
-            href: `/templates`,
-            requiresEvent: true,
-        },
-        {
-            icon: <ShoppingCart size={20} />,
-            label: 'Memory Shop',
-            href: `/shop`,
-            requiresEvent: true,
-        },
-        {
-            icon: <FolderOpen size={20} />,
-            label: 'All Events',
-            href: '/events',
-            requiresEvent: false,
-        },
-    ];
-};
 
 export function CustomSidebar() {
     const pathname = usePathname();
-    const { selectedEvent } = useEventStore();
+    const { selectedEvent, userRole } = useEventStore();
 
-    // Get navigation items based on selected event
-    const navItems = getNavItems(selectedEvent?._id || null);
+    // Memoized navigation items
+    const navItems = React.useMemo(() => {
+        const baseRoute = selectedEvent?._id ? `/events/${selectedEvent._id}` : '';
+        const isGuest = userRole === 'guest';
+
+        return [
+            {
+                icon: <HomeIcon size={20} />,
+                label: 'Home',
+                href: `${baseRoute}`,
+                requiresEvent: true,
+            },
+            {
+                icon: <ImageIcon size={20} />,
+                label: 'Media',
+                href: `${baseRoute}/media`,
+                requiresEvent: true,
+            },
+            // Hide Guests for guests
+            ...(!isGuest ? [{
+                icon: <UserIcon size={20} />,
+                label: 'Guests',
+                href: `${baseRoute}/guests`,
+                requiresEvent: true,
+            }] : []),
+            // Hide Settings for guests
+            ...(!isGuest ? [{
+                icon: <Settings2Icon size={20} />,
+                label: 'Event Settings',
+                href: `${baseRoute}/settings`,
+                requiresEvent: true,
+            }] : []),
+            {
+                icon: <Sparkles size={20} />,
+                label: 'AI Highlights',
+                href: `${baseRoute}/highlights`,
+                requiresEvent: true,
+            },
+            // {
+            //     icon: <LayoutTemplate size={20} />,
+            //     label: 'Templates',
+            //     href: `/templates`,
+            //     requiresEvent: true,
+            // },
+            {
+                icon: <ShoppingCart size={20} />,
+                label: 'Memory Shop',
+                href: `${baseRoute}/shop`,
+                requiresEvent: true,
+            },
+            {
+                icon: <FolderOpen size={20} />,
+                label: 'All Events',
+                href: '/events',
+                requiresEvent: false,
+            },
+        ];
+    }, [selectedEvent, userRole]);
 
     // Group items by category
     const mainItems = navItems.filter(item => !item.requiresEvent);
-    const eventItems = navItems.filter(item => item.requiresEvent && selectedEvent);
-    const disabledItems = navItems.filter(item => item.requiresEvent && !selectedEvent);
+
+    // Security check: If event is private and user is just a viewer (not creator/co-host/guest), hide event items
+    const hasAccess = React.useMemo(() => {
+        if (!selectedEvent) return false;
+        if (selectedEvent.visibility === 'private' && ['viewer', 'guest'].includes(userRole || '')) return false;
+        return true;
+    }, [selectedEvent, userRole]);
+
+    const eventItems = navItems.filter(item => item.requiresEvent && selectedEvent && hasAccess);
+    const disabledItems = navItems.filter(item => item.requiresEvent && (!selectedEvent || !hasAccess));
 
     return (
         <div className="w-60 h-full bg-sidebar flex flex-col">

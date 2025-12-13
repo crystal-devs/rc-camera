@@ -64,6 +64,16 @@ export default function EventDashboardPage() {
         }
     }, [selectedEvent]);
 
+    // Security Check: Redirect if access denied
+    React.useEffect(() => {
+        if (!isLoadingEvent && selectedEvent) {
+            // If event is private and user is only a viewer (not explicitly invited/creator), deny access
+            if (selectedEvent.visibility === 'private' && ['viewer', 'guest'].includes(userRole || '')) {
+                router.replace('/access-denied');
+            }
+        }
+    }, [selectedEvent, isLoadingEvent, userRole, router]);
+
     const handleCopyLink = async (url: string) => {
         try {
             await navigator.clipboard.writeText(url);

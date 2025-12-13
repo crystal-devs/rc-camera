@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { getEventById } from '@/services/apis/events.api';
 import { useAuthToken } from '@/hooks/use-auth';
+import useEventStore from '@/stores/useEventStore';
 
 // Participant hooks
 import {
@@ -103,6 +104,14 @@ export default function GuestManagementPage({ params }: PageProps) {
   const { eventId } = React.use(params);
   const router = useRouter();
   const authToken = useAuthToken();
+  const { userRole } = useEventStore();
+
+  useEffect(() => {
+    if (userRole === 'guest') {
+      toast.error("Access denied");
+      router.push(`/events/${eventId}/media`);
+    }
+  }, [userRole, eventId, router]);
 
   // Local state for UI
   const [event, setEvent] = useState<Event | null>(null);

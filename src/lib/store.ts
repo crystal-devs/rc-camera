@@ -26,7 +26,7 @@ export interface SubscriptionPlan {
     _id?: string;
     planId?: string;
     name: string;
-    
+
     // Pricing information
     price: number;
     currency?: string;
@@ -34,7 +34,7 @@ export interface SubscriptionPlan {
     billingCycle?: string;
     stripePriceId?: string | null;
     trialDays?: number;
-    
+
     // Plan metadata
     description?: string;
     features: string[];
@@ -45,15 +45,15 @@ export interface SubscriptionPlan {
     isDefault?: boolean;
     imageUrl?: string;
     color?: string;
-    
+
     // Timestamps
     createdAt?: string;
     updatedAt?: string;
-    
+
     // Technical identifiers
     slug?: string;
     type?: string;
-    
+
     // Detailed limits
     limits?: {
         maxEvents?: number;
@@ -73,11 +73,11 @@ export interface SubscriptionPlan {
         allowAdvancedAnalytics?: boolean;
         [key: string]: any; // Allow any other limit properties
     };
-    
+
     // Relations
     nextPlanId?: string;
     previousPlanId?: string;
-    
+
     // Additional metadata
     metadata?: Record<string, any>;
     [key: string]: any; // Allow any other properties from the API
@@ -239,7 +239,7 @@ const removeLocalStorageValue = (key: string): void => {
 export const getAuthToken = (): string | null => {
     const tokensStr = getLocalStorageValue('rc-tokens');
     if (!tokensStr) return null;
-    
+
     try {
         const tokens = JSON.parse(tokensStr);
         return tokens.accessToken || null;
@@ -566,7 +566,7 @@ export const useStore = create<SettingsState & SettingsActions>()(
                 try {
                     const token = getAuthToken();
                     const headers: HeadersInit = {};
-                    
+
                     // Add authorization header if token exists
                     if (token) {
                         headers['Authorization'] = `Bearer ${token}`;
@@ -603,8 +603,8 @@ export const useStore = create<SettingsState & SettingsActions>()(
                                 // Ensure price exists
                                 price: typeof plan.price !== 'undefined' ? plan.price : plan.amount || 0,
                                 // Ensure features is an array
-                                features: Array.isArray(plan.features) ? plan.features : 
-                                          (plan.limits && Array.isArray(plan.limits.features)) ? plan.limits.features : []
+                                features: Array.isArray(plan.features) ? plan.features :
+                                    (plan.limits && Array.isArray(plan.limits.features)) ? plan.limits.features : []
                             };
                             return enrichedPlan;
                         });
@@ -701,19 +701,47 @@ export const useStore = create<SettingsState & SettingsActions>()(
                 }
             },
 
-            logout: () => {
-                // Clear auth token and user data from localStorage
-                removeLocalStorageValue('rc-tokens');
-                removeLocalStorageValue('userData');
-                removeLocalStorageValue('event-app-storage');
-                removeLocalStorageValue('app-settings');
+            logout: async () => {
+                try {
+                    console.log('🚪 Starting complete logout sequence...');
 
-                set({
-                    isAuthenticated: false,
-                    userData: null,
-                    subscription: null,
-                    usage: null
-                });
+                    // 1. Reset event store first (state in memory)
+                    const { default: useEventStore } = await import('@/stores/useEventStore');
+                    useEventStore.getState().resetStore();
+
+                    // 2. Clear IndexedDB auth data (Critical for persistence fix)
+                    const { authManager } = await import('@/lib/auth-manager');
+                    await authManager.logout();
+
+                    // 3. Clear all localStorage keys
+                    removeLocalStorageValue('rc-tokens');
+                    removeLocalStorageValue('userData');
+                    removeLocalStorageValue('event-app-storage');
+                    removeLocalStorageValue('app-settings');
+                    localStorage.removeItem('rc-storage-sync'); // Clear sync state if any
+
+                    // 4. Reset main store state
+                    set({
+                        isAuthenticated: false,
+                        userData: null,
+                        subscription: null,
+                        usage: null
+                    });
+
+                    console.log('✅ Logout cleanup complete. Reloading...');
+
+                    // 5. Force hard reload to clear all in-memory state (React Query, Contexts, etc.)
+                    if (typeof window !== 'undefined') {
+                        // Use replace to prevent back button from returning to authenticated state
+                        window.location.replace('/login');
+                    }
+                } catch (error) {
+                    console.error('Logout cleanup failed:', error);
+                    // Force reload anyway as fallback
+                    if (typeof window !== 'undefined') {
+                        window.location.href = '/login';
+                    }
+                }
             },
 
             login: (userData: Record<string, any>) => {

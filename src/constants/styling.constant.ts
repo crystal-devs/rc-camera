@@ -848,6 +848,25 @@ export const getStylingConfig = (event: any) => {
   };
 };
 
+// Extract theme colors with fallbacks
+export const getThemeColors = (stylingConfig: any) => {
+  const colors = stylingConfig?.theme?.colors;
+  if (!colors) {
+    // Fallback colors if no styling config
+    return {
+      primary: '#D4C4A8',
+      secondary: '#F4F1ED',
+      background: '#FEFDFB',
+      surface: '#FFFFFF',
+      accent: '#B8A082',
+      text: '#3F362A',
+      textSecondary: '#6B5D4F',
+      border: '#EDE7DF',
+    };
+  }
+  return colors;
+};
+
 // Generate CSS variables safely
 export const generateEventCSS = (event: any): Record<string, string> => {
   const config = getStylingConfig(event);

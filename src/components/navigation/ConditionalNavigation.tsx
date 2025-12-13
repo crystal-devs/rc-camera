@@ -36,7 +36,8 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
     isInviteRequiredRoute ||
     isCohostInvite ||
     isWall ||
-    isPrivateAccessDeniedRoute;
+    isPrivateAccessDeniedRoute ||
+    pathname === '/access-denied';
 
   if (shouldHideNavigation) {
     return (

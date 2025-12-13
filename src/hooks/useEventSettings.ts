@@ -1,7 +1,8 @@
 // hooks/useEventSettings.ts
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { updateEvent, deleteEvent } from '@/services/apis/events.api'
 import { uploadCoverImage } from '@/services/apis/media.api'
 import useEventStore, { Event } from '@/stores/useEventStore'
@@ -161,6 +162,8 @@ export const useEventSettings = (eventId: string) => {
     deleteEventFromStore,
     invalidateEventCache
   } = useEventStore()
+
+  const queryClient = useQueryClient();
 
   // Local state
   const [authToken, setAuthToken] = useState<string>('')
@@ -350,6 +353,10 @@ export const useEventSettings = (eventId: string) => {
       // Update store cache
       updateEventInStore(eventId, submitData as any)
 
+      // Invalidate React Query cache to trigger refetches in other components
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+
       // Update local state
       setFormData(updatedFormData)
       setOriginalData(updatedFormData)
@@ -359,7 +366,7 @@ export const useEventSettings = (eventId: string) => {
         setPreviewUrl(updatedFormData.cover_image.url)
       }
 
-      toast.success("Event updated successfully!")
+      toast.success("Event settings updated successfully")
 
     } catch (error: any) {
       console.error('Error updating event:', error)
