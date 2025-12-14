@@ -3,8 +3,8 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
-import { UserData, AuthTokens, LoginCredentials, RegisterCredentials } from '@/services/apis/auth.api';
-import { authManager } from '@/lib/auth';
+import { UserData, AuthTokens, LoginCredentials, RegisterCredentials, getUserData } from '@/services/apis/auth.api';
+import { authManager } from '@/lib/auth-manager';
 
 interface AuthContextType {
   // State
@@ -36,51 +36,44 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Initialize auth state on mount
+  // Initialize auth state on mount and listen for updates
   useEffect(() => {
     checkAuth();
-  }, []);
 
-  // Listen for storage changes (multi-tab support)
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'rc-tokens' || e.key === 'userData') {
-        checkAuth();
+    const handleAuthUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      // Check if detail exists (it might be a storage event or custom event)
+      if (!customEvent.detail) return;
+
+      const { state } = customEvent.detail;
+
+      if (state && state.mode === 'authenticated') {
+        setIsAuthenticated(true);
+        const userData = getUserData();
+        setUser(userData);
+      } else {
+        setIsAuthenticated(false);
+        setUser(null);
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('rc-auth-update', handleAuthUpdate);
+    return () => window.removeEventListener('rc-auth-update', handleAuthUpdate);
   }, []);
 
   const checkAuth = useCallback(async () => {
     try {
       setIsLoading(true);
 
-      if (authManager.isAuthenticated()) {
-        const currentUser = authManager.getCurrentUser();
-        setUser(currentUser);
+      const state = await authManager.init();
+
+      if (state.mode === 'authenticated') {
+        const userData = getUserData();
+        setUser(userData);
         setIsAuthenticated(true);
       } else {
-        // Try to refresh token if expired
-        if (authManager.isTokenExpired() && authManager.getStoredTokens()) {
-          setIsRefreshing(true);
-          const newTokens = await authManager.refreshTokenIfNeeded();
-          if (newTokens) {
-            const currentUser = authManager.getCurrentUser();
-            setUser(currentUser);
-            setIsAuthenticated(true);
-          } else {
-            // Refresh failed, clear auth
-            setUser(null);
-            setIsAuthenticated(false);
-            authManager.clearAuthData();
-          }
-          setIsRefreshing(false);
-        } else {
-          setUser(null);
-          setIsAuthenticated(false);
-        }
+        setUser(null);
+        setIsAuthenticated(false);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -97,10 +90,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // Import dynamically to avoid circular dependencies
       const { loginUser } = await import('@/services/apis/auth.api');
-      const { user: userData, tokens } = await loginUser(credentials);
+      const { user: userData } = await loginUser(credentials);
 
-      // Update auth manager
-      authManager.updateTokens(tokens);
+      // authManager.loginUser is called internally by loginUser api function via authManager instance import there
+      // or we can call it explicitly if needed, but loginUser in auth.api.ts line 60 calls authManager.loginUser already.
 
       // Update state
       setUser(userData);
@@ -124,7 +117,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // Update state
       setUser(userData);
-      // Registration successful, but user needs to login to get tokens
+      // Registration successful
 
     } catch (error) {
       console.error('Registration failed:', error);
@@ -140,36 +133,43 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // Import dynamically to avoid circular dependencies
       const { logoutUser } = await import('@/services/apis/auth.api');
+
+      // Call API first (clears cookie)
       await logoutUser();
+
+      // Then clear local state manager
+      await authManager.logout();
+
+      // Redundant safety: Clear localStorage manually
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('rc-tokens');
+        localStorage.removeItem('rc-token');
+        localStorage.removeItem('userData');
+        localStorage.removeItem('event-app-storage'); // Clean up store persistence too if needed
+      }
+
+      // Sync with global store
+      try {
+        const { useStore } = await import('@/lib/store');
+        useStore.getState().logout();
+      } catch (e) {
+        console.warn('Failed to sync logout with store', e);
+      }
 
       // Clear state
       setUser(null);
       setIsAuthenticated(false);
 
-      // Clear all cached data and force page reload to prevent back button access
-      authManager.clearAuthData();
-
-      // Clear React Query cache
       if (typeof window !== 'undefined') {
-        // Clear localStorage/sessionStorage
-        localStorage.clear();
-        sessionStorage.clear();
-
-        // Set flag to prevent back button navigation
-        sessionStorage.setItem('auth_invalidated', 'true');
-
-        // Force a hard navigation to login (not router.push)
         window.location.href = '/login';
       }
 
     } catch (error) {
       console.error('Logout failed:', error);
-      // Clear state anyway
       setUser(null);
       setIsAuthenticated(false);
-      authManager.clearAuthData();
+      await authManager.logout();
 
-      // Still force redirect
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       }
@@ -185,22 +185,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (newTokens) {
         // Update state if user data changed
-        const currentUser = authManager.getCurrentUser();
-        if (currentUser) {
-          setUser(currentUser);
+        const userData = getUserData();
+        if (userData) {
+          setUser(userData);
           setIsAuthenticated(true);
         }
       } else {
-        // Refresh failed
+        // Refresh failed - ensure cleanup
         setUser(null);
         setIsAuthenticated(false);
-        authManager.clearAuthData();
+        await authManager.logout();
+
+        // Redirect if needed?
+        // Usually handled by router or intercepted requests
       }
     } catch (error) {
       console.error('Token refresh failed:', error);
       setUser(null);
       setIsAuthenticated(false);
-      authManager.clearAuthData();
+      await authManager.logout();
     } finally {
       setIsRefreshing(false);
     }

@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { authManager } from '@/lib/auth';
+import { authManager } from '@/lib/auth-manager';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -53,7 +53,15 @@ export function AuthGuard({
       }
     };
 
+    const handlePageShow = (event: PageTransitionEvent) => {
+      // If page is restored from bfcache, we must re-check auth
+      if (event.persisted) {
+        checkAuth();
+      }
+    };
+
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pageshow', handlePageShow);
     window.addEventListener('focus', handleFocus);
     window.addEventListener('popstate', handlePopState);
 

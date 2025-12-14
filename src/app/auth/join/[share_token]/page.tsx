@@ -1,7 +1,7 @@
 // // src/app/auth/join/[share_token]/page.tsx
 // import { redirect } from 'next/navigation';
 // import { getEventByShareToken, checkUserInviteStatus } from '@/lib/api';
-// import { getCurrentUser } from '@/lib/auth';
+// import { getUserData } from '@/services/apis/auth.api';
 
 // interface ShareTokenPageProps {
 //   params: {
@@ -20,7 +20,7 @@
 //       redirect('/event-not-found');
 //     }
 
-//     const currentUser = await getCurrentUser();
+//     const currentUser = getUserData();
     
 //     // Route based on event visibility
 //     switch (event.visibility) {

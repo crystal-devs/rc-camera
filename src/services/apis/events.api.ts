@@ -61,11 +61,12 @@ const mapApiEventToEvent = (apiEvent: any): Event => {
 };
 
 // Fetch all events for the authenticated user
-export const fetchEvents = async (token?: string): Promise<Event[]> => {
+export const fetchEvents = async (token?: string, signal?: AbortSignal): Promise<Event[]> => {
   try {
 
     const response = await axios.get(`${API_BASE_URL}/event`, {
       headers: setHeader(token),
+      signal, // Add cancellation support
     });
 
     console.log('Full events API response:', response.data);

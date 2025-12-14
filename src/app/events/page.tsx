@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState, useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -34,38 +34,28 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { fetchEvents } from '@/services/apis/events.api';
 import { Event } from '@/types/backend-types/event.type';
 import { toast } from "sonner";
 import EventCreateModal from '@/components/event/CreateEventModel';
+import { useEvents, useCreateEvent } from '@/hooks/useEvents';
 
 
 export default function EventsPage() {
   const router = useRouter();
-  const [events, setEvents] = useState<Event[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'date-desc' | 'date-asc' | 'name-asc' | 'name-desc'>('date-desc');
   const [filterType, setFilterType] = useState<'all' | 'active' | 'past'>('all');
   const [activeTab, setActiveTab] = useState<'grid' | 'list'>('grid');
   const [showCreateEventDialogue, setShowCreateEventDialogue] = useState(false);
 
-  useEffect(() => {
-    const loadEvents = async () => {
-      try {
-        let getAllEvents = await fetchEvents();
-        console.log("getAllEvents", getAllEvents);
-        setEvents(getAllEvents || []);
-      } catch (error) {
-        console.error('Error loading events:', error);
-        toast.error("Failed to load your events. Please try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // Use React Query for events fetching with background refetching
+  const { data: events = [], isLoading, error, refetch } = useEvents({ enableBackgroundRefetch: true });
+  const createEventMutation = useCreateEvent();
 
-    loadEvents();
-  }, [toast]);
+  // Handle errors
+  if (error) {
+    toast.error("Failed to load your events. Please try again.");
+  }
 
   // Filter and sort events
   const filteredAndSortedEvents = events
@@ -139,7 +129,8 @@ export default function EventsPage() {
             </Button>
           }
           onCreated={(created) => {
-            setEvents(prev => [created, ...prev]);
+            // The mutation will handle cache updates
+            setShowCreateEventDialogue(false);
           }}
         />
       </div>

@@ -5,6 +5,13 @@ import { csrfService } from '@/lib/csrf-service';
 import logger from '@/lib/logger';
 import { authManager } from '@/lib/auth-manager';
 
+// Create a dedicated axios instance for auth to avoid global interceptors (like in api.fetch.ts)
+// interfering with auth flow (especially 401 handling on login/refresh)
+const authAxios = axios.create();
+
+// Ensure we still support withCredentials for cookies
+authAxios.defaults.withCredentials = true;
+
 export interface UserData {
     id?: string;
     name: string;
@@ -39,7 +46,7 @@ export const loginUser = async (credentials: LoginCredentials): Promise<{ user: 
         // Get CSRF token first
         const csrfHeaders = await csrfService.getHeaders();
 
-        const { data } = await axios.post(LOGIN_ROUTE, credentials, {
+        const { data } = await authAxios.post(LOGIN_ROUTE, credentials, {
             headers: {
                 ...setHeader(undefined, "application/json", false),
                 ...csrfHeaders
@@ -54,13 +61,22 @@ export const loginUser = async (credentials: LoginCredentials): Promise<{ user: 
             const responseData = data.data || data;
             const { user, token: accessToken, refreshToken, expiresAt } = responseData;
 
+            // Handle expiresAt format (API returns ISO string, we need timestamp)
+            const expiresAtTimestamp = typeof expiresAt === 'string'
+                ? new Date(expiresAt).getTime()
+                : (typeof expiresAt === 'number' ? expiresAt : Date.now() + 3600000); // Default 1 hour if invalid
+
             // Store tokens securely via AuthManager
-            const tokens: AuthTokens = { accessToken, refreshToken, expiresAt };
+            const tokens: AuthTokens = {
+                accessToken,
+                refreshToken,
+                expiresAt: expiresAtTimestamp
+            };
 
             await authManager.loginUser({
                 accessToken,
                 refreshToken,
-                expiresAt,
+                expiresAt: expiresAtTimestamp,
                 userId: user.id
             });
 
@@ -95,7 +111,7 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
         // Get CSRF token first
         const csrfHeaders = await csrfService.getHeaders();
 
-        const { data } = await axios.post(REGISTER_ROUTE, credentials, {
+        const { data } = await authAxios.post(REGISTER_ROUTE, credentials, {
             headers: {
                 ...setHeader(undefined, "application/json", false),
                 ...csrfHeaders
@@ -110,8 +126,17 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
             const responseData = data.data || data;
             const { user, token: accessToken, refreshToken, expiresAt } = responseData;
 
+            // Handle expiresAt format (API returns ISO string, we need timestamp)
+            const expiresAtTimestamp = typeof expiresAt === 'string'
+                ? new Date(expiresAt).getTime()
+                : (typeof expiresAt === 'number' ? expiresAt : Date.now() + 3600000); // Default 1 hour if invalid
+
             // Store tokens securely
-            const tokens: AuthTokens = { accessToken, refreshToken, expiresAt };
+            const tokens: AuthTokens = {
+                accessToken,
+                refreshToken,
+                expiresAt: expiresAtTimestamp
+            };
             localStorage.setItem("rc-tokens", JSON.stringify(tokens));
 
             // Store user data
@@ -142,26 +167,42 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
 
 export const refreshAccessToken = async (): Promise<AuthTokens | null> => {
     try {
-        const storedTokens = localStorage.getItem("rc-tokens");
-        if (!storedTokens) return null;
-
-        const tokens: AuthTokens = JSON.parse(storedTokens);
-        if (!tokens.refreshToken) return null;
-
-        const { data } = await axios.post(REFRESH_TOKEN_ROUTE, {
-            refreshToken: tokens.refreshToken
+        // Send request with credentials (cookies) and current access token
+        // Some APIs require the old access token for refresh validation
+        const { data } = await authAxios.post(REFRESH_TOKEN_ROUTE, {}, {
+            withCredentials: true,
+            headers: {
+                'Authorization': `jwt ${localStorage.getItem('rc-token') || ''}`
+            }
         });
 
-        if (data.status === true && data.data) {
+        if (data.status === true && data.token) {
+            // API might return ISO string, ensure we have a number
+            const apiExpiresAt = data.expiresAt || data.expires_at; // Handle potential casing diffs
+            const expiresAtTimestamp = typeof apiExpiresAt === 'string'
+                ? new Date(apiExpiresAt).getTime()
+                : (typeof apiExpiresAt === 'number' ? apiExpiresAt : Date.now() + 15 * 60 * 1000);
+
             const newTokens: AuthTokens = {
-                accessToken: data.data.token,
-                refreshToken: data.data.refreshToken || tokens.refreshToken,
-                expiresAt: data.data.expiresAt
+                accessToken: data.token,
+                refreshToken: '', // Opaque/Hidden in cookie
+                expiresAt: expiresAtTimestamp
             };
 
-            // Update stored tokens
-            localStorage.setItem("rc-tokens", JSON.stringify(newTokens));
+            // Update stored access token only
             localStorage.setItem("rc-token", newTokens.accessToken);
+
+            // We can still update rc-tokens but without the refresh token if other parts rely on it
+            // Or better, migrate away from rc-tokens
+            const existingTokensStr = localStorage.getItem("rc-tokens");
+            if (existingTokensStr) {
+                const existing = JSON.parse(existingTokensStr);
+                localStorage.setItem("rc-tokens", JSON.stringify({
+                    ...existing,
+                    accessToken: newTokens.accessToken,
+                    expiresAt: newTokens.expiresAt
+                }));
+            }
 
             return newTokens;
         }
@@ -175,15 +216,10 @@ export const refreshAccessToken = async (): Promise<AuthTokens | null> => {
 
 export const logoutUser = async (): Promise<void> => {
     try {
-        const storedTokens = localStorage.getItem("rc-tokens");
-        if (storedTokens) {
-            const tokens: AuthTokens = JSON.parse(storedTokens);
-            await axios.post(LOGOUT_ROUTE, {
-                refreshToken: tokens.refreshToken
-            }, {
-                headers: setHeader()
-            });
-        }
+        await authAxios.post(LOGOUT_ROUTE, {}, {
+            headers: setHeader(),
+            withCredentials: true // Send cookies
+        });
     } catch (err) {
         logger.error("Logout error", err);
     } finally {
@@ -192,7 +228,14 @@ export const logoutUser = async (): Promise<void> => {
         localStorage.removeItem("rc-token");
         localStorage.removeItem("userData");
         sessionStorage.removeItem("csrf-token");
-        csrfService.clearToken();
+        try {
+            csrfService.clearToken();
+        } catch (e) {
+            // Ignore error if csrfService fail
+        }
+
+        // Use authManager to fully cleanup if needed
+        // authManager.clearState(); // This calls storage cleanup
     }
 }
 
@@ -204,7 +247,7 @@ export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: U
     try {
         const csrfHeaders = await csrfService.getHeaders();
 
-        const { data } = await axios.post(`${GOOGLE_OAUTH_ROUTE}/callback`, {
+        const { data } = await authAxios.post(`${GOOGLE_OAUTH_ROUTE}/callback`, {
             code,
             redirectUri: window.location.origin + '/auth/callback'
         }, {
@@ -217,12 +260,20 @@ export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: U
         if (data.status === true && data.data) {
             const { user, token: accessToken, refreshToken, expiresAt } = data.data;
 
-            const tokens: AuthTokens = { accessToken, refreshToken, expiresAt };
+            const expiresAtTimestamp = typeof expiresAt === 'string'
+                ? new Date(expiresAt).getTime()
+                : (typeof expiresAt === 'number' ? expiresAt : Date.now() + 3600000); // Default 1 hour if invalid
+
+            const tokens: AuthTokens = {
+                accessToken,
+                refreshToken,
+                expiresAt: expiresAtTimestamp
+            };
 
             await authManager.loginUser({
                 accessToken,
                 refreshToken,
-                expiresAt,
+                expiresAt: expiresAtTimestamp,
                 userId: user.id
             });
 
@@ -273,7 +324,7 @@ export const logout = () => {
 
 export const verifyUser = async (router?: any) => {
     try {
-        await axios.get(VERIFY_USER_ROUTE, {
+        await authAxios.get(VERIFY_USER_ROUTE, {
             headers: setHeader()
         })
         return true
@@ -285,7 +336,7 @@ export const verifyUser = async (router?: any) => {
 
 export const verifyUserAndIfNotThenRedirectToLogin = async (router: any) => {
     try {
-        await axios.get(VERIFY_USER_ROUTE, {
+        await authAxios.get(VERIFY_USER_ROUTE, {
             headers: setHeader()
         })
         return true
@@ -312,6 +363,6 @@ export const initializeCsrf = async () => {
         await csrfService.getToken();
         logger.info('CSRF initialized');
     } catch (error) {
-        logger.warn('CSRF initialization failed', error);
+        logger.warn('CSRF initialization failed', { error });
     }
 };

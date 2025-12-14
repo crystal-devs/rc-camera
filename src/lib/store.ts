@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { API_BASE_URL } from './api-config';
+import { apiClient } from './api-client';
+import { API_ROUTES } from './api-routes';
 
 export interface UserData {
     id?: string;
@@ -26,7 +28,7 @@ export interface SubscriptionPlan {
     _id?: string;
     planId?: string;
     name: string;
-    
+
     // Pricing information
     price: number;
     currency?: string;
@@ -34,7 +36,7 @@ export interface SubscriptionPlan {
     billingCycle?: string;
     stripePriceId?: string | null;
     trialDays?: number;
-    
+
     // Plan metadata
     description?: string;
     features: string[];
@@ -45,15 +47,15 @@ export interface SubscriptionPlan {
     isDefault?: boolean;
     imageUrl?: string;
     color?: string;
-    
+
     // Timestamps
     createdAt?: string;
     updatedAt?: string;
-    
+
     // Technical identifiers
     slug?: string;
     type?: string;
-    
+
     // Detailed limits
     limits?: {
         maxEvents?: number;
@@ -73,11 +75,11 @@ export interface SubscriptionPlan {
         allowAdvancedAnalytics?: boolean;
         [key: string]: any; // Allow any other limit properties
     };
-    
+
     // Relations
     nextPlanId?: string;
     previousPlanId?: string;
-    
+
     // Additional metadata
     metadata?: Record<string, any>;
     [key: string]: any; // Allow any other properties from the API
@@ -239,7 +241,7 @@ const removeLocalStorageValue = (key: string): void => {
 export const getAuthToken = (): string | null => {
     const tokensStr = getLocalStorageValue('rc-tokens');
     if (!tokensStr) return null;
-    
+
     try {
         const tokens = JSON.parse(tokensStr);
         return tokens.accessToken || null;
@@ -311,32 +313,19 @@ export const useStore = create<SettingsState & SettingsActions>()(
                 const state = get();
                 if (!state.isAuthenticated) return;
 
-                const token = getAuthToken();
-                if (!token) {
-                    console.error('No auth token available');
-                    return;
-                }
-
                 set({ isLoadingUserData: true });
                 try {
-                    const response = await fetch(`${API_BASE_URL}/user/profile`, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        }
-                    });
+                    // Use apiClient which handles Authorization header automatically
+                    const response = await apiClient.get<UserData>(API_ROUTES.USERS.PROFILE);
 
-                    if (response.ok) {
-                        const userData = await response.json();
-                        console.log('Raw user data response:', JSON.stringify(userData, null, 2));
+                    if (response.status === 200 && response.data.status) {
+                        const userData = response.data.data; // generic wrapper usually puts actual data in .data
+                        console.log('User data fetched:', userData);
 
-                        // Handle nested response structure
-                        const finalUserData = userData.data || userData;
-                        set({ userData: finalUserData });
-
-                        // Update localStorage
-                        setLocalStorageValue('userData', JSON.stringify(finalUserData));
+                        set({ userData });
+                        setLocalStorageValue('userData', JSON.stringify(userData));
                     } else {
-                        console.error('Failed to fetch user data:', response.status, response.statusText);
+                        console.error('Failed to fetch user data:', response.data.message);
                     }
                 } catch (error) {
                     console.error('Error fetching user data:', error);
@@ -353,92 +342,52 @@ export const useStore = create<SettingsState & SettingsActions>()(
                     return;
                 }
 
-                const token = getAuthToken();
-                if (!token) {
-                    console.error('fetchSubscription: No auth token available');
-                    set({ subscription: null });
-                    return;
-                }
-
                 set({ isLoadingSubscription: true });
-                const endpoint = `${API_BASE_URL}/user/subscription`;
+                // Note: API_ROUTES.USERS.SUBSCRIPTION is '/user/subscription'
+                const endpoint = API_ROUTES.USERS.SUBSCRIPTION;
 
                 try {
-                    console.log('%c fetchSubscription: Endpoint', 'background: #3f51b5; color: white; padding: 2px 5px;', endpoint);
-                    console.log('%c fetchSubscription: Token', 'background: #3f51b5; color: white; padding: 2px 5px;', token ? 'Present (length: ' + token.length + ')' : 'MISSING!');
+                    const response = await apiClient.get<any>(endpoint);
 
-                    const response = await fetch(endpoint, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        }
-                    });
+                    if (response.status === 200) {
+                        const responseData = response.data;
 
-                    console.log(
-                        '%c fetchSubscription: Response status',
-                        `background: ${response.ok ? '#4caf50' : '#f44336'}; color: white; padding: 2px 5px;`,
-                        response.status, response.statusText
-                    );
-
-                    if (response.ok) {
-                        const responseText = await response.text();
-                        console.log('%c fetchSubscription: Raw response TEXT', 'background: #ff9800; color: white; padding: 2px 5px;');
-                        console.log(responseText);
-
-                        if (responseText) {
-                            try {
-                                const responseData = JSON.parse(responseText);
-                                console.log('%c fetchSubscription: Parsed response data', 'background: #2196f3; color: white; padding: 2px 5px;', responseData);
-
-                                // Handle nested structure
-                                let subscription = null;
-                                if (responseData.status === true && responseData.data && typeof responseData.data === 'object') {
-                                    subscription = responseData.data;
-                                    console.log('%c fetchSubscription: Using nested data property', 'background: #673ab7; color: white; padding: 2px 5px;', subscription);
-                                } else {
-                                    subscription = responseData;
-                                    console.log('%c fetchSubscription: Using direct response', 'background: #673ab7; color: white; padding: 2px 5px;', subscription);
-                                }
-
-                                // Validate subscription object
-                                if (subscription && (subscription.id || subscription._id)) {
-                                    // Ensure backward compatibility with MongoDB _id field
-                                    if (subscription._id && !subscription.id) {
-                                        subscription.id = subscription._id;
-                                    }
-
-                                    // Ensure limits object exists
-                                    if (!subscription.limits) {
-                                        console.warn('fetchSubscription: Subscription missing limits object, adding default');
-                                        subscription.limits = {
-                                            maxEvents: 3,
-                                            maxPhotosPerEvent: 50,
-                                            maxStorage: 100,
-                                            maxPhotoSize: 5,
-                                            features: []
-                                        };
-                                    }
-
-                                    console.log('%c fetchSubscription: Final subscription data to be stored', 'background: #4caf50; color: white; padding: 2px 5px;');
-                                    console.log(JSON.stringify(subscription, null, 2));
-                                    set({ subscription });
-                                } else {
-                                    console.warn('%c fetchSubscription: Invalid subscription data format from API', 'background: #f44336; color: white; padding: 2px 5px;');
-                                    set({ subscription: null });
-                                }
-                            } catch (parseError) {
-                                console.error('fetchSubscription: Failed to parse response as JSON:', parseError);
-                                set({ subscription: null });
-                            }
+                        // Handle nested structure
+                        let subscription = null;
+                        if (responseData.status === true && responseData.data && typeof responseData.data === 'object') {
+                            subscription = responseData.data;
                         } else {
-                            console.warn('fetchSubscription: Empty response');
+                            subscription = responseData;
+                        }
+
+                        // Validate subscription object
+                        if (subscription && (subscription.id || subscription._id)) {
+                            // Ensure backward compatibility with MongoDB _id field
+                            if (subscription._id && !subscription.id) {
+                                subscription.id = subscription._id;
+                            }
+
+                            // Ensure limits object exists
+                            if (!subscription.limits) {
+                                subscription.limits = {
+                                    maxEvents: 3,
+                                    maxPhotosPerEvent: 50,
+                                    maxStorage: 100,
+                                    maxPhotoSize: 5,
+                                    features: []
+                                };
+                            }
+
+                            set({ subscription });
+                        } else {
                             set({ subscription: null });
                         }
                     } else {
-                        console.warn('%c fetchSubscription: Failed to fetch subscription', 'background: #f44336; color: white; padding: 2px 5px;', response.status, response.statusText);
+                        console.warn('Failed to fetch subscription', response.status);
                         set({ subscription: null });
                     }
                 } catch (error) {
-                    console.error('%c fetchSubscription: Error in fetch operation', 'background: #d32f2f; color: white; padding: 2px 5px;', error);
+                    console.error('Error fetching subscription:', error);
                     set({ subscription: null });
                 } finally {
                     set({ isLoadingSubscription: false });
@@ -453,106 +402,64 @@ export const useStore = create<SettingsState & SettingsActions>()(
                     return;
                 }
 
-                const token = getAuthToken();
-                if (!token) {
-                    console.error('fetchUsage: No auth token available');
-                    set({ usage: null });
-                    return;
-                }
-
                 set({ isLoadingUsage: true });
-                const endpoint = `${API_BASE_URL}/user/usage`;
+                const endpoint = '/user/usage'; // Manually defined as it is missing in API_ROUTES for now
 
                 try {
-                    console.log('%c fetchUsage: Endpoint', 'background: #3f51b5; color: white; padding: 2px 5px;', endpoint);
-                    console.log('%c fetchUsage: Token', 'background: #3f51b5; color: white; padding: 2px 5px;', token ? 'Present (length: ' + token.length + ')' : 'MISSING!');
+                    const response = await apiClient.get<any>(endpoint);
 
-                    const response = await fetch(endpoint, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        }
-                    });
+                    if (response.status === 200) {
+                        const responseData = response.data;
 
-                    console.log(
-                        '%c fetchUsage: Response status',
-                        `background: ${response.ok ? '#4caf50' : '#f44336'}; color: white; padding: 2px 5px;`,
-                        response.status, response.statusText
-                    );
-
-                    if (response.ok) {
-                        const responseText = await response.text();
-                        console.log('%c fetchUsage: Raw response TEXT', 'background: #ff9800; color: white; padding: 2px 5px;');
-                        console.log(responseText);
-
-                        if (responseText) {
-                            try {
-                                const responseData = JSON.parse(responseText);
-                                console.log('%c fetchUsage: Parsed response data', 'background: #2196f3; color: white; padding: 2px 5px;', responseData);
-
-                                // Handle nested structure
-                                let usage = null;
-                                if (responseData.status === true && responseData.data && typeof responseData.data === 'object') {
-                                    usage = responseData.data;
-                                    console.log('%c fetchUsage: Using nested data property', 'background: #673ab7; color: white; padding: 2px 5px;', usage);
-                                } else {
-                                    usage = responseData;
-                                    console.log('%c fetchUsage: Using direct response', 'background: #673ab7; color: white; padding: 2px 5px;', usage);
-                                }
-
-                                // Validate usage object
-                                if (usage && (usage.userId || usage._id)) {
-                                    // Handle MongoDB _id if it exists
-                                    if (usage._id && !usage.userId) {
-                                        usage.userId = usage._id;
-                                    }
-
-                                    // Ensure metrics and totals objects exist
-                                    if (!usage.metrics) {
-                                        console.warn('fetchUsage: Usage missing metrics object, adding default');
-                                        usage.metrics = {
-                                            photosUploaded: 0,
-                                            storageUsed: 0,
-                                            eventsCreated: 0,
-                                            activeEvents: []
-                                        };
-                                    }
-
-                                    if (!usage.totals) {
-                                        console.warn('fetchUsage: Usage missing totals object, adding default');
-                                        usage.totals = {
-                                            photos: 0,
-                                            storage: 0,
-                                            events: 0
-                                        };
-                                    }
-
-                                    // Ensure storage is always a number
-                                    if (typeof usage.totals.storage !== 'number') {
-                                        console.warn('fetchUsage: Converting storage to number:', usage.totals.storage);
-                                        usage.totals.storage = parseFloat(usage.totals.storage) || 0;
-                                    }
-
-                                    console.log('%c fetchUsage: Final usage data to be stored', 'background: #4caf50; color: white; padding: 2px 5px;');
-                                    console.log(JSON.stringify(usage, null, 2));
-                                    set({ usage });
-                                } else {
-                                    console.warn('%c fetchUsage: Invalid usage data format from API', 'background: #f44336; color: white; padding: 2px 5px;');
-                                    set({ usage: null });
-                                }
-                            } catch (parseError) {
-                                console.error('fetchUsage: Failed to parse response as JSON:', parseError);
-                                set({ usage: null });
-                            }
+                        // Handle nested structure
+                        let usage = null;
+                        if (responseData.status === true && responseData.data && typeof responseData.data === 'object') {
+                            usage = responseData.data;
                         } else {
-                            console.warn('fetchUsage: Empty response');
+                            usage = responseData;
+                        }
+
+                        // Validate usage object
+                        if (usage && (usage.userId || usage._id)) {
+                            // Handle MongoDB _id if it exists
+                            if (usage._id && !usage.userId) {
+                                usage.userId = usage._id;
+                            }
+
+                            // Ensure metrics and totals objects exist
+                            if (!usage.metrics) {
+                                usage.metrics = {
+                                    photosUploaded: 0,
+                                    storageUsed: 0,
+                                    eventsCreated: 0,
+                                    activeEvents: []
+                                };
+                            }
+
+                            if (!usage.totals) {
+                                usage.totals = {
+                                    photos: 0,
+                                    storage: 0,
+                                    events: 0
+                                };
+                            }
+
+                            // Ensure storage is always a number
+                            if (typeof usage.totals.storage !== 'number') {
+                                usage.totals.storage = parseFloat(usage.totals.storage) || 0;
+                            }
+
+                            set({ usage });
+                        } else {
+                            // console.warn('fetchUsage: Invalid usage data format from API');
                             set({ usage: null });
                         }
                     } else {
-                        console.warn('%c fetchUsage: Failed to fetch usage data', 'background: #f44336; color: white; padding: 2px 5px;', response.status, response.statusText);
+                        // console.warn('Failed to fetch usage data', response.status);
                         set({ usage: null });
                     }
                 } catch (error) {
-                    console.error('%c fetchUsage: Error in fetch operation', 'background: #d32f2f; color: white; padding: 2px 5px;', error);
+                    console.error('Error in fetchUsage:', error);
                     set({ usage: null });
                 } finally {
                     set({ isLoadingUsage: false });
@@ -562,26 +469,12 @@ export const useStore = create<SettingsState & SettingsActions>()(
             fetchAvailablePlans: async () => {
                 set({ isLoadingPlans: true });
 
-                const url = `${API_BASE_URL}/user/subscription/plans`;
+                const url = '/user/subscription/plans';
                 try {
-                    const token = getAuthToken();
-                    const headers: HeadersInit = {};
-                    
-                    // Add authorization header if token exists
-                    if (token) {
-                        headers['Authorization'] = `Bearer ${token}`;
-                    }
+                    const response = await apiClient.get<any>(url);
 
-                    // Make the API request
-                    const response = await fetch(url, { headers });
-
-                    if (response.ok) {
-                        // Get the response text
-                        const responseText = await response.text();
-
-                        // Parse the response
-                        const responseData = JSON.parse(responseText);
-                        // Extract plans from the response based on different possible structures
+                    if (response.status === 200) {
+                        const responseData = response.data;
                         let plans;
 
                         // Handle {status: true, data: ...} pattern
@@ -589,6 +482,10 @@ export const useStore = create<SettingsState & SettingsActions>()(
                             plans = responseData.data;
                         } else {
                             plans = responseData;
+                        }
+
+                        if (!Array.isArray(plans)) {
+                            plans = [];
                         }
 
                         // Process the plans to keep all properties but ensure consistent ID field
@@ -603,8 +500,8 @@ export const useStore = create<SettingsState & SettingsActions>()(
                                 // Ensure price exists
                                 price: typeof plan.price !== 'undefined' ? plan.price : plan.amount || 0,
                                 // Ensure features is an array
-                                features: Array.isArray(plan.features) ? plan.features : 
-                                          (plan.limits && Array.isArray(plan.limits.features)) ? plan.limits.features : []
+                                features: Array.isArray(plan.features) ? plan.features :
+                                    (plan.limits && Array.isArray(plan.limits.features)) ? plan.limits.features : []
                             };
                             return enrichedPlan;
                         });
@@ -621,7 +518,7 @@ export const useStore = create<SettingsState & SettingsActions>()(
                         console.log(`Successfully processed ${sortedPlans.length} subscription plans`);
                         set({ availablePlans: sortedPlans });
                     } else {
-                        console.warn('Failed to fetch subscription plans:', response.status, response.statusText);
+                        console.warn('Failed to fetch subscription plans:', response.status);
                         set({ availablePlans: [] });
                     }
                 } catch (error) {
@@ -638,28 +535,15 @@ export const useStore = create<SettingsState & SettingsActions>()(
                     throw new Error('Must be authenticated to upgrade subscription');
                 }
 
-                const token = getAuthToken();
-                if (!token) {
-                    throw new Error('No auth token available');
-                }
-
                 set({ isUpgradingSubscription: true });
                 try {
-                    const response = await fetch(`${API_BASE_URL}/user/subscription/upgrade`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({ planId })
-                    });
+                    const response = await apiClient.post<any>('/user/subscription/upgrade', { planId });
 
-                    const responseData = await response.json();
-                    console.log('Upgrade subscription response:', responseData);
+                    if (response.status === 200) {
+                        const responseData = response.data;
 
-                    if (response.ok) {
                         // Refresh subscription data after successful upgrade
-                        get().fetchSubscription();
+                        await get().fetchSubscription();
 
                         const success = responseData.status !== false;
                         let message = 'Subscription upgraded successfully';
@@ -671,31 +555,29 @@ export const useStore = create<SettingsState & SettingsActions>()(
                             message = responseData.data.message;
                         }
 
-                        if (responseData.data && responseData.data.redirectUrl) {
-                            redirectUrl = responseData.data.redirectUrl;
-                        } else if (responseData.redirectUrl) {
-                            redirectUrl = responseData.redirectUrl;
+                        if (responseData.data && (responseData.data as any).redirectUrl) {
+                            redirectUrl = (responseData.data as any).redirectUrl;
+                        } else if ((responseData as any).redirectUrl) {
+                            redirectUrl = (responseData as any).redirectUrl;
+                        } else if (responseData.data && typeof responseData.data === 'string' && responseData.data.includes('http')) {
+                            // Fallback if data is just the url
+                            redirectUrl = responseData.data;
                         }
 
                         console.log('Processed upgrade result:', { success, message, redirectUrl });
                         return { success, message, redirectUrl };
                     } else {
+                        // Extract error message
+                        const responseData = response.data;
                         let errorMsg = 'Failed to upgrade subscription';
-
-                        if (responseData.message) {
-                            errorMsg = responseData.message;
-                        } else if (responseData.data && responseData.data.message) {
-                            errorMsg = responseData.data.message;
-                        } else if (typeof responseData === 'string') {
-                            errorMsg = responseData;
-                        }
-
-                        console.error('Upgrade error:', errorMsg);
+                        if (responseData && responseData.message) errorMsg = responseData.message;
                         throw new Error(errorMsg);
                     }
-                } catch (error) {
+                } catch (error: any) {
                     console.error('Error upgrading subscription:', error);
-                    throw error;
+                    // Try to get message from error response
+                    const errMsg = error.response?.data?.message || error.message || 'Upgrade failed';
+                    throw new Error(errMsg);
                 } finally {
                     set({ isUpgradingSubscription: false });
                 }
@@ -747,19 +629,8 @@ export const useStore = create<SettingsState & SettingsActions>()(
                 if (state) {
                     state.setHydrated(true);
 
-                    // Check if we have auth data in localStorage after rehydration
-                    const authToken = getAuthToken(); // Uses rc-tokens.accessToken
-                    const userData = getUserDataFromStorage();
-
-                    if (authToken && userData) {
-                        // Update auth state if we have valid data
-                        state.setAuthenticated(true);
-                        state.setUserData(userData);
-                    } else {
-                        // Clear auth state if data is missing
-                        state.setAuthenticated(false);
-                        state.setUserData(null);
-                    }
+                    // We DO NOT auto-authenticate here anymore. 
+                    // AuthContext is the single source of truth and will initialize the store via authManager.
                 }
             },
             partialize: (state) => ({

@@ -76,7 +76,7 @@ export class AuthManager {
                             userTokens = {
                                 accessToken: oldTokens.accessToken,
                                 refreshToken: oldTokens.refreshToken,
-                                expiresAt: oldTokens.expiresAt,
+                                expiresAt: typeof oldTokens.expiresAt === 'string' ? new Date(oldTokens.expiresAt).getTime() : Number(oldTokens.expiresAt) || Date.now() + 3600000,
                                 userId: oldTokens.userId || 'unknown'
                             };
                         }
@@ -85,11 +85,12 @@ export class AuthManager {
                             // Decode JWT to get expiry and userId
                             try {
                                 const payload = JSON.parse(atob(oldToken.split('.')[1]));
+                                const exp = Number(payload.exp) || 0;
                                 userTokens = {
                                     accessToken: oldToken,
                                     refreshToken: '', // Will need to refresh
-                                    expiresAt: (payload.exp * 1000) || (Date.now() + 3600000), // 1 hour
-                                    userId: payload.userId || payload.user_id || payload.id || 'unknown'
+                                    expiresAt: exp > 0 ? exp * 1000 : Date.now() + 3600000, // 1 hour
+                                    userId: payload.userId || payload.user_id || payload.id || payload.sub || 'unknown'
                                 };
                             } catch (e) {
                                 logger.warn('Could not decode old token, using default expiry');
@@ -118,19 +119,54 @@ export class AuthManager {
             }
 
             // STEP 3: Use migrated or existing tokens
-            if (userTokens && !this.isTokenExpired(userTokens.expiresAt)) {
-                this.currentState = {
-                    mode: 'authenticated',
-                    userId: userTokens.userId,
-                    accessToken: userTokens.accessToken,
-                    expiresAt: userTokens.expiresAt
-                };
+            if (userTokens) {
+                if (!this.isTokenExpired(userTokens.expiresAt)) {
+                    // Try to extract userId from token if not stored
+                    let userId = userTokens.userId;
+                    if (!userId || userId === 'unknown') {
+                        try {
+                            const payload = JSON.parse(atob(userTokens.accessToken.split('.')[1]));
+                            userId = payload.userId || payload.user_id || payload.id || payload.sub || payload.user?.id || 'unknown';
+                        } catch (e) {
+                            logger.warn('Could not extract userId from stored token');
+                        }
+                    }
 
-                logger.info('Authenticated user session restored', { userId: userTokens.userId });
-                logger.authEvent('login', userTokens.userId);
-                this.startAutoRefresh();
-                this.isInitialized = true;
-                return this.currentState;
+                    this.currentState = {
+                        mode: 'authenticated',
+                        userId,
+                        accessToken: userTokens.accessToken,
+                        expiresAt: userTokens.expiresAt
+                    };
+
+                    logger.info('Authenticated user session restored', { userId });
+                    logger.authEvent('login', userId);
+                    this.startAutoRefresh();
+                    this.isInitialized = true;
+                    return this.currentState;
+                } else {
+                    // Token expired - try to refresh using Cookie
+                    try {
+                        logger.info('Stored token expired, attempting silent refresh via cookie');
+                        // Import dynamically to avoid circular dependency
+                        const { refreshAccessToken } = await import('@/services/apis/auth.api');
+                        const newTokens = await refreshAccessToken();
+
+                        if (newTokens) {
+                            await this.loginUser({
+                                ...newTokens,
+                                userId: userTokens.userId,
+                                refreshToken: '' // Cookie managed
+                            });
+                            logger.info('Silent refresh on init successful');
+                            this.isInitialized = true;
+                            return this.currentState;
+                        }
+                    } catch (refreshError) {
+                        logger.warn('Silent refresh on init failed', { error: refreshError });
+                        // Fall through to guest/none check
+                    }
+                }
             }
 
             // STEP 4: Check for guest session
@@ -353,8 +389,10 @@ export class AuthManager {
         const refreshAt = timeUntilExpiry * 0.8;
 
         logger.debug('Scheduling token refresh', {
-            refreshIn: Math.round(refreshAt / 1000) + 's',
-            expiresIn: Math.round(timeUntilExpiry / 1000) + 's'
+            refreshInSeconds: Math.round(refreshAt / 1000),
+            expiresInSeconds: Math.round(timeUntilExpiry / 1000),
+            expiresAtDate: new Date(expiresAt).toISOString(),
+            nowDate: new Date().toISOString()
         });
 
         this.refreshTimer = setTimeout(async () => {
@@ -380,20 +418,59 @@ export class AuthManager {
     /**
      * Refresh access token
      */
-    private async refreshToken(): Promise<void> {
-        const tokens = await secureStorage.get('user_tokens');
-        if (!tokens?.refreshToken) {
-            throw new Error('No refresh token available');
+    /**
+     * Refresh access token
+     */
+    /**
+     * Refresh access token (Public wrapper)
+     */
+    async refreshTokenIfNeeded(): Promise<UserTokens | null> {
+        // Simple public wrapper for now, can add more logic if needed
+        try {
+            await this.refreshToken();
+            // Return tokens from state
+            if (this.currentState.mode === 'authenticated' && this.currentState.accessToken) {
+                return {
+                    accessToken: this.currentState.accessToken,
+                    refreshToken: '', // Cookie
+                    expiresAt: this.currentState.expiresAt || 0,
+                    userId: this.currentState.userId || ''
+                };
+            }
+            return null;
+        } catch (e) {
+            return null;
         }
+    }
 
+    /**
+     * Internal refresh logic
+     */
+    private async refreshToken(): Promise<void> {
+        // We no longer rely on stored refresh token, as it's in HttpOnly cookie
         logger.debug('Refreshing access token');
 
         // Import dynamically to avoid circular dependency
         const { refreshAccessToken } = await import('@/services/apis/auth.api');
+
+        // This will use the HttpOnly cookie
         const newTokens = await refreshAccessToken();
 
         if (newTokens) {
-            await this.loginUser(newTokens as any);
+            // Try to extract userId from the new access token
+            let userId = this.currentState.userId || 'unknown';
+            try {
+                const payload = JSON.parse(atob(newTokens.accessToken.split('.')[1]));
+                userId = payload.userId || payload.user_id || payload.id || payload.sub || userId;
+            } catch (e) {
+                logger.warn('Could not extract userId from refreshed token');
+            }
+
+            await this.loginUser({
+                ...newTokens,
+                userId,
+                refreshToken: newTokens.refreshToken || ''
+            });
             logger.authEvent('refresh');
         } else {
             throw new Error('Token refresh failed');

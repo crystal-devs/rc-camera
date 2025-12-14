@@ -1,5 +1,5 @@
 import axios, { AxiosHeaders, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
-import { authManager } from '@/lib/auth'
+import { authManager } from '@/lib/auth-manager'
 import logger from '@/lib/logger'
 
 //- rcaxiosconfig is the custom config according to our needs, in future we can add more of this fields
@@ -95,7 +95,7 @@ axios.interceptors.response.use(
         } else {
           logger.warn('Token refresh failed, redirecting to login');
           // Refresh failed, redirect to login
-          authManager.clearAuthData();
+          authManager.logout();
           if (typeof window !== 'undefined') {
             window.location.href = '/login';
           }
@@ -105,7 +105,7 @@ axios.interceptors.response.use(
         logger.error('Token refresh error', refreshError);
         // Refresh failed, redirect to login
         processQueue(refreshError, null);
-        authManager.clearAuthData();
+        authManager.logout();
         if (typeof window !== 'undefined') {
           window.location.href = '/login';
         }
@@ -133,7 +133,7 @@ export const setHeader = (
 ): AuthHeader => {
   try {
     // Use provided token or get from auth manager
-    const authToken = token || authManager.getAccessToken() || "";
+    const authToken = token || authManager.getAuthToken() || "";
 
     const headers: AuthHeader = {
       authorization: `jwt ${authToken}`,

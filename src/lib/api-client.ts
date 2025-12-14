@@ -61,23 +61,44 @@ class ApiClient {
     return authManager.getAuthToken();
   }
 
+  private refreshPromise: Promise<boolean> | null = null;
+
   private async tryRefreshToken(): Promise<boolean> {
-    try {
-      const storedTokens = localStorage.getItem('rc-tokens');
-      if (!storedTokens) return false;
-
-      const tokens = JSON.parse(storedTokens);
-      if (!tokens.refreshToken) return false;
-
-      // Import refresh function dynamically to avoid circular imports
-      const { refreshAccessToken } = await import('@/services/apis/auth.api');
-      const newTokens = await refreshAccessToken();
-
-      return !!newTokens;
-    } catch (error) {
-      console.error('Token refresh failed:', error);
-      return false;
+    if (this.refreshPromise) {
+      return this.refreshPromise;
     }
+
+    this.refreshPromise = (async () => {
+      try {
+        // Import refresh function dynamically
+        const { refreshAccessToken } = await import('@/services/apis/auth.api');
+
+        // Attempt refresh using HttpOnly cookie (no inputs needed)
+        const newTokens = await refreshAccessToken();
+
+        if (newTokens && newTokens.accessToken) {
+          // Critical: Update authManager state so it has the new access token
+          // Otherwise getAuthToken() returns the old one and the retry fails
+          const userId = authManager.getUserId() || 'unknown';
+          await authManager.loginUser({
+            accessToken: newTokens.accessToken,
+            refreshToken: newTokens.refreshToken || '',
+            expiresAt: newTokens.expiresAt,
+            userId: userId
+          });
+          return true;
+        }
+
+        return false;
+      } catch (error) {
+        console.error('Token refresh failed:', error);
+        return false;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   private handleUnauthorized() {

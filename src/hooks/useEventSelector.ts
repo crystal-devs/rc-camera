@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState, useEffect } from 'react';
 import { fetchEvents } from '@/services/apis/events.api';
 import useEventStore from '@/stores/useEventStore';
 import { useAuthToken } from '@/hooks/use-auth';
+import { queryKeys } from '@/lib/queryKeys';
 import type { Event as StoreEvent } from '@/stores/useEventStore';
 import type { Event } from '@/types/backend-types/event.type';
 
@@ -35,15 +36,15 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
   // Get auth token from AuthManager (Reactive)
   const authToken = useAuthToken();
 
-  // React Query for server state management
+  // React Query for server state management - use the same key as useEvents hook
   const {
     data: events,
     isLoading: isLoadingEvents,
     error: eventsError,
     refetch: refetchEvents
   } = useQuery<Event[]>({
-    queryKey: ['events', authToken],
-    queryFn: () => fetchEvents(authToken || ''),
+    queryKey: queryKeys.eventsList(),
+    queryFn: ({ signal }) => fetchEvents(authToken || '', signal),
     enabled: !!authToken,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
@@ -53,7 +54,11 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
         return false;
       }
       return failureCount < 2;
-    }
+    },
+    meta: {
+      // Add cancellation support
+      cancelOnUnmount: true,
+    },
   });
 
   // Debounced search (300ms)
@@ -108,6 +113,21 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
 
     initializeSelection();
   }, [events, enableAutoSelect, hasInitialized, selectedEvent, pathname, lastEventId, setSelectedEvent]);
+
+  // Sync selected event with updated events list
+  useEffect(() => {
+    if (!selectedEvent || !events || events.length === 0) return;
+
+    const updatedSelectedEvent = events.find((e: Event) => e._id === selectedEvent._id);
+    if (updatedSelectedEvent && (
+      updatedSelectedEvent.title !== selectedEvent.title ||
+      updatedSelectedEvent.description !== selectedEvent.description ||
+      updatedSelectedEvent.start_date !== selectedEvent.start_date
+    )) {
+      console.log('Syncing selected event with updated data:', updatedSelectedEvent.title);
+      setSelectedEvent(updatedSelectedEvent as unknown as StoreEvent, selectedEvent.user_role);
+    }
+  }, [events, selectedEvent, setSelectedEvent]);
 
   // Event selection handler
   const selectEvent = useCallback((event: any) => {
