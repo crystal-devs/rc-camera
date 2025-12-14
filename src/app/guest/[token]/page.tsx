@@ -23,6 +23,7 @@ import { NotificationBanner } from '@/components/guest/NotificationBanner';
 import { useGuestClaim } from '@/hooks/useGuestClaim';
 import { Event } from '@/types/events';
 import { createGuestBulkDownload, getDownloadStatus, downloadZipFile } from '@/services/apis/bulk-download.api';
+import { getStylingConfig, getThemeColors } from '@/constants/styling.constant';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,6 +65,20 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     access: null,
     roomStats: {}
   });
+
+  // Styling configuration
+  const stylingConfig = useMemo(() => {
+    if (!eventState.details) return null;
+    try {
+      return getStylingConfig(eventState.details);
+    } catch (error) {
+      console.warn('Error getting styling config:', error);
+      return null;
+    }
+  }, [eventState.details]);
+
+  // Extract theme colors from styling config
+  const themeColors = useMemo(() => getThemeColors(stylingConfig), [stylingConfig]);
 
   // UI states
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
@@ -735,7 +750,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   if (!shareToken) {
     notFound();
   }
-console.log(eventState, 'eventStateeventState')
+  console.log(eventState, 'eventStateeventState')
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
       {/* Notification Banner for buffered changes */}
@@ -832,10 +847,10 @@ console.log(eventState, 'eventStateeventState')
       }
 
       {/* Photo Gallery Section */}
-      <div className="max-w-full mx-auto px-4 pb-0" 
-      // style={{
-      //   backgroundColor: eventState.details?.styling_config?.theme.colors.background,
-      // }}
+      <div className="max-w-full mx-auto px-4 pb-0"
+        style={{
+          backgroundColor: themeColors.background,
+        }}
       >
         {renderContent()}
       </div>

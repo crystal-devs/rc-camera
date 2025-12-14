@@ -5,6 +5,7 @@ import {
   generateEventCSS,
   getStylingConfig,
   getTemplateConfig,
+  getThemeColors,
 } from '@/constants/styling.constant';
 
 interface EnhancedDynamicEventCoverProps {
@@ -73,23 +74,7 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
   }, [eventDetails]);
 
   // Extract theme colors from styling config
-  const themeColors = useMemo(() => {
-    const colors = stylingConfig?.theme?.colors;
-    if (!colors) {
-      // Fallback colors if no styling config
-      return {
-        primary: '#D4C4A8',
-        secondary: '#F4F1ED',
-        background: '#FEFDFB',
-        surface: '#FFFFFF',
-        accent: '#B8A082',
-        text: '#3F362A',
-        textSecondary: '#6B5D4F',
-        border: '#EDE7DF',
-      };
-    }
-    return colors;
-  }, [stylingConfig]);
+  const themeColors = useMemo(() => getThemeColors(stylingConfig), [stylingConfig]);
 
   // Extract font configuration
   const fontConfig = useMemo(() => {
@@ -466,8 +451,8 @@ export const DynamicEventCover: React.FC<EnhancedDynamicEventCoverProps> = ({
     <div className={`relative overflow-hidden ${className}`}>
       <div className="absolute inset-0" style={getBackgroundStyle} />
       {template.hasImage && <div className="absolute inset-0" style={{ ...getOverlayStyle, zIndex: 5 }} />}
-      {(template.overlay || template.special) && (
-        <BorderOverlay type={template.overlay || template.special} />
+      {((template as any).overlay || (template as any).special) && (
+        <BorderOverlay type={(template as any).overlay || (template as any).special} />
       )}
       {children}
     </div>

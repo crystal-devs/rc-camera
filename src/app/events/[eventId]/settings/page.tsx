@@ -1,7 +1,7 @@
 // app/events/[eventId]/settings/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Save } from 'lucide-react';
 
@@ -19,11 +19,21 @@ import { PermissionsTab } from '@/components/event-settings/PermissionsTab';
 import { useEventSettings } from '@/hooks/useEventSettings';
 import { PhotoWallTab } from '@/components/event-settings/PhotoWallTab';
 import { DesignTab } from '@/components/event-settings/DesignTab';
+import useEventStore from '@/stores/useEventStore';
+import { toast } from 'sonner';
 
 const EventSettingsPage = () => {
   const params = useParams();
   const { eventId } = params;
   const router = useRouter();
+  const { userRole } = useEventStore();
+
+  useEffect(() => {
+    if (userRole === 'guest') {
+      toast.error("Access denied");
+      router.push(`/events/${eventId}/media`);
+    }
+  }, [userRole, eventId, router]);
 
   // Local state
   const [activeTab, setActiveTab] = useState('basics');
