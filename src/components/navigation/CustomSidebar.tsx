@@ -76,15 +76,24 @@ const getNavItems = (selectedEventId: string | null) => {
 
 export function CustomSidebar() {
     const pathname = usePathname();
-    const { selectedEvent } = useEventStore();
+    const { selectedEvent, userRole } = useEventStore();
 
     // Get navigation items based on selected event
     const navItems = getNavItems(selectedEvent?._id || null);
 
+    // Filter out restricted items for non-admin users
+    const allowedRoles = ['creator', 'co_host'];
+    const filteredNavItems = navItems.filter(item => {
+        if (item.label === 'Guests' || item.label === 'Event Settings') {
+            return allowedRoles.includes(userRole || '');
+        }
+        return true;
+    });
+
     // Group items by category
-    const mainItems = navItems.filter(item => !item.requiresEvent);
-    const eventItems = navItems.filter(item => item.requiresEvent && selectedEvent);
-    const disabledItems = navItems.filter(item => item.requiresEvent && !selectedEvent);
+    const mainItems = filteredNavItems.filter(item => !item.requiresEvent);
+    const eventItems = filteredNavItems.filter(item => item.requiresEvent && selectedEvent);
+    const disabledItems = filteredNavItems.filter(item => item.requiresEvent && !selectedEvent);
 
     return (
         <div className="w-60 h-full bg-sidebar flex flex-col">

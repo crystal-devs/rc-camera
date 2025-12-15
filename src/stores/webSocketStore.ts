@@ -377,6 +377,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
 
                         newSocket.on('subscription_error', (data: SubscriptionError | string) => {
                             const eventId = typeof data === 'string' ? data : data.eventId;
+                            const errorMessage = typeof data === 'string' ? data : data.message || 'Unknown error';
                             Logger.error(`Subscription failed: ${eventId}`, data);
 
                             const newPending = new Set(get().pendingSubscriptions);
@@ -390,8 +391,21 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                                 failedSubscriptions: newFailed
                             });
 
-                            // Trigger retry logic
-                            get().retrySubscription(eventId, (data as any)?.shareToken);
+                            // Only retry for recoverable errors
+                            const isRecoverableError = !errorMessage.toLowerCase().includes('not found') &&
+                                                      !errorMessage.toLowerCase().includes('unauthorized') &&
+                                                      !errorMessage.toLowerCase().includes('forbidden');
+
+                            if (isRecoverableError) {
+                                // Trigger retry logic for recoverable errors
+                                get().retrySubscription(eventId, (data as any)?.shareToken);
+                            } else {
+                                Logger.warn(`Not retrying subscription for ${eventId}: ${errorMessage}`);
+                                // Reset retry count for non-recoverable errors
+                                const newRetryCounts = new Map(get().retryCounts);
+                                newRetryCounts.delete(eventId);
+                                set({ retryCounts: newRetryCounts });
+                            }
                         });
 
                         // Sync complete handler
@@ -479,12 +493,22 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
             },
 
             retrySubscription: async (eventId: string, shareToken?: string) => {
-                const { retryCounts, subscribe } = get();
+                const { retryCounts, subscribe, isConnected, isAuthenticated, socket } = get();
                 const currentRetries = retryCounts.get(eventId) || 0;
                 const MAX_RETRIES = 3;
 
+                // Don't retry if connection is not ready
+                if (!socket || !isConnected || !isAuthenticated) {
+                    Logger.warn(`Skipping retry for ${eventId}: WebSocket not ready`);
+                    return;
+                }
+
                 if (currentRetries >= MAX_RETRIES) {
-                    console.error(`❌ Max retries reached for subscription: ${eventId}`);
+                    Logger.error(`❌ Max retries reached for subscription: ${eventId}`);
+                    // Reset retry count after max attempts to allow future retries if conditions change
+                    const newRetryCounts = new Map(retryCounts);
+                    newRetryCounts.delete(eventId);
+                    set({ retryCounts: newRetryCounts });
                     return;
                 }
 
@@ -497,7 +521,17 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                 set({ retryCounts: newRetryCounts });
 
                 setTimeout(() => {
-                    subscribe(eventId, shareToken);
+                    // Double-check connection before retrying
+                    const currentState = get();
+                    if (currentState.isConnected && currentState.isAuthenticated) {
+                        subscribe(eventId, shareToken);
+                    } else {
+                        Logger.warn(`Skipping retry for ${eventId}: Connection lost during delay`);
+                        // Reset retry count if connection is lost
+                        const resetCounts = new Map(currentState.retryCounts);
+                        resetCounts.delete(eventId);
+                        set({ retryCounts: resetCounts });
+                    }
                 }, delay);
             },
 
@@ -509,6 +543,12 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
 
                 if (!socket || !socket.connected || !isAuthenticated) {
                     throw new Error('WebSocket not ready for subscriptions');
+                }
+
+                // Validate eventId
+                if (!eventId || typeof eventId !== 'string' || eventId.trim().length === 0) {
+                    Logger.error(`Invalid eventId for subscription: ${eventId}`);
+                    throw new Error('Invalid event ID');
                 }
 
                 if (subscriptions.has(eventId)) {

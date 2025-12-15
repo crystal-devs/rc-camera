@@ -29,9 +29,11 @@ const EventSettingsPage = () => {
   const { userRole } = useEventStore();
 
   useEffect(() => {
-    if (userRole === 'guest') {
-      toast.error("Access denied");
-      router.push(`/events/${eventId}/media`);
+    // Only creators and co-hosts can access settings
+    const allowedRoles = ['creator', 'co_host'];
+    if (!allowedRoles.includes(userRole || '')) {
+      toast.error("Access denied. Only event creators and co-hosts can access settings.");
+      router.push(`/events/${eventId}`);
     }
   }, [userRole, eventId, router]);
 

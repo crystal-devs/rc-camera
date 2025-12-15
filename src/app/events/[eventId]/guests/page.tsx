@@ -85,6 +85,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from "sonner";
+import useEventStore from '@/stores/useEventStore';
 
 // Types
 import { Event } from '@/types/events';
@@ -103,6 +104,16 @@ export default function GuestManagementPage({ params }: PageProps) {
   const { eventId } = React.use(params);
   const router = useRouter();
   const authToken = useAuthToken();
+  const { userRole } = useEventStore();
+
+  // Access control - only creators and co-hosts can manage guests
+  React.useEffect(() => {
+    const allowedRoles = ['creator', 'co_host'];
+    if (!allowedRoles.includes(userRole || '')) {
+      toast.error("Access denied. Only event creators and co-hosts can manage participants.");
+      router.push(`/events/${eventId}`);
+    }
+  }, [userRole, eventId, router]);
 
   // Local state for UI
   const [event, setEvent] = useState<Event | null>(null);

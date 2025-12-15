@@ -30,6 +30,7 @@ import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryKeys';
 import { bulkDeleteMedia, bulkUpdateMediaStatus } from '@/services/apis/media.api';
 import { useAuthToken } from '@/hooks/use-auth';
+import useEventStore from '@/stores/useEventStore';
 
 interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
   shareToken?: string;
@@ -48,7 +49,11 @@ export default function OptimizedPhotoGallery({
   },
   approvalMode = 'auto'
 }: OptimizedPhotoGalleryProps) {
-  // State management
+  // Get user role from event store to determine if user is a guest
+  const { selectedEvent } = useEventStore();
+  const userRole = selectedEvent?.user_role || 'participant';
+  const isGuest = userRole !== 'creator' && userRole !== 'co_host';
+  // State management - force approved tab for guests
   const [activeTab, setActiveTab] = useState<'approved' | 'pending' | 'rejected' | 'hidden'>('approved');
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
@@ -67,7 +72,8 @@ export default function OptimizedPhotoGallery({
   const webSocket = useEventWebSocket(eventId, { userType: 'admin' });
   const gridQuality = 'small';
 
-  // Data fetching hooks with thumbnail quality for grid
+  // Data fetching hooks with thumbnail quality for grid - force approved for guests
+  const mediaStatus = isGuest ? 'approved' : activeTab;
   const {
     photos: infinitePhotos = [],
     isLoading: infiniteLoading,
@@ -77,7 +83,7 @@ export default function OptimizedPhotoGallery({
     error: infiniteError,
     refetch: refetchInfinite
   } = useInfiniteEventMediaFlat(eventId, {
-    status: activeTab,
+    status: mediaStatus,
     limit: 20,
     quality: gridQuality,
     enabled: true
@@ -412,10 +418,17 @@ export default function OptimizedPhotoGallery({
     );
   });
 
-  // Memoized computed values
+  // Memoized computed values - restrict permissions for guests
+  const effectivePermissions = useMemo(() => ({
+    upload: isGuest ? false : userPermissions.upload,
+    download: userPermissions.download,
+    moderate: isGuest ? false : userPermissions.moderate,
+    delete: isGuest ? false : userPermissions.delete
+  }), [isGuest, userPermissions]);
+
   const canUserUpload = useMemo(() =>
-    canUpload && userPermissions.upload,
-    [canUpload, userPermissions.upload]
+    canUpload && effectivePermissions.upload,
+    [canUpload, effectivePermissions.upload]
   );
 
   const displayCounts = useMemo(() =>
@@ -725,10 +738,13 @@ export default function OptimizedPhotoGallery({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 no-scrollbar max-w-[calc(100vw-120px)] sm:max-w-none">
             {[
-              { id: 'approved', label: 'Published', count: displayCounts.approved },
-              { id: 'pending', label: 'Pending', count: displayCounts.pending },
-              { id: 'rejected', label: 'Rejected', count: displayCounts.rejected },
-              { id: 'hidden', label: 'Hidden', count: displayCounts.hidden },
+              // Hide other tabs for guests
+              ...(isGuest ? [] : [
+                { id: 'approved', label: 'Published', count: displayCounts.approved },
+                { id: 'pending', label: 'Pending', count: displayCounts.pending },
+                { id: 'rejected', label: 'Rejected', count: displayCounts.rejected },
+                { id: 'hidden', label: 'Hidden', count: displayCounts.hidden },
+              ])
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -931,7 +947,7 @@ export default function OptimizedPhotoGallery({
           <OptimizedPhotoGrid
             photos={photos}
             onPhotoClick={openPhotoViewer}
-            userPermissions={userPermissions}
+            userPermissions={effectivePermissions}
             currentTab={activeTab}
             onStatusUpdate={handleStatusUpdate}
             onDownload={handleDownload}
@@ -941,8 +957,8 @@ export default function OptimizedPhotoGallery({
             onToggleSelection={togglePhotoSelection}
           />
 
-          {/* Floating Bulk Action Bar */}
-          {selectedPhotos.size > 0 && (
+          {/* Floating Bulk Action Bar - Hide for guests */}
+          {selectedPhotos.size > 0 && !isGuest && (
             <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 w-[90%] max-w-2xl bg-background/80 backdrop-blur-md border shadow-lg rounded-full px-6 py-3 flex items-center justify-between animate-in slide-in-from-bottom-10 fade-in duration-300">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
@@ -1046,7 +1062,7 @@ export default function OptimizedPhotoGallery({
               selectedPhoto={selectedPhoto as any}
               selectedPhotoIndex={selectedPhotoIndex}
               photos={photos as any}
-              userPermissions={userPermissions}
+              userPermissions={effectivePermissions}
               onClose={closePhotoViewer}
               onPrev={() => navigatePhoto('prev')}
               onNext={() => navigatePhoto('next')}
