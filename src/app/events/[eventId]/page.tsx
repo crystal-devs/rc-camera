@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import useEventStore from '@/stores/useEventStore';
 import { useStore } from '@/lib/store';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 export default function EventDashboardPage() {
     const params = useParams();
@@ -40,14 +41,15 @@ export default function EventDashboardPage() {
         userRole
     } = useEventStore();
 
+    const { getAccessToken } = useSecureAuth();
     const [authToken, setAuthToken] = React.useState('');
     const [wallUrl, setWallUrl] = React.useState('');
 
     // Initialize auth token
     React.useEffect(() => {
-        const token = localStorage.getItem('rc-token') || '';
+        const token = getAccessToken() || '';
         setAuthToken(token);
-    }, []);
+    }, [getAccessToken]);
 
     // Fetch event data
     React.useEffect(() => {

@@ -3,7 +3,7 @@ import { LOGIN_ROUTE, REGISTER_ROUTE, REFRESH_TOKEN_ROUTE, LOGOUT_ROUTE, VERIFY_
 import { setHeader } from "../common/api.fetch";
 import { csrfService } from '@/lib/csrf-service';
 import logger from '@/lib/logger';
-import { authManager } from '@/lib/auth-manager';
+import { getInternalAccessToken } from '@/contexts/SecureAuthContext';
 
 // Create a dedicated axios instance for auth to avoid global interceptors (like in api.fetch.ts)
 // interfering with auth flow (especially 401 handling on login/refresh)
@@ -30,15 +30,17 @@ export interface AuthTokens {
 
 export interface LoginCredentials {
     email: string;
-    password: string;
+    password?: string; // Optional for social login
     provider?: "google" | "email";
+    googleAccessToken?: string; // For Google OAuth verification
 }
 
 export interface RegisterCredentials {
     name: string;
     email: string;
-    password: string;
+    password?: string; // Optional for social login
     provider?: "google" | "email";
+    googleAccessToken?: string; // For Google OAuth verification
 }
 
 export const loginUser = async (credentials: LoginCredentials): Promise<{ user: UserData; tokens: AuthTokens }> => {
@@ -66,21 +68,14 @@ export const loginUser = async (credentials: LoginCredentials): Promise<{ user: 
                 ? new Date(expiresAt).getTime()
                 : (typeof expiresAt === 'number' ? expiresAt : Date.now() + 3600000); // Default 1 hour if invalid
 
-            // Store tokens securely via AuthManager
+            // Return tokens to SecureAuthContext (in-memory storage)
             const tokens: AuthTokens = {
                 accessToken,
                 refreshToken,
                 expiresAt: expiresAtTimestamp
             };
 
-            await authManager.loginUser({
-                accessToken,
-                refreshToken,
-                expiresAt: expiresAtTimestamp,
-                userId: user.id
-            });
-
-            // Store user data
+            // Prepare user data (non-sensitive, can be in localStorage)
             const userDataToStore: UserData = {
                 id: user.id,
                 name: user.name,
@@ -88,7 +83,6 @@ export const loginUser = async (credentials: LoginCredentials): Promise<{ user: 
                 avatar: user.avatar,
                 provider: (user.provider || 'email') as "google" | "email"
             };
-            localStorage.setItem("userData", JSON.stringify(userDataToStore));
 
             // Refresh CSRF token after successful login
             await csrfService.refreshToken();
@@ -131,15 +125,14 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
                 ? new Date(expiresAt).getTime()
                 : (typeof expiresAt === 'number' ? expiresAt : Date.now() + 3600000); // Default 1 hour if invalid
 
-            // Store tokens securely
+            // Return tokens to SecureAuthContext (in-memory storage)
             const tokens: AuthTokens = {
                 accessToken,
                 refreshToken,
                 expiresAt: expiresAtTimestamp
             };
-            localStorage.setItem("rc-tokens", JSON.stringify(tokens));
 
-            // Store user data
+            // Prepare user data (non-sensitive, can be in localStorage)
             const userDataToStore: UserData = {
                 id: user.id,
                 name: user.name,
@@ -147,7 +140,6 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
                 avatar: user.avatar,
                 provider: (user.provider || 'email') as "google" | "email"
             };
-            localStorage.setItem("userData", JSON.stringify(userDataToStore));
 
             // Refresh CSRF token after successful registration
             await csrfService.refreshToken();
@@ -172,7 +164,7 @@ export const refreshAccessToken = async (): Promise<AuthTokens | null> => {
         const { data } = await authAxios.post(REFRESH_TOKEN_ROUTE, {}, {
             withCredentials: true,
             headers: {
-                'Authorization': `jwt ${localStorage.getItem('rc-token') || ''}`
+                'Authorization': `jwt ${getInternalAccessToken() || ''}`
             }
         });
 
@@ -189,21 +181,8 @@ export const refreshAccessToken = async (): Promise<AuthTokens | null> => {
                 expiresAt: expiresAtTimestamp
             };
 
-            // Update stored access token only
-            localStorage.setItem("rc-token", newTokens.accessToken);
-
-            // We can still update rc-tokens but without the refresh token if other parts rely on it
-            // Or better, migrate away from rc-tokens
-            const existingTokensStr = localStorage.getItem("rc-tokens");
-            if (existingTokensStr) {
-                const existing = JSON.parse(existingTokensStr);
-                localStorage.setItem("rc-tokens", JSON.stringify({
-                    ...existing,
-                    accessToken: newTokens.accessToken,
-                    expiresAt: newTokens.expiresAt
-                }));
-            }
-
+            // Return tokens to SecureAuthContext (in-memory storage)
+            // NO localStorage storage for tokens
             return newTokens;
         }
 
@@ -223,19 +202,30 @@ export const logoutUser = async (): Promise<void> => {
     } catch (err) {
         logger.error("Logout error", err);
     } finally {
-        // Clear all stored auth data
+        // Clear all stored auth data - explicit cleanup
         localStorage.removeItem("rc-tokens");
         localStorage.removeItem("rc-token");
         localStorage.removeItem("userData");
-        sessionStorage.removeItem("csrf-token");
+        localStorage.removeItem("redirectAfterLogin"); // Clear persistence
+
+        // Mark logout as active to prevent immediate silent refresh on redirect
+        // This is critical to break the loop where valid cookies restore the session immediately
+        localStorage.setItem('logout_complete', 'true');
+
+        sessionStorage.clear();
+
         try {
             csrfService.clearToken();
-        } catch (e) {
-            // Ignore error if csrfService fail
-        }
+        } catch (e) { /* ignore */ }
 
-        // Use authManager to fully cleanup if needed
-        // authManager.clearState(); // This calls storage cleanup
+        // Critical: Use authManager to execute the hard reset and broadcast events
+        // This triggers the Providers to clear React Query and Stores
+        try {
+            const { authManager } = await import('@/lib/auth-manager');
+            await authManager.logout();
+        } catch (e) {
+            console.error('Failed to trigger authManager logout', e);
+        }
     }
 }
 
@@ -264,19 +254,14 @@ export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: U
                 ? new Date(expiresAt).getTime()
                 : (typeof expiresAt === 'number' ? expiresAt : Date.now() + 3600000); // Default 1 hour if invalid
 
+            // Return tokens to SecureAuthContext (in-memory storage)
             const tokens: AuthTokens = {
                 accessToken,
                 refreshToken,
                 expiresAt: expiresAtTimestamp
             };
 
-            await authManager.loginUser({
-                accessToken,
-                refreshToken,
-                expiresAt: expiresAtTimestamp,
-                userId: user.id
-            });
-
+            // Prepare user data (non-sensitive, can be in localStorage)
             const userDataToStore: UserData = {
                 id: user.id,
                 name: user.name,
@@ -284,7 +269,6 @@ export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: U
                 avatar: user.avatar,
                 provider: 'google'
             };
-            localStorage.setItem("userData", JSON.stringify(userDataToStore));
 
             await csrfService.refreshToken();
             logger.info('Google OAuth successful', { userId: user.id });
@@ -301,49 +285,52 @@ export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: U
 
 export const getUserData = (): UserData | null => {
     try {
-        const userDataString = localStorage.getItem("userData");
-        if (!userDataString) return null;
+        // Get user data from localStorage (non-sensitive data)
+        const userDataStr = localStorage.getItem('userData');
+        if (!userDataStr) return null;
 
-        const userData = JSON.parse(userDataString);
-        return {
-            id: userData.id,
-            name: userData.name || 'User',
-            email: userData.email || '',
-            avatar: userData.avatar || userData.profile_pic,
-            provider: userData.provider || 'google'
-        };
+        const userData = JSON.parse(userDataStr);
+        return userData;
     } catch (error) {
-        logger.error("Error retrieving user data", error);
+        logger.error('Error getting user data', error);
         return null;
     }
-}
+};
 
 export const logout = () => {
     logoutUser().catch(err => logger.error("Logout error", err));
 }
 
-export const verifyUser = async (router?: any) => {
+export const verifyUser = async (): Promise<{ status: boolean; user?: UserData }> => {
     try {
-        await authAxios.get(VERIFY_USER_ROUTE, {
-            headers: setHeader()
-        })
-        return true
+        const { data } = await authAxios.get(VERIFY_USER_ROUTE, {
+            headers: {
+                ...setHeader(),
+                'Authorization': `jwt ${getInternalAccessToken() || ''}`
+            }
+        });
+
+        if (data.status === true && data.user) {
+            return { status: true, user: data.user };
+        }
+        return { status: false };
     } catch (error) {
         logger.error('Verify user error', error);
-        return false
+        return { status: false };
     }
 }
 
 export const verifyUserAndIfNotThenRedirectToLogin = async (router: any) => {
     try {
-        await authAxios.get(VERIFY_USER_ROUTE, {
-            headers: setHeader()
-        })
-        return true
+        const result = await verifyUser();
+        if (result.status) return true;
+
+        router.push('/login');
+        return false;
     } catch (error) {
-        logger.error('Verify user error', error);
-        router.push('/login')
-        return false
+        logger.error('Verify user complex error', error);
+        router.push('/login');
+        return false;
     }
 };
 

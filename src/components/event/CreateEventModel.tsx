@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from "react-hook-form";
 import { toast } from 'sonner';
 import { z } from "zod";
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 type TEvent = {
   title: string;
@@ -38,6 +39,7 @@ type EventCreateModalProps = {
 
 const EventCreateModal = ({ open, onOpenChange, trigger, onCreated }: EventCreateModalProps) => {
   const router = useRouter();
+  const { getAccessToken } = useSecureAuth();
   const isControlled = typeof open === 'boolean';
   const [internalOpen, setInternalOpen] = useState(false);
   const modalOpen = isControlled ? open! : internalOpen;
@@ -60,7 +62,7 @@ const EventCreateModal = ({ open, onOpenChange, trigger, onCreated }: EventCreat
   const [authToken, setAuthToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('rc-token');
+    const storedToken = getAccessToken();
     if (storedToken) {
       setAuthToken(storedToken);
     } else {
@@ -70,7 +72,7 @@ const EventCreateModal = ({ open, onOpenChange, trigger, onCreated }: EventCreat
     // Set default start date to today
     const today = new Date();
     form.setValue('start_date', today);
-  }, [router]);
+  }, [router, getAccessToken]);
 
   const eventTemplates = [
     { value: 'wedding', label: 'Wedding' },

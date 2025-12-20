@@ -2,6 +2,7 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { buildApiUrl } from './api-routes';
 import { authManager } from './auth-manager';
+import logger from './logger';
 
 export interface ApiResponse<T = any> {
   status: boolean;
@@ -70,28 +71,26 @@ class ApiClient {
 
     this.refreshPromise = (async () => {
       try {
-        // Import refresh function dynamically
-        const { refreshAccessToken } = await import('@/services/apis/auth.api');
+        logger.debug('ApiClient: Token expired, attempting refresh via API');
 
-        // Attempt refresh using HttpOnly cookie (no inputs needed)
+        // Import refresh function dynamically to avoid circular dependencies
+        const { refreshAccessToken } = await import('@/services/apis/auth.api');
         const newTokens = await refreshAccessToken();
 
         if (newTokens && newTokens.accessToken) {
-          // Critical: Update authManager state so it has the new access token
-          // Otherwise getAuthToken() returns the old one and the retry fails
-          const userId = authManager.getUserId() || 'unknown';
+          // Update authManager state for consistency
           await authManager.loginUser({
             accessToken: newTokens.accessToken,
             refreshToken: newTokens.refreshToken || '',
             expiresAt: newTokens.expiresAt,
-            userId: userId
+            userId: 'unknown' // Will be updated by context if needed
           });
           return true;
         }
 
         return false;
       } catch (error) {
-        console.error('Token refresh failed:', error);
+        logger.error('ApiClient: Token refresh failed', error);
         return false;
       } finally {
         this.refreshPromise = null;

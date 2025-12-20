@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getTokenInfo } from '@/services/apis/sharing.api';
+import { useToken } from '@/hooks/useToken';
 
 /* ------------------------------------------------------------------ */
 /* ---------- TYPES ------------------------------------------------- */
@@ -45,6 +46,7 @@ interface TokenResponse {
 export default function JoinPage() {
   const router = useRouter();
   const { token } = useParams<{ token: string }>();
+  const authToken = useToken(); // Call hook at component level
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -202,7 +204,6 @@ export default function JoinPage() {
       // Debug auth token storage
       if (typeof window !== 'undefined') {
         console.log('🔍 Debugging auth token storage:');
-        const authToken = localStorage.getItem('rc-token');
         const accessToken = localStorage.getItem('accessToken');
         const user = localStorage.getItem('user');
 
@@ -216,7 +217,7 @@ export default function JoinPage() {
 
       validateToken();
     }
-  }, [token]);
+  }, [token, authToken]);
 
   /* ---------------------------------------------------------------- */
   /* ---------- RENDER STATES --------------------------------------- */

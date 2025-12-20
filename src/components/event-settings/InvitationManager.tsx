@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { sendInvitations, getInvitations, InvitationResponse } from '@/services/apis/events.api';
 import { useStore } from '@/lib/store';
+import { useToken } from '@/hooks/useToken';
 
 interface InvitationManagerProps {
   eventId: string;
@@ -36,7 +37,7 @@ export const InvitationManager: React.FC<InvitationManagerProps> = ({
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const authToken = useStore(state => state.userData ? localStorage.getItem('rc-token') : null);
+  const authToken = useStore(state => state.userData ? useToken() : null);
 
   // Load existing invitations when component becomes visible
   useEffect(() => {

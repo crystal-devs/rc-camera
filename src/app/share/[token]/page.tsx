@@ -10,6 +10,7 @@ import { Loader2, Lock, LogIn, AlertTriangle } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { getShareTokenInfo } from '@/services/apis/sharing.api';
 import { toast } from 'sonner';
+import { useToken } from '@/hooks/useToken';
 
 interface ShareTokenResponse {
   status: boolean;
@@ -57,7 +58,7 @@ export default function ShareTokenPage() {
       setError(null);
 
       // Get auth token if user is authenticated
-      const authToken = isAuthenticated ? localStorage.getItem('rc-token') : null;
+      const authToken = isAuthenticated ? useToken() : null;
 
       const response = await getShareTokenInfo(token, authToken);
       setTokenData(response);

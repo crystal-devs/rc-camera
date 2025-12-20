@@ -40,10 +40,7 @@ export function PermissionGuard({
     const isSinglePermission = !Array.isArray(requires);
 
     // Single permission check
-    const singleCheck = usePermissionCheck(
-        isSinglePermission ? requires : PermissionAction.VIEW_EVENT,
-        { loadingFallback: false }
-    );
+    const singleCheck = isSinglePermission ? usePermissionCheck(requires, { loadingFallback: false }) : null;
 
     // Multiple permissions check
     const multiCheck = useMultiplePermissions(
@@ -51,7 +48,7 @@ export function PermissionGuard({
         logic
     );
 
-    const { allowed, isLoading } = isSinglePermission ? singleCheck : multiCheck;
+    const { allowed, isLoading } = isSinglePermission ? singleCheck! : multiCheck;
 
     // Loading state
     if (isLoading) {

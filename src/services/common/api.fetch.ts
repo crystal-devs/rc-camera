@@ -1,15 +1,26 @@
-import axios, { AxiosHeaders, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
-import { authManager } from '@/lib/auth-manager'
-import logger from '@/lib/logger'
+/**
+ * Centralized API Configuration with Secure Token Management
+ * 
+ * This file configures axios with:
+ * - Automatic token injection from in-memory storage
+ * - Automatic token refresh on 401 errors
+ * - Request queuing during refresh
+ * - CSRF protection
+ */
 
-//- rcaxiosconfig is the custom config according to our needs, in future we can add more of this fields
+import axios, { AxiosHeaders, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import { getInternalAccessToken } from '@/contexts/SecureAuthContext';
+import logger from '@/lib/logger';
+
+// ============================================================================
+// Types
+// ============================================================================
+
 interface RcAxiosConfig extends AxiosRequestConfig {
-  skidErrorHandling?: boolean,
-  cacheDuration?: boolean,
+  skipErrorHandling?: boolean;
+  cacheDuration?: boolean;
 }
 
-
-// you can change this naming and also move to types folder if you want, i prefer putting this here tho.
 export type ServiceResponse<T> = {
   status: boolean;
   code: number;
@@ -17,27 +28,19 @@ export type ServiceResponse<T> = {
   data: T | null;
   other?: any;
   error: { message: string; stack?: string } | null;
-  stack?: any,
-}
-
-export const apiFetch = async <T = any>(config: RcAxiosConfig): Promise<ServiceResponse<T>> => {
-  try {
-    const { data } = await axios(config)
-    if (data.errors || !data) return Promise.reject(data.errors || 'nothing found')
-    return Promise.resolve(data)
-  } catch (error) {
-    logger.error('API fetch error', error)
-    return Promise.reject(error)
-  }
-}
+  stack?: any;
+};
 
 export type AuthHeader = {
   authorization: string;
   'Content-Type': string;
   'x-csrf-token'?: string;
-}
+};
 
-// Request queue for handling concurrent requests during token refresh
+// ============================================================================
+// Token Refresh Queue
+// ============================================================================
+
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (token: string) => void;
@@ -52,73 +55,75 @@ const processQueue = (error: any, token: string | null = null) => {
       resolve(token!);
     }
   });
-
   failedQueue = [];
 };
 
-// Axios response interceptor for automatic token refresh
+// ============================================================================
+// Axios Interceptors
+// ============================================================================
+
+/**
+ * Response interceptor for automatic token refresh
+ */
 axios.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as any;
 
+    // Handle 401 Unauthorized - token expired or invalid
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // If already refreshing, queue this request
       if (isRefreshing) {
-        // If already refreshing, queue the request
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
-        }).then(token => {
-          originalRequest.headers.authorization = `jwt ${token}`;
-          return axios(originalRequest);
-        }).catch(err => {
-          return Promise.reject(err);
-        });
+        })
+          .then(token => {
+            originalRequest.headers.authorization = `jwt ${token}`;
+            return axios(originalRequest);
+          })
+          .catch(err => Promise.reject(err));
       }
 
       originalRequest._retry = true;
       isRefreshing = true;
 
       try {
-        logger.info('Starting token refresh due to 401 error');
-        const newTokens = await authManager.refreshTokenIfNeeded();
+        logger.info('Token expired, attempting refresh');
 
-        if (newTokens) {
-          logger.info('Token refresh successful, retrying request');
-          // Update the authorization header
+        // Dynamically import to avoid circular dependency
+        const { refreshAccessToken } = await import('@/services/apis/auth.api');
+        const newTokens = await refreshAccessToken();
+
+        if (newTokens && newTokens.accessToken) {
+          logger.info('Token refresh successful');
+
+          // Update authorization header
           originalRequest.headers.authorization = `jwt ${newTokens.accessToken}`;
 
           // Process queued requests
           processQueue(null, newTokens.accessToken);
 
-          // Retry the original request
+          // Retry original request
           return axios(originalRequest);
         } else {
           logger.warn('Token refresh failed, redirecting to login');
-          // Refresh failed, redirect to login
-          authManager.logout();
-          if (typeof window !== 'undefined') {
-            window.location.href = '/login';
-          }
+          handleAuthFailure();
           return Promise.reject(error);
         }
       } catch (refreshError) {
         logger.error('Token refresh error', refreshError);
-        // Refresh failed, redirect to login
         processQueue(refreshError, null);
-        authManager.logout();
-        if (typeof window !== 'undefined') {
-          window.location.href = '/login';
-        }
+        handleAuthFailure();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
       }
     }
 
-    // Handle 403 Forbidden - user doesn't have permission
+    // Handle 403 Forbidden - insufficient permissions
     if (error.response?.status === 403) {
-      logger.warn('403 Forbidden - User does not have permission for this resource');
-      // Don't redirect, let the component handle the error
+      logger.warn('403 Forbidden - insufficient permissions');
+      // Don't redirect, let component handle
       return Promise.reject(error);
     }
 
@@ -126,14 +131,53 @@ axios.interceptors.response.use(
   }
 );
 
+/**
+ * Handle authentication failure
+ */
+const handleAuthFailure = () => {
+  // Clear any stored data
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('userData');
+    localStorage.removeItem('rc-tokens'); // Legacy cleanup
+    localStorage.removeItem('rc-token'); // Legacy cleanup
+
+    // Redirect to login
+    window.location.href = '/login';
+  }
+};
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Generic API fetch wrapper
+ */
+export const apiFetch = async <T = any>(config: RcAxiosConfig): Promise<ServiceResponse<T>> => {
+  try {
+    const { data } = await axios(config);
+    if (data.errors || !data) {
+      return Promise.reject(data.errors || 'nothing found');
+    }
+    return Promise.resolve(data);
+  } catch (error) {
+    logger.error('API fetch error', error);
+    return Promise.reject(error);
+  }
+};
+
+/**
+ * Set authorization headers for API requests
+ * Uses in-memory token from SecureAuthContext
+ */
 export const setHeader = (
   token?: string,
   contentType: string = "application/json",
   includeCsrf: boolean = false
 ): AuthHeader => {
   try {
-    // Use provided token or get from auth manager
-    const authToken = token || authManager.getAuthToken() || "";
+    // Use provided token or get from global in-memory storage
+    const authToken = token || getInternalAccessToken() || "";
 
     const headers: AuthHeader = {
       authorization: `jwt ${authToken}`,
@@ -141,7 +185,9 @@ export const setHeader = (
     };
 
     if (includeCsrf) {
-      const csrfToken = typeof window !== 'undefined' ? sessionStorage?.getItem("csrf-token") || "" : "";
+      const csrfToken = typeof window !== 'undefined'
+        ? sessionStorage?.getItem("csrf-token") || ""
+        : "";
       if (csrfToken) {
         headers['x-csrf-token'] = csrfToken;
       }
@@ -155,4 +201,4 @@ export const setHeader = (
       'Content-Type': contentType,
     };
   }
-}
+};

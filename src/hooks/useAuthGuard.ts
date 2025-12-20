@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 interface UseAuthGuardOptions {
     requireAuth?: boolean;
@@ -18,10 +18,9 @@ export const useAuthGuard = (options: UseAuthGuardOptions = {}) => {
         onAuthCheck
     } = options;
 
-    const { isAuthenticated, isLoading, checkAuth } = useAuth();
+    const { isAuthenticated, isLoading } = useSecureAuth();
     const router = useRouter();
     const pathname = usePathname();
-    const [hasChecked, setHasChecked] = useState(false);
     const [isAuthorized, setIsAuthorized] = useState(false);
 
     useEffect(() => {
@@ -44,12 +43,7 @@ export const useAuthGuard = (options: UseAuthGuardOptions = {}) => {
         };
 
         const handleFocus = () => {
-            // Re-check auth when user returns to tab
-            const authInvalidated = sessionStorage.getItem('auth_invalidated');
-            if (authInvalidated === 'true') {
-                sessionStorage.removeItem('auth_invalidated');
-                checkAuth();
-            }
+            // Re-check auth would be here if needed
         };
 
         window.addEventListener('popstate', handlePopState);
@@ -61,42 +55,26 @@ export const useAuthGuard = (options: UseAuthGuardOptions = {}) => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
             window.removeEventListener('focus', handleFocus);
         };
-    }, [isAuthenticated, requireAuth, checkAuth]);
+    }, [isAuthenticated, requireAuth]);
 
     useEffect(() => {
-        const performAuthCheck = async () => {
-            if (hasChecked) return;
-
-            try {
-                await checkAuth();
-                setHasChecked(true);
-            } catch (error) {
-                console.error('Auth guard check failed:', error);
-                setHasChecked(true);
-            }
-        };
-
-        performAuthCheck();
-    }, [checkAuth, hasChecked]);
-
-    useEffect(() => {
-        if (hasChecked && !isLoading) {
+        if (!isLoading) {
             const authorized = requireAuth ? isAuthenticated : !isAuthenticated;
 
             setIsAuthorized(authorized);
             onAuthCheck?.(isAuthenticated);
 
             if (!authorized) {
-                console.log(`🔒 Auth guard redirecting to ${redirectTo} (requireAuth: ${requireAuth}, isAuthenticated: ${isAuthenticated})`);
+                console.log(`🔒 AuthGuard Hook: Redirecting to ${redirectTo} (requireAuth: ${requireAuth}, isAuthenticated: ${isAuthenticated})`);
                 router.replace(redirectTo);
             }
         }
-    }, [isAuthenticated, isLoading, hasChecked, requireAuth, redirectTo, router, onAuthCheck]);
+    }, [isAuthenticated, isLoading, requireAuth, redirectTo, router, onAuthCheck]);
 
     return {
         isAuthorized,
-        isLoading: isLoading || !hasChecked,
+        isLoading: isLoading,
         isAuthenticated,
-        hasChecked
+        hasChecked: !isLoading
     };
 };

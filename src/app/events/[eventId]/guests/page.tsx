@@ -26,7 +26,7 @@ import {
   EyeIcon,
 } from 'lucide-react';
 import { getEventById } from '@/services/apis/events.api';
-import { useAuthToken } from '@/hooks/use-auth';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 // Participant hooks
 import {
@@ -103,7 +103,7 @@ interface PageProps {
 export default function GuestManagementPage({ params }: PageProps) {
   const { eventId } = React.use(params);
   const router = useRouter();
-  const authToken = useAuthToken();
+  const { getAccessToken } = useSecureAuth();
   const { userRole } = useEventStore();
 
   // Access control - only creators and co-hosts can manage guests
@@ -178,24 +178,15 @@ export default function GuestManagementPage({ params }: PageProps) {
 
   // Load event data
   useEffect(() => {
-    // Only proceed if either we have an authToken or the token check timeout has elapsed
-    if (!authToken && !tokenChecked) {
-      console.log('Waiting for auth token to load or timeout...');
-      return;
-    }
-
     const loadEvent = async () => {
-      const token = authToken || localStorage.getItem('rc-token');
+      const token = getAccessToken();
 
-      // Only redirect if we've checked thoroughly for a token and still don't have one
-      if (!token && tokenChecked) {
-        console.log('No auth token found after timeout, redirecting to login...');
+      if (!token) {
+        console.log('No auth token found, redirecting to login...');
         toast.error("You need to be logged in to manage participants.");
         router.push('/login');
         return;
       }
-
-      if (!token) return; // Don't proceed without token
 
       try {
         const eventData = await getEventById(eventId, token);
@@ -214,7 +205,7 @@ export default function GuestManagementPage({ params }: PageProps) {
     };
 
     loadEvent();
-  }, [eventId, authToken, router, tokenChecked]);
+  }, [eventId, getAccessToken, router]);
 
   // Handlers
   const handleTabChange = (value: string) => {

@@ -4,7 +4,7 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { UserRole } from '@/types/roles';
-import { useRoleCheck } from '@/hooks/usePermissions';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useIsGuest } from '@/hooks/useGuestSession';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger/Logger';
@@ -43,12 +43,13 @@ export function RoleGuard({
 }: RoleGuardProps) {
     const router = useRouter();
     const pathname = usePathname();
-    const { currentRole, isLoading } = useRoleCheck(allowedRoles[0]);
+    const { role: currentRole, isLoading } = usePermissions();
     const { isGuest } = useIsGuest();
 
     useEffect(() => {
         if (isLoading) return;
 
+        // Check if user has any of the allowed roles
         const hasAccess = currentRole ? allowedRoles.includes(currentRole) : false;
 
         if (!hasAccess) {
@@ -81,7 +82,7 @@ export function RoleGuard({
         return <>{fallback || <Skeleton className="h-screen w-full" />}</>;
     }
 
-    // Check if user has access
+    // Check if user has access (for render decision)
     const hasAccess = currentRole ? allowedRoles.includes(currentRole) : false;
 
     // Don't render if no access (redirect will happen in useEffect)

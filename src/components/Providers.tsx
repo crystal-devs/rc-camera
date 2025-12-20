@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { SidebarProvider } from "./ui/sidebar";
 import { ThemeProvider } from "@/lib/ThemeContext";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { SecureAuthProvider } from "@/contexts/SecureAuthContext";
 import { useState } from 'react';
 
 interface ProvidersProps {
@@ -30,7 +30,6 @@ function Providers({ children }: ProvidersProps) {
             },
             mutations: {
                 retry: 1,
-                // Global error handler for mutations
                 onError: (error: any) => {
                     console.error('Mutation error:', error);
                 }
@@ -38,9 +37,33 @@ function Providers({ children }: ProvidersProps) {
         }
     }));
 
+    // Listen for logout events to clear cache
+    if (typeof window !== 'undefined') {
+        const handleAuthUpdate = async (event: any) => {
+            if (event.detail?.type === 'auth_logout') {
+                console.log('🧹 Providers: Clearing all query caches and stores due to logout');
+
+                // 1. Clear React Query Cache
+                queryClient.removeQueries();
+                queryClient.clear();
+
+                // 2. Clear Zustand Stores (dynamically import to avoid circular deps if needed)
+                const { default: useEventStore } = await import('@/stores/useEventStore');
+                useEventStore.getState().clearState();
+
+                // Add other stores here if needed
+                // useOtherStore.getState().reset();
+            }
+        };
+
+        // Remove listener first to avoid duplicates (though rare in this scope)
+        window.removeEventListener('rc-auth-update', handleAuthUpdate);
+        window.addEventListener('rc-auth-update', handleAuthUpdate);
+    }
+
     return (
         <QueryClientProvider client={queryClient}>
-            <AuthProvider>
+            <SecureAuthProvider>
                 <ThemeProvider>
                     {children}
                     {/* Add React Query DevTools in development only */}
@@ -51,7 +74,7 @@ function Providers({ children }: ProvidersProps) {
                         />
                     )}
                 </ThemeProvider>
-            </AuthProvider>
+            </SecureAuthProvider>
         </QueryClientProvider>
     );
 }

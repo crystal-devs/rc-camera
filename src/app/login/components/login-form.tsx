@@ -1,19 +1,20 @@
 "use client";
 
 import { useGoogleLogin } from '@react-oauth/google';
-import { loginUser, registerUser, initializeCsrf, initiateGoogleOAuth, handleGoogleOAuthCallback } from '@/services/apis/auth.api';
+import { loginUser, registerUser, initializeCsrf, initiateGoogleOAuth, handleGoogleOAuthCallback, LoginCredentials, RegisterCredentials } from '@/services/apis/auth.api';
 import { joinAsCoHost } from '@/services/apis/cohost.api';
 import { fetchEvents } from '@/services/apis/events.api';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UserPlus, Crown, Calendar } from 'lucide-react';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
+import { authManager } from '@/lib/auth-manager';
 
 interface InviteContext {
   token: string;
@@ -32,10 +33,17 @@ interface LoginFormProps {
 const isValidRedirectUrl = (url: string): boolean => {
   if (!url || typeof url !== 'string') return false;
   try {
+    // Only allow relative URLs starting with /
     if (!url.startsWith('/')) return false;
-    const guestPagePattern = /^\/guest\/[a-zA-Z0-9_-]+(\?.*)?$/;
-    const eventPagePattern = /^\/events\/[a-zA-Z0-9_-]+(\?.*)?$/;
-    return guestPagePattern.test(url) || eventPagePattern.test(url);
+    // Prevent protocol-relative URLs that could lead to external domains
+    if (url.startsWith('//')) return false;
+    // Only allow specific safe patterns without query parameters for security
+    const safePatterns = [
+      /^\/events\/[a-zA-Z0-9_-]+$/,
+      /^\/guest\/[a-zA-Z0-9_-]+$/,
+      /^\/events$/
+    ];
+    return safePatterns.some(pattern => pattern.test(url));
   } catch {
     return false;
   }
@@ -47,10 +55,12 @@ export function LoginForm({
   ...props
 }: LoginFormProps & React.ComponentProps<"form">) {
   const router = useRouter();
-  const { login: authLogin, register: authRegister, initiateGoogleOAuth: authInitiateGoogleOAuth } = useAuth();
+  const { login: authLogin, register: authRegister, setAuthFromResult, isAuthenticated, isLoading: authLoading } = useSecureAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [isLoginMode, setIsLoginMode] = useState(true);
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [lastAttemptTime, setLastAttemptTime] = useState(0);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -69,15 +79,71 @@ export function LoginForm({
     initializeCsrf();
   }, []);
 
+  // Redirect authenticated users away from login form
+  // Redirect authenticated users with smart logic
+  useEffect(() => {
+    const checkRedirect = async () => {
+      if (!authLoading && isAuthenticated && !inviteContext) {
+        // Smart redirect logic for authenticated users
+        const storedRedirect = localStorage.getItem('redirectAfterLogin');
+        if (storedRedirect && isValidRedirectUrl(storedRedirect)) {
+          localStorage.removeItem('redirectAfterLogin');
+          router.push(storedRedirect);
+          return;
+        }
+
+        // Default to events page
+        router.push('/events');
+      }
+    };
+
+    checkRedirect();
+  }, [isAuthenticated, authLoading, inviteContext, router]);
+
   const handleSuccessfulLogin = async (profile: any, apiResult: any) => {
     const accessToken = apiResult?.tokens?.accessToken || apiResult?.token;
+    const refreshToken = apiResult?.tokens?.refreshToken || apiResult?.refreshToken || '';
+    const expiresAt = apiResult?.tokens?.expiresAt || apiResult?.expiresAt || Date.now() + 3600000;
+    const userId = apiResult?.user?.id || apiResult?.userId || 'unknown';
+
     if (!accessToken) {
       console.error('No access token!', apiResult);
       toast.error('Authentication failed');
       return;
     }
 
-    // Update store with login
+    // Prepare user data for SecureAuthContext
+    const userData = {
+      id: userId,
+      name: profile.name,
+      email: profile.email,
+      avatar: profile.picture,
+      provider: "google" as "google" | "email"
+    };
+
+    // Prepare tokens for SecureAuthContext
+    const tokens = {
+      accessToken,
+      refreshToken,
+      expiresAt: typeof expiresAt === 'string' ? new Date(expiresAt).getTime() : expiresAt
+    };
+
+    // Update SecureAuthContext (primary auth system)
+    setAuthFromResult(userData, tokens);
+
+    // Update authManager (for API client compatibility)
+    try {
+      await authManager.loginUser({
+        accessToken,
+        refreshToken,
+        expiresAt: tokens.expiresAt,
+        userId
+      });
+    } catch (error) {
+      console.error('Failed to update authManager:', error);
+    }
+
+    // Update old store with login (backward compatibility)
     login({
       name: profile.name,
       email: profile.email,
@@ -85,123 +151,112 @@ export function LoginForm({
       provider: "google"
     });
 
-    let finalRedirectUrl = '/events'; // Default fallback
-    let shouldDelayRedirect = false;
+    // Determine redirect URL with simplified logic
+    let finalRedirectUrl = '/events';
+    let redirectDelay = 100;
 
-    // Handle invite context if present (HIGHEST PRIORITY)
+    // Handle invite context (highest priority)
     if (inviteContext) {
       if (inviteContext.type === 'cohost') {
+        // Handle co-host invitation
         try {
-          console.log('🔄 Attempting to join as co-host with token:', inviteContext.token);
-
-          // Auto-join as co-host
           const cohostResponse = await joinAsCoHost(inviteContext.token, accessToken);
-
-          console.log('📊 Co-host API response:', cohostResponse);
-
-          if (cohostResponse.status) {
-            const eventId = cohostResponse.data?.event_id;
-            console.log('🎯 Got event ID from response:', eventId);
-
-            if (eventId) {
-              finalRedirectUrl = `/events/${eventId}`;
-              console.log('✅ Setting redirect URL to:', finalRedirectUrl);
-
-              if (cohostResponse.message.includes('already a co-host')) {
-                toast.info('You are already a co-host for this event');
-              } else {
-                toast.success(`Successfully joined as co-host!`);
-              }
-            } else {
-              console.log('⚠️ No event ID found, using fallback');
-              finalRedirectUrl = '/events';
-              toast.success('Successfully joined as co-host!');
-            }
-            shouldDelayRedirect = true;
+          if (cohostResponse.status && cohostResponse.data?.event_id) {
+            finalRedirectUrl = `/events/${cohostResponse.data.event_id}`;
+            toast.success('Successfully joined as co-host!');
+            redirectDelay = 1500;
           } else {
-            console.log('❌ Co-host join failed:', cohostResponse.message);
             toast.error(cohostResponse.message || 'Failed to join as co-host');
-            finalRedirectUrl = '/events';
-          }
-        } catch (cohostError: any) {
-          console.error('💥 Auto co-host join error:', cohostError);
-          toast.error('Login successful, but there was an issue with the co-host invitation.');
-          finalRedirectUrl = '/events';
-        }
-      } else if (inviteContext.type === 'guest') {
-        // Guest invite - redirect to guest page (auto-claim will happen there)
-        finalRedirectUrl = `/guest/${inviteContext.token}`;
-        console.log('👤 Guest invite - redirecting to:', finalRedirectUrl);
-        toast.success('Welcome! Your previous uploads will be claimed automatically.');
-        shouldDelayRedirect = true;
-      }
-    } else {
-      // No invite context - check for stored redirect (LOWER PRIORITY)
-      const currentRedirectUrl = localStorage.getItem('redirectAfterLogin');
-      if (currentRedirectUrl && isValidRedirectUrl(currentRedirectUrl)) {
-        finalRedirectUrl = currentRedirectUrl;
-      } else {
-        // NEW LOGIC: Fetch user events and redirect to the first one
-        try {
-          console.log('Fetching user events for redirect...');
-          const events = await fetchEvents(accessToken);
-          if (events && events.length > 0) {
-            // Sort events by creation date (newest first) or just take the first one
-            // Assuming the API returns them in a reasonable order or we just take the first
-            const firstEvent = events[0];
-            console.log(`Found ${events.length} events. Redirecting to first event: ${firstEvent._id || firstEvent.id}`);
-            finalRedirectUrl = `/events/${firstEvent._id || firstEvent.id}`;
-          } else {
-            console.log('No events found, redirecting to /events');
-            finalRedirectUrl = '/events';
           }
         } catch (error) {
-          console.warn('Error fetching events for redirect, fallback to /events', error);
-          finalRedirectUrl = '/events';
+          console.error('Co-host join error:', error);
+          toast.error('Login successful, but co-host invitation failed');
         }
+      } else if (inviteContext.type === 'guest') {
+        finalRedirectUrl = `/guest/${inviteContext.token}`;
+        toast.success('Welcome! Your uploads will be claimed automatically.');
+        redirectDelay = 1500;
       }
+    } else {
+      // Check for stored redirect URL
+      const storedRedirect = localStorage.getItem('redirectAfterLogin');
+      if (storedRedirect && isValidRedirectUrl(storedRedirect)) {
+        finalRedirectUrl = storedRedirect;
+        localStorage.removeItem('redirectAfterLogin');
+      }
+      // Default to /events if no valid redirect
     }
 
-    toast.success("Welcome back, " + profile.name);
+    // Sanitize user input to prevent XSS
+    const sanitizedName = profile.name.replace(/[<>]/g, '').substring(0, 50);
+    toast.success(`Welcome back, ${sanitizedName}!`);
 
-    // Clean up all stored redirects and contexts
+    // Clean up stored data
     localStorage.removeItem('inviteContext');
     localStorage.removeItem('redirectAfterLogin');
 
-    // Redirect with appropriate delay
-    const redirectDelay = shouldDelayRedirect ? 1500 : 100;
+    // Use consistent navigation method
     setTimeout(() => {
-      console.log('🚀 Final redirect to:', finalRedirectUrl);
-
-      // Force navigation to ensure it works
-      if (finalRedirectUrl.startsWith('/events/') && finalRedirectUrl !== '/events') {
-        console.log('🎯 Using window.location.href for specific event page');
-        window.location.href = finalRedirectUrl;
-      } else if (finalRedirectUrl.startsWith('/guest/')) {
-        console.log('👤 Using window.location.href for guest page (for auto-claim)');
-        window.location.href = finalRedirectUrl;
-      } else {
-        console.log('📍 Using router.push for general navigation');
-        router.push(finalRedirectUrl);
-      }
+      router.push(finalRedirectUrl);
     }, redirectDelay);
   };
 
+  // Client-side validation functions
+  const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const validatePassword = (password: string) => password.length >= 8;
+  const validateName = (name: string) => name.trim().length >= 2;
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Rate limiting: max 5 attempts per minute
+    const now = Date.now();
+    const timeSinceLastAttempt = now - lastAttemptTime;
+
+    if (loginAttempts >= 5 && timeSinceLastAttempt < 60000) { // 1 minute
+      const remainingTime = Math.ceil((60000 - timeSinceLastAttempt) / 1000);
+      toast.error(`Too many login attempts. Please wait ${remainingTime} seconds.`);
+      return;
+    }
+
+    // Reset attempts if more than 1 minute has passed
+    if (timeSinceLastAttempt > 60000) {
+      setLoginAttempts(0);
+    }
+
     setIsLoading(true);
+    setLastAttemptTime(now);
 
     try {
+      // Client-side validation
+      if (!validateEmail(formData.email)) {
+        toast.error("Please enter a valid email address");
+        setIsLoading(false);
+        return;
+      }
+
+      if (!isLoginMode && !validateName(formData.name)) {
+        toast.error("Name must be at least 2 characters long");
+        setIsLoading(false);
+        return;
+      }
+
+      if (!validatePassword(formData.password)) {
+        toast.error("Password must be at least 8 characters long");
+        setIsLoading(false);
+        return;
+      }
+
       if (isLoginMode) {
         await authLogin({
-          email: formData.email,
+          email: formData.email.trim().toLowerCase(),
           password: formData.password
         });
         toast.success("Login successful!");
       } else {
         await authRegister({
-          name: formData.name,
-          email: formData.email,
+          name: formData.name.trim(),
+          email: formData.email.trim().toLowerCase(),
           password: formData.password
         });
         toast.success("Registration successful! Please log in.");
@@ -224,7 +279,8 @@ export function LoginForm({
       }, 1000);
 
     } catch (err: any) {
-      console.error(err);
+      // Increment failed attempts for rate limiting
+      setLoginAttempts(prev => prev + 1);
       toast.error(err?.message ?? `Something went wrong with ${isLoginMode ? 'login' : 'registration'}`);
     } finally {
       setIsLoading(false);
@@ -243,38 +299,18 @@ export function LoginForm({
         });
         const profile = await res.json();
 
-        // For Google OAuth, we need to register the user first if they don't exist
-        try {
-          const result = await loginUser({
-            email: profile.email,
-            password: profile.sub, // Use Google sub as temporary password for backend
-            provider: "google" // Add provider field for Google OAuth
-          });
-          await handleSuccessfulLogin(profile, result);
-        } catch (loginError: any) {
-          // If login fails (user doesn't exist), register them
-          console.log('User not found, registering new Google user:', loginError.message);
+        // Backend handles both login and registration for Google OAuth
+        const result = await loginUser({
+          email: profile.email,
+          name: profile.name,
+          provider: "google",
+          googleAccessToken: tokenResponse.access_token // Send token for backend verification
+        } as LoginCredentials);
 
-          try {
-            const registerResult = await registerUser({
-              name: profile.name,
-              email: profile.email,
-              password: profile.sub, // Use Google sub as password for registration
-              provider: "google"
-            });
-
-            // Registration successful, handle login
-            await handleSuccessfulLogin(profile, registerResult);
-          } catch (registerError: any) {
-            console.error('Registration also failed:', registerError);
-            throw new Error('Failed to authenticate with Google. Please try again.');
-          }
-        }
-
-        // Success is handled inside the try-catch blocks above
+        await handleSuccessfulLogin(profile, result);
       } catch (err: any) {
-        console.error(err);
-        toast.error(err?.message ?? "Something went wrong with login");
+        console.error('Google login error:', err);
+        toast.error(err?.message ?? "Failed to authenticate with Google");
       } finally {
         setIsLoading(false);
       }

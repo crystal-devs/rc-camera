@@ -39,6 +39,7 @@ import { toast } from 'sonner';
 import { fetchEventAlbums, createAlbum, deleteAlbum } from '@/services/apis/albums.api';
 import { Album } from '@/types/album';
 import { uploadCoverImage } from '@/services/apis/media.api';
+import { useToken } from '@/hooks/useToken';
 
 interface AlbumManagementProps {
   eventId: string;
@@ -62,7 +63,7 @@ export default function AlbumManagement({ eventId, initialAlbums, onAlbumCreated
 
   // Get auth token
   useEffect(() => {
-    const storedToken = localStorage.getItem('rc-token');
+    const storedToken = useToken();
     if (storedToken) {
       setAuthToken(storedToken);
     } else {

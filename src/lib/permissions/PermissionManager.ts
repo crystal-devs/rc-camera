@@ -5,6 +5,7 @@ import {
     PermissionRecord,
     ROLE_PERMISSIONS,
     inheritPermissions,
+    GUEST_CUSTOMIZABLE_PERMISSIONS,
 } from '@/constants/permissions';
 import { PermissionError, PermissionErrorCode } from '@/lib/errors/PermissionError';
 import { logger } from '@/lib/logger/Logger';
@@ -247,11 +248,43 @@ export class PermissionManager {
      * Update permissions (creates new instance for immutability)
      */
     withCustomPermissions(customPermissions: Partial<PermissionRecord>): PermissionManager {
+        // Validate custom permissions to prevent escalation
+        this.validateCustomPermissions(customPermissions);
+
         return new PermissionManager(
             this.role,
             { ...this.customPermissions, ...customPermissions },
             this.config
         );
+    }
+
+    /**
+     * Validate custom permissions to prevent role escalation
+     */
+    private validateCustomPermissions(customPermissions: Partial<PermissionRecord>): void {
+        const basePermissions = ROLE_PERMISSIONS[this.role];
+
+        for (const [action, value] of Object.entries(customPermissions)) {
+            const permAction = action as PermissionAction;
+
+            // For guests, only allow customization of specific permissions
+            if (this.role === UserRole.GUEST) {
+                if (!GUEST_CUSTOMIZABLE_PERMISSIONS.includes(permAction)) {
+                    throw PermissionError.eventRestriction(
+                        `Guest permissions cannot be customized for action: ${action}`,
+                        { action: permAction, userRole: this.role }
+                    );
+                }
+            } else {
+                // For other roles, only allow restricting permissions, not granting
+                if (value === true && basePermissions[permAction] === false) {
+                    throw PermissionError.eventRestriction(
+                        `Cannot grant permission not available in base role: ${action}`,
+                        { action: permAction, userRole: this.role }
+                    );
+                }
+            }
+        }
     }
 
     /**

@@ -3,11 +3,11 @@ import React, { useEffect, useState } from 'react'
 import { LoginForm } from './components/login-form'
 import { GoogleOAuthProvider } from "@react-oauth/google"
 import { Toaster } from "@/components/ui/sonner"
-import { useAuth } from '@/contexts/AuthContext';
 import { useSearchParams } from 'next/navigation';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UserPlus, Calendar, Crown } from 'lucide-react';
 import { LoginCosmetics } from './components/login-cosmetics';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 const client_id = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!
 
@@ -21,7 +21,7 @@ interface InviteContext {
 
 const LoginPage = () => {
     const searchParams = useSearchParams();
-    const { isAuthenticated, isLoading } = useAuth();
+    const { isAuthenticated, isLoading: isAuthLoading } = useSecureAuth();
     const [inviteContext, setInviteContext] = useState<InviteContext | null>(null);
 
     const inviteToken = searchParams.get('invite');
@@ -59,7 +59,7 @@ const LoginPage = () => {
     // AuthGuard handles redirects now - no manual redirect logic needed
 
     // Show loading while checking authentication state
-    if (isLoading) {
+    if (isAuthLoading) {
         return (
             <div className="flex w-full min-h-screen bg-background items-center justify-center">
                 <div className="text-center">

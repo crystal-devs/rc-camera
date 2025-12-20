@@ -11,6 +11,7 @@ import { Camera, Upload, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { useToken } from '@/hooks/useToken';
 
 interface AlbumPageProps {
   params: Promise<{ albumId: string }>;
@@ -32,7 +33,7 @@ export default function AlbumPage({ params }: AlbumPageProps) {
     const loadAlbum = async () => {
       try {
         // Try to get the auth token from local storage
-        const authToken = localStorage.getItem('rc-token');
+        const authToken = useToken();
         if (!authToken) {
           console.error('No auth token found');
           toast.error("Authentication required. Please log in again.");

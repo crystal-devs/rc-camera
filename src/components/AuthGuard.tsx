@@ -3,8 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
-import { authManager } from '@/lib/auth-manager';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -19,28 +18,23 @@ export function AuthGuard({
   redirectTo = '/login',
   fallback
 }: AuthGuardProps) {
-  const { isAuthenticated, isLoading, checkAuth } = useAuth();
+  const { isAuthenticated, isLoading, user } = useSecureAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [hasChecked, setHasChecked] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
     // Prevent browser back button navigation after logout
     const handleBeforeUnload = () => {
       // Clear any cached auth state on page unload
-      if (!authManager.isAuthenticated()) {
+      if (!isAuthenticated) {
         sessionStorage.setItem('auth_invalidated', 'true');
       }
     };
 
     const handleFocus = () => {
-      // Check auth when user returns to tab
-      const authInvalidated = sessionStorage.getItem('auth_invalidated');
-      if (authInvalidated === 'true') {
-        sessionStorage.removeItem('auth_invalidated');
-        checkAuth();
-      }
+      // Re-check auth would be handled by a manual refresh call if needed
+      // For now, we rely on the context's auto-refresh
     };
 
     // Prevent back navigation if auth is invalidated
@@ -54,10 +48,7 @@ export function AuthGuard({
     };
 
     const handlePageShow = (event: PageTransitionEvent) => {
-      // If page is restored from bfcache, we must re-check auth
-      if (event.persisted) {
-        checkAuth();
-      }
+      // If page is restored from bfcache, you might want to re-check
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -70,44 +61,35 @@ export function AuthGuard({
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [checkAuth, requireAuth, redirectTo]);
+  }, [isAuthenticated, requireAuth, redirectTo]);
 
   useEffect(() => {
-    const performAuthCheck = async () => {
-      if (hasChecked) return;
-
-      try {
-        await checkAuth();
-        setHasChecked(true);
-      } catch (error) {
-        console.error('Auth check failed:', error);
-        setHasChecked(true);
-      }
-    };
-
-    performAuthCheck();
-  }, [checkAuth, hasChecked]);
-
-  useEffect(() => {
-    if (hasChecked && !isLoading && !isRedirecting) {
+    // ONLY redirect if we are NOT loading and the auth state is definitive
+    if (!isLoading && !isRedirecting) {
       if (requireAuth && !isAuthenticated) {
-        console.log('🔒 Redirecting to login - user not authenticated');
+        console.log('🔒 AuthGuard: Redirecting to login - user not authenticated');
         setIsRedirecting(true);
-        // Use window.location.href for hard redirect to prevent infinite loops
-        window.location.href = redirectTo;
+
+        // Save current path for redirect after login
+        if (typeof window !== 'undefined' && pathname !== '/login') {
+          localStorage.setItem('redirectAfterLogin', pathname);
+        }
+
+        // Use router.push for client-side navigation if possible, fallback to window.location
+        router.push(redirectTo);
       } else if (!requireAuth && isAuthenticated) {
-        // If on auth page but already authenticated, redirect to dashboard
+        // If on auth page but already authenticated, redirect to dashboard/events
         if (pathname === '/login' || pathname === '/register') {
-          console.log('🔄 User authenticated on auth page, redirecting to home');
+          console.log('🔄 AuthGuard: User authenticated on auth page, redirecting to home');
           setIsRedirecting(true);
-          window.location.href = '/';
+          router.push('/events');
         }
       }
     }
-  }, [isAuthenticated, isLoading, hasChecked, requireAuth, redirectTo, pathname, isRedirecting]);
+  }, [isAuthenticated, isLoading, requireAuth, redirectTo, pathname, isRedirecting, router]);
 
   // Show loading state
-  if (isLoading || !hasChecked) {
+  if (isLoading) {
     return fallback || (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

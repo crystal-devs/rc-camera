@@ -15,7 +15,7 @@ import PhotoGallery from '@/components/photo/PhotoGallery';
 
 import { useEventData } from '@/hooks/useEventData';
 import useEventStore from '@/stores/useEventStore';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 export default function OptimizedEventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
     const { eventId } = use(params);
@@ -35,7 +35,7 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
         isInitialized
     } = useEventData(eventId);
 
-    const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
+    const { user, isAuthenticated, isLoading: isAuthLoading } = useSecureAuth();
     const { invalidateAlbumsCache } = useEventStore();
     const currentUserId = user?.id; // Derive ID from user object
 

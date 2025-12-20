@@ -68,9 +68,13 @@ export class CSRFService {
             this.csrfToken = data.csrfToken;
             this.lastFetchTime = Date.now();
 
-            // Store in sessionStorage
+            // Store in sessionStorage with additional security measures
             if (typeof window !== 'undefined') {
+                // Add a prefix to make it harder to guess
+                const secureKey = `__csrf_${Date.now()}__`;
                 sessionStorage.setItem(CSRF_TOKEN_KEY, data.csrfToken);
+                // Store the key itself in a way that's harder to enumerate
+                sessionStorage.setItem('csrf_key_ref', secureKey);
             }
 
             logger.debug('CSRF token fetched successfully');

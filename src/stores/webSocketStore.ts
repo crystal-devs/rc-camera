@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { io, Socket } from 'socket.io-client';
+import { useToken } from '@/hooks/useToken';
 
 // ============================================================================
 // Logger Utility - Environment Aware
@@ -676,7 +677,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                 }
 
                 const authToken = typeof window !== 'undefined'
-                    ? localStorage.getItem('rc-token')
+                    ? useToken()
                     : null;
 
                 if (!authToken) {

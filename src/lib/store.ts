@@ -164,7 +164,7 @@ interface SettingsActions {
     fetchUsage: () => Promise<void>;
     fetchAvailablePlans: () => Promise<void>;
     upgradeSubscription: (planId: string) => Promise<{ success: boolean; message: string; redirectUrl?: string }>;
-    logout: () => void;
+    logout: () => Promise<void>;
     login: (userData: Record<string, any>) => void;
 }
 
@@ -583,18 +583,42 @@ export const useStore = create<SettingsState & SettingsActions>()(
                 }
             },
 
-            logout: () => {
-                // Clear auth token and user data from localStorage
-                removeLocalStorageValue('rc-tokens');
-                removeLocalStorageValue('userData');
-                removeLocalStorageValue('event-app-storage');
-                removeLocalStorageValue('app-settings');
+            logout: async () => {
+                // Return a promise that resolves when cleanup is complete
+                // This prevents race conditions where UI redirects before auth is cleared
+                return new Promise<void>((resolve) => {
+                    if (typeof window !== 'undefined') {
+                        // Use the robust logout from auth.api
+                        import('@/services/apis/auth.api').then(async ({ logout }) => {
+                            await logout();
 
-                set({
-                    isAuthenticated: false,
-                    userData: null,
-                    subscription: null,
-                    usage: null
+                            // Local cleanup only after API/Manager is done
+                            set({
+                                isAuthenticated: false,
+                                userData: null,
+                                subscription: null,
+                                usage: null
+                            });
+                            resolve();
+                        }).catch(err => {
+                            console.error('Failed to import auth logout', err);
+                            // Fallback cleanup
+                            removeLocalStorageValue('rc-tokens');
+                            removeLocalStorageValue('userData');
+                            removeLocalStorageValue('event-app-storage');
+                            removeLocalStorageValue('app-settings');
+
+                            set({
+                                isAuthenticated: false,
+                                userData: null,
+                                subscription: null,
+                                usage: null
+                            });
+                            resolve();
+                        });
+                    } else {
+                        resolve();
+                    }
                 });
             },
 

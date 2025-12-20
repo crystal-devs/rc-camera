@@ -211,10 +211,18 @@ export function GuestProvider({
                     reason: validation.reason,
                 });
 
-                setSession(null);
-                setError(GuestSessionError.invalid(session.id, {
+                const invalidError = GuestSessionError.invalid(session.id, {
                     eventId: session.eventId,
-                }));
+                });
+
+                setSession(null);
+                setError(invalidError);
+
+                // Notify user of session invalidation
+                errorHandler.handle(invalidError, {
+                    showToast: true,
+                    userMessage: 'Your guest session has expired. Please refresh to continue.',
+                });
             }
         };
 
