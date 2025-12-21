@@ -78,7 +78,7 @@ axios.interceptors.response.use(
           failedQueue.push({ resolve, reject });
         })
           .then(token => {
-            originalRequest.headers.authorization = `jwt ${token}`;
+            originalRequest.headers.authorization = `Bearer ${token}`;
             return axios(originalRequest);
           })
           .catch(err => Promise.reject(err));
@@ -98,7 +98,7 @@ axios.interceptors.response.use(
           logger.info('Token refresh successful');
 
           // Update authorization header
-          originalRequest.headers.authorization = `jwt ${newTokens.accessToken}`;
+          originalRequest.headers.authorization = `Bearer ${newTokens.accessToken}`;
 
           // Process queued requests
           processQueue(null, newTokens.accessToken);
@@ -180,7 +180,7 @@ export const setHeader = (
     const authToken = token || getInternalAccessToken() || "";
 
     const headers: AuthHeader = {
-      authorization: `jwt ${authToken}`,
+      authorization: `Bearer ${authToken}`,
       'Content-Type': contentType,
     };
 
@@ -197,7 +197,7 @@ export const setHeader = (
   } catch (err: unknown) {
     logger.error('Error setting auth headers', err);
     return {
-      authorization: "jwt error_happened_in_front_end",
+      authorization: "Bearer error_happened_in_front_end",
       'Content-Type': contentType,
     };
   }

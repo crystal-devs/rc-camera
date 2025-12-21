@@ -64,6 +64,14 @@ export function AuthGuard({
   }, [isAuthenticated, requireAuth, redirectTo]);
 
   useEffect(() => {
+    console.log('🔒 AuthGuard: Effect running', {
+      isLoading,
+      isAuthenticated,
+      requireAuth,
+      pathname,
+      isRedirecting
+    });
+
     // ONLY redirect if we are NOT loading and the auth state is definitive
     if (!isLoading && !isRedirecting) {
       if (requireAuth && !isAuthenticated) {

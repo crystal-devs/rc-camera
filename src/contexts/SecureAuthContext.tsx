@@ -12,9 +12,10 @@
 
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo, ReactNode } from 'react';
 import { UserData, LoginCredentials, RegisterCredentials } from '@/services/apis/auth.api';
 import logger from '@/lib/logger';
+import { authManager } from '@/lib/auth-manager';
 
 // ============================================================================
 // Types
@@ -64,7 +65,24 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
     const isRefreshingRef = useRef(false);
 
     // ========== Computed State ==========
-    const isAuthenticated = !!accessToken && !!user && Date.now() < tokenExpiresAt;
+    // Check authManager for session state - allows authentication even before token refresh completes
+    const isAuthenticated = useMemo((): boolean => {
+        // If we have tokens in memory, use those
+        if (accessToken && user && Date.now() < tokenExpiresAt) {
+            return true;
+        }
+
+        // Otherwise, check if authManager has a valid session (allows auth before refresh completes)
+        try {
+            const authState = authManager.getCurrentState();
+            const sessionValid = authState.mode === 'authenticated' &&
+                               !!authState.expiresAt &&
+                               Date.now() < authState.expiresAt;
+            return sessionValid && !!user;
+        } catch (error) {
+            return false;
+        }
+    }, [accessToken, user, tokenExpiresAt]);
 
     // ========== Token Management ==========
 
@@ -153,13 +171,27 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
                 // Update state directly
                 setAuthToken(result.accessToken, result.expiresAt);
 
+                // Get user ID from current user state or localStorage
+                let userId = user?.id;
+                if (!userId && typeof window !== 'undefined') {
+                    const userDataStr = localStorage.getItem('userData');
+                    if (userDataStr) {
+                        try {
+                            const userData = JSON.parse(userDataStr);
+                            userId = userData.id;
+                        } catch (e) {
+                            logger.warn('Failed to parse user data for refresh');
+                        }
+                    }
+                }
+
                 // Update authManager state for cross-tab sync
                 const { authManager } = await import('@/lib/auth-manager');
                 await authManager.loginUser({
                     accessToken: result.accessToken,
                     refreshToken: result.refreshToken,
                     expiresAt: result.expiresAt,
-                    userId: user?.id || 'unknown'
+                    userId: userId || 'unknown'
                 });
 
                 return true;
@@ -324,12 +356,10 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
         const initAuth = async () => {
             try {
                 setIsLoading(true);
-                logger.debug('Initializing secure auth context');
 
                 // Listen for auth updates from the manager (for cross-tab or interceptor refreshes)
                 const handleAuthUpdate = (event: any) => {
                     const { state, type } = event.detail;
-                    logger.debug(`Context: Received auth update event (${type})`);
 
                     if (state.mode === 'authenticated' && state.accessToken) {
                         setAuthToken(state.accessToken, state.expiresAt || 0);
@@ -340,7 +370,7 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
                                 const userData = JSON.parse(userDataStr);
                                 setUser(userData);
                             } catch (e) {
-                                logger.warn('Failed to parse stored user data');
+                                logger.warn('Failed to parse stored user data from event');
                             }
                         }
                     } else if (state.mode === 'none') {
@@ -357,25 +387,27 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
                 // Wait for authManager to complete initialization
                 const authState = await authManager.init();
 
-                // If we have an authenticated session, ensure user data is loaded
-                if (authState.mode === 'authenticated' && authState.accessToken) {
-                    setAuthToken(authState.accessToken, authState.expiresAt || 0);
+                // Load user data from localStorage
+                const userDataStr = localStorage.getItem('userData');
+                if (userDataStr) {
+                    try {
+                        const userData = JSON.parse(userDataStr);
+                        setUser(userData);
+                    } catch (e) {
+                        logger.warn('Failed to parse stored user data');
+                    }
+                }
 
-                    // Load user data from localStorage
-                    const userDataStr = localStorage.getItem('userData');
-                    if (userDataStr) {
-                        try {
-                            const userData = JSON.parse(userDataStr);
-                            setUser(userData);
-                            logger.info('Auth state restored from localStorage');
-                        } catch (e) {
-                            logger.warn('Failed to parse stored user data');
-                        }
+                // If we have an authenticated session, attempt immediate token refresh
+                if (authState.mode === 'authenticated') {
+                    try {
+                        await refreshAuth();
+                    } catch (error) {
+                        // Silent fail - will retry on API calls
                     }
                 } else if (authState.mode === 'none') {
                     // Check if we just logged out to prevent immediate re-login loop
                     if (typeof window !== 'undefined' && localStorage.getItem('logout_complete')) {
-                        logger.debug('Context: Logout detected, skipping initialization');
                         localStorage.removeItem('logout_complete');
                     }
                     setUser(null);
@@ -389,11 +421,10 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
                 };
 
             } catch (error) {
-                logger.error('Auth initialization failed', error);
+                console.error('🔐 SecureAuth: Auth initialization failed', error);
                 setUser(null);
             } finally {
                 setIsLoading(false);
-                logger.debug('Auth initialization complete');
             }
         };
 

@@ -59,28 +59,37 @@ export class AuthManager {
 
         try {
             // STEP 1: Check for authenticated session flag (no tokens stored)
-            const authSession = await secureStorage.get('auth_session');
+            let authSession = null;
+            try {
+                authSession = await secureStorage.get('auth_session');
+            } catch (error) {
+                logger.warn('Failed to retrieve auth_session', { error });
+            }
 
-            // STEP 2: MIGRATION - Clean up old token storage
+            // STEP 2: MIGRATION - Clean up old token storage (defensive)
             if (typeof window !== 'undefined') {
-                const oldTokens = await secureStorage.get('user_tokens');
-                if (oldTokens) {
-                    logger.info('Cleaning up old token storage for security');
-                    await secureStorage.delete('user_tokens');
-                }
+                try {
+                    const oldTokens = await secureStorage.get('user_tokens');
+                    if (oldTokens) {
+                        logger.info('Cleaning up old token storage for security');
+                        await secureStorage.delete('user_tokens');
+                    }
 
-                // Clean up localStorage tokens
-                const oldToken = useToken();
-                const oldTokensStr = localStorage.getItem('rc-tokens');
-                if (oldToken || oldTokensStr) {
-                    localStorage.removeItem('rc-token');
-                    localStorage.removeItem('rc-tokens');
-                    logger.info('Cleaned up old localStorage tokens');
+                    // Clean up localStorage tokens
+                    const oldToken = useToken();
+                    const oldTokensStr = localStorage.getItem('rc-tokens');
+                    if (oldToken || oldTokensStr) {
+                        localStorage.removeItem('rc-token');
+                        localStorage.removeItem('rc-tokens');
+                        logger.info('Cleaned up old localStorage tokens');
+                    }
+                } catch (error) {
+                    logger.warn('Migration cleanup failed', { error });
                 }
             }
 
             // STEP 3: If we have an auth session, return it (let SecureAuthContext handle refresh)
-            if (authSession && !this.isTokenExpired(authSession.expiresAt)) {
+            if (authSession && authSession.expiresAt && Date.now() < authSession.expiresAt) {
                 // Check if we just logged out - if so, don't trust the stored session
                 if (typeof window !== 'undefined' && localStorage.getItem('logout_complete')) {
                     logger.info('AuthManager: Logout detected, ignoring stored session to prevent loop');
@@ -101,20 +110,28 @@ export class AuthManager {
             }
 
             // STEP 4: Check for guest session
-            const guestSession = await secureStorage.get('guest_session');
-            if (guestSession && !this.isTokenExpired(guestSession.expiresAt)) {
-                this.currentState = {
-                    mode: 'guest',
-                    guestSessionId: guestSession.sessionId,
-                    shareToken: guestSession.shareToken,
-                    eventId: guestSession.eventId,
-                    expiresAt: guestSession.expiresAt
-                };
+            try {
+                const guestSession = await secureStorage.get('guest_session');
+                if (guestSession && guestSession.expiresAt && Date.now() < guestSession.expiresAt) {
+                    this.currentState = {
+                        mode: 'guest',
+                        guestSessionId: guestSession.sessionId,
+                        shareToken: guestSession.shareToken,
+                        eventId: guestSession.eventId,
+                        expiresAt: guestSession.expiresAt
+                    };
 
-                logger.debug('Guest session restored');
-                logger.authEvent('guest_start');
-                this.isInitialized = true;
-                return this.currentState;
+                    logger.debug('Guest session restored');
+                    try {
+                        logger.authEvent('guest_start');
+                    } catch (error) {
+                        console.warn('Failed to log guest_start event', error);
+                    }
+                    this.isInitialized = true;
+                    return this.currentState;
+                }
+            } catch (error) {
+                logger.warn('Failed to check guest session', { error });
             }
 
             // No valid session
@@ -156,7 +173,11 @@ export class AuthManager {
             await secureStorage.delete('guest_session');
 
             // NOTE: Auto-refresh is now handled by SecureAuthContext only
-            logger.authEvent('login', tokens.userId);
+            try {
+                logger.authEvent('login', tokens.userId);
+            } catch (error) {
+                console.warn('Failed to log login event', error);
+            }
 
             // Broadcast to other tabs
             this.broadcastAuthEvent('login', this.currentState);
@@ -189,7 +210,11 @@ export class AuthManager {
             };
 
             logger.debug('Guest session started', { eventId: config.eventId });
-            logger.authEvent('guest_start');
+            try {
+                logger.authEvent('guest_start');
+            } catch (error) {
+                console.warn('Failed to log guest_start event', error);
+            }
 
             // Broadcast to other tabs
             this.broadcastAuthEvent('guest_start', this.currentState);
@@ -216,7 +241,11 @@ export class AuthManager {
                     guestSessionId,
                     userId: tokens.userId
                 });
-                logger.authEvent('guest_upgrade', tokens.userId);
+                try {
+                    logger.authEvent('guest_upgrade', tokens.userId);
+                } catch (error) {
+                    console.warn('Failed to log guest_upgrade event', error);
+                }
             }
 
             return guestSessionId;
@@ -249,7 +278,7 @@ export class AuthManager {
         };
 
         if (this.currentState.mode === 'authenticated' && this.currentState.accessToken) {
-            headers['Authorization'] = `jwt ${this.currentState.accessToken}`;
+            headers['Authorization'] = `Bearer ${this.currentState.accessToken}`;
         } else if (this.currentState.mode === 'guest' && this.currentState.shareToken) {
             headers['X-Share-Token'] = this.currentState.shareToken;
             if (this.currentState.guestSessionId) {
@@ -322,7 +351,11 @@ export class AuthManager {
             this.currentState = { mode: 'none' };
             this.isInitialized = false;
 
-            logger.authEvent('logout', userId);
+            try {
+                logger.authEvent('logout', userId);
+            } catch (error) {
+                console.warn('Failed to log logout event', error);
+            }
 
             // Broadcast to other tabs
             this.broadcastAuthEvent('logout', this.currentState);
@@ -390,10 +423,8 @@ export class AuthManager {
 
 export const authManager = AuthManager.getInstance();
 
-// Auto-init on import (browser only)
+// Setup cross-tab sync on import (browser only)
+// Init is called explicitly by SecureAuthContext
 if (typeof window !== 'undefined') {
-    authManager.init().catch(err =>
-        logger.error('Auth init failed', err)
-    );
     authManager.setupCrossTabSync();
 }

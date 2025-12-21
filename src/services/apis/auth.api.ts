@@ -159,31 +159,46 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
 
 export const refreshAccessToken = async (): Promise<AuthTokens | null> => {
     try {
-        // Send request with credentials (cookies) and current access token
+        // Send request with credentials (cookies) and current access token (if available)
         // Some APIs require the old access token for refresh validation
+        const headers: any = {};
+
+        const currentToken = getInternalAccessToken();
+        if (currentToken) {
+            headers['Authorization'] = `Bearer ${currentToken}`;
+        }
+
+        // Get CSRF token for refresh request
+        const csrfHeaders = await csrfService.getHeaders();
+        Object.assign(headers, csrfHeaders);
+
         const { data } = await authAxios.post(REFRESH_TOKEN_ROUTE, {}, {
             withCredentials: true,
-            headers: {
-                'Authorization': `jwt ${getInternalAccessToken() || ''}`
-            }
+            headers
         });
 
-        if (data.status === true && data.token) {
-            // API might return ISO string, ensure we have a number
-            const apiExpiresAt = data.expiresAt || data.expires_at; // Handle potential casing diffs
-            const expiresAtTimestamp = typeof apiExpiresAt === 'string'
-                ? new Date(apiExpiresAt).getTime()
-                : (typeof apiExpiresAt === 'number' ? apiExpiresAt : Date.now() + 15 * 60 * 1000);
+        if (data.status === true) {
+            // Handle both response formats: with data wrapper or direct response
+            const responseData = data.data || data;
+            const { token: accessToken, expiresAt, expires_at } = responseData;
 
-            const newTokens: AuthTokens = {
-                accessToken: data.token,
-                refreshToken: '', // Opaque/Hidden in cookie
-                expiresAt: expiresAtTimestamp
-            };
+            if (accessToken) {
+                // API might return ISO string, ensure we have a number
+                const apiExpiresAt = expiresAt || expires_at;
+                const expiresAtTimestamp = typeof apiExpiresAt === 'string'
+                    ? new Date(apiExpiresAt).getTime()
+                    : (typeof apiExpiresAt === 'number' ? apiExpiresAt : Date.now() + 15 * 60 * 1000);
 
-            // Return tokens to SecureAuthContext (in-memory storage)
-            // NO localStorage storage for tokens
-            return newTokens;
+                const newTokens: AuthTokens = {
+                    accessToken,
+                    refreshToken: '', // Opaque/Hidden in cookie
+                    expiresAt: expiresAtTimestamp
+                };
+
+                // Return tokens to SecureAuthContext (in-memory storage)
+                // NO localStorage storage for tokens
+                return newTokens;
+            }
         }
 
         return null;
@@ -303,11 +318,15 @@ export const logout = () => {
 
 export const verifyUser = async (): Promise<{ status: boolean; user?: UserData }> => {
     try {
+        const headers: any = { ...setHeader() };
+
+        const currentToken = getInternalAccessToken();
+        if (currentToken) {
+            headers['Authorization'] = `Bearer ${currentToken}`;
+        }
+
         const { data } = await authAxios.get(VERIFY_USER_ROUTE, {
-            headers: {
-                ...setHeader(),
-                'Authorization': `jwt ${getInternalAccessToken() || ''}`
-            }
+            headers
         });
 
         if (data.status === true && data.user) {
