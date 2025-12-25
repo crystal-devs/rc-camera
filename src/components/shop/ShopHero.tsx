@@ -2,7 +2,7 @@ import Image from 'next/image';
 
 export function ShopHero() {
     return (
-        <div className="relative w-full h-[50vh] md:h-[60vh] bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center">
+        <div className="relative w-full h-[50vh] md:h-[60vh] overflow-hidden flex items-center">
             <div className="container mx-auto px-4 z-10 flex flex-col md:flex-row items-center justify-between h-full">
                 <div className="w-full md:w-1/2 flex flex-col justify-center space-y-6 slide-in-from-left-10 animate-in fade-in duration-700">
                     <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-gray-900 dark:text-white">

@@ -17,7 +17,7 @@ interface ShopProductCardProps {
 export function ShopProductCard({ product }: ShopProductCardProps) {
     return (
         <div className="group relative flex flex-col items-start space-y-3 cursor-pointer">
-            <div className="relative aspect-square w-full overflow-hidden rounded-sm bg-gray-100 dark:bg-gray-800">
+            <div className="relative aspect-square w-full overflow-hidden rounded-sm">
                 <Image
                     src={product.imageUrl}
                     alt={product.title}

@@ -104,15 +104,7 @@ export default function JoinPage() {
         eventTitle: event.title
       });
 
-      // Only redirect for public events that can be joined immediately
-      if (access.canJoin && event.visibility === 'anyone_with_link') {
-        // Public events: direct redirect to guest page
-        console.log('🟢 Public event - direct redirect');
-        router.push(`/guest/${token}`);
-        return;
-      }
-
-      // For all other cases, show the event preview or error on this page
+      // Show the event preview or error on this page
       setLoading(false);
 
       if (access.requiresAuth) {

@@ -104,9 +104,9 @@ const CATEGORIES = [
 
 export default function ShopPage() {
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-950 font-sans">
+    <div className="min-h-screen font-sans">
       {/* Header Navigation for Shop - Simplified as per screenshot */}
-      <header className="sticky top-0 z-50 w-full border-b border-gray-100 bg-white/80 backdrop-blur-md dark:border-gray-800 dark:bg-gray-950/80">
+      <header className="sticky top-0 z-50 w-full border-b border-gray-100 backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-950/80">
         <div className="container flex h-16 items-center justify-between px-4">
           <div className="flex flex-col">
             <Link href="/shop" className="text-sm font-bold tracking-widest uppercase">Print Shop</Link>
