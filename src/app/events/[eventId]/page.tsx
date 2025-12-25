@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import useEventStore from '@/stores/useEventStore';
 import { useStore } from '@/lib/store';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
+import EventCoverSelector from '@/components/event/EventCoverSelector';
 
 export default function EventDashboardPage() {
     const params = useParams();
@@ -184,6 +185,12 @@ export default function EventDashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Main Content */}
                 <div className="lg:col-span-2 space-y-8">
+                    {/* Event Cover Selector */}
+                    <EventCoverSelector
+                        eventId={eventId}
+                        currentCover={selectedEvent?.cover_image}
+                    />
+
                     {/* Event Title */}
                     <div>
                         <h2 className="text-xl font-semibold text-gray-900 mb-6">{selectedEvent?.title || 'Event'}</h2>

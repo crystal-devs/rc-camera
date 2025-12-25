@@ -1352,3 +1352,37 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
         }
     };
 };
+
+/**
+ * Get signed URL for an S3 key (for event covers)
+ */
+export const getSignedUrlForKey = async (
+    s3Key: string,
+    authToken?: string | null
+): Promise<string> => {
+    try {
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+        };
+
+        // Add auth token if available
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
+        const response = await apiClient.post('/media/signed-url/key', {
+            key: s3Key
+        }, {
+            headers,
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data.signed_url;
+        }
+
+        throw new Error(response.data?.message || 'Failed to get signed URL for key');
+    } catch (error) {
+        console.error('Error getting signed URL for key:', error);
+        throw error;
+    }
+};

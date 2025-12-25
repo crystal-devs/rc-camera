@@ -13,6 +13,10 @@ import {
 import { toast } from 'sonner';
 import { getTokenInfo } from '@/services/apis/sharing.api';
 import { useToken } from '@/hooks/useToken';
+import { getSignedUrlForKey } from '@/services/apis/media.api';
+
+// In-memory cache for cover signed URLs (cleared on page reload)
+const joinCoverUrlCache = new Map<string, string>();
 
 /* ------------------------------------------------------------------ */
 /* ---------- TYPES ------------------------------------------------- */
@@ -28,7 +32,7 @@ interface EventData {
   description: string;
   start_date: string;
   visibility: 'anyone_with_link' | 'invited_only' | 'private';
-  cover_image?: { url: string };
+  cover_image?: { public_id: string };
   location?: { name: string };
   permissions?: {
     can_upload: boolean;
@@ -51,6 +55,30 @@ export default function JoinPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [coverSignedUrl, setCoverSignedUrl] = useState<string | null>(null);
+
+  // Extract S3 key from cover data
+  const getS3Key = (cover: any): string | null => {
+    // If public_id looks like a key path (contains 'events/'), use it
+    if (cover?.public_id && cover.public_id.includes('events/')) {
+      return cover.public_id;
+    }
+    // Otherwise, extract from the URL
+    if (cover?.url) {
+      try {
+        const url = new URL(cover.url);
+        const pathParts = url.pathname.split('/');
+        // Remove leading slash and 'events/' prefix to get the key
+        if (pathParts[1] === 'events') {
+          return pathParts.slice(1).join('/'); // events/.../original/file.jpg
+        }
+      } catch (error) {
+        console.error('Failed to parse URL for S3 key:', error);
+      }
+    }
+    return null;
+  };
 
   // Get auth token with better debugging
   const [auth] = useState<string | null>(() => {
@@ -101,7 +129,8 @@ export default function JoinPage() {
         requiresAuth: access.requiresAuth,
         role: access.role,
         visibility: event.visibility,
-        eventTitle: event.title
+        eventTitle: event.title,
+        event: event
       });
 
       // Show the event preview or error on this page
@@ -211,6 +240,61 @@ export default function JoinPage() {
     }
   }, [token, authToken]);
 
+  // Generate cover image URL when tokenData is available
+  useEffect(() => {
+    const generateCoverImageUrl = async () => {
+      if (!tokenData?.event?.cover_image?.public_id) {
+        setCoverImageUrl(null);
+        return;
+      }
+
+      try {
+        console.log('🎨 Generating signed URL for cover image:', tokenData.event.cover_image.public_id);
+        const signedUrl = await getSignedUrlForKey(tokenData.event.cover_image.public_id, authToken);
+        setCoverImageUrl(signedUrl);
+        console.log('✅ Cover image URL generated successfully');
+      } catch (error) {
+        console.error('❌ Failed to generate cover image URL:', error);
+        setCoverImageUrl(null);
+      }
+    };
+
+    generateCoverImageUrl();
+  }, [tokenData, authToken]);
+
+  // Generate signed URL for cover image
+  useEffect(() => {
+    const generateCoverSignedUrl = async () => {
+      if (tokenData?.event?.cover_image) {
+        const s3Key = getS3Key(tokenData.event.cover_image);
+        if (s3Key) {
+          // Check memory cache first
+          const cachedUrl = joinCoverUrlCache.get(s3Key);
+          if (cachedUrl) {
+            setCoverSignedUrl(cachedUrl);
+            return;
+          }
+
+          try {
+            const url = await getSignedUrlForKey(s3Key, authToken || undefined);
+            // Cache the URL in memory
+            joinCoverUrlCache.set(s3Key, url);
+            setCoverSignedUrl(url);
+          } catch (error) {
+            console.error('Failed to generate signed URL for cover:', error);
+            setCoverSignedUrl(null);
+          }
+        } else {
+          setCoverSignedUrl(null);
+        }
+      } else {
+        setCoverSignedUrl(null);
+      }
+    };
+
+    generateCoverSignedUrl();
+  }, [tokenData, authToken]);
+
   /* ---------------------------------------------------------------- */
   /* ---------- RENDER STATES --------------------------------------- */
 
@@ -311,9 +395,9 @@ export default function JoinPage() {
             <Card className="bg-white/95 backdrop-blur-sm shadow-2xl border-0 overflow-hidden">
               {/* Cover Image */}
               <div className="relative h-48 bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400">
-                {event.cover_image?.url ? (
+                {coverSignedUrl ? (
                   <img
-                    src={event.cover_image.url}
+                    src={coverSignedUrl}
                     alt={event.title}
                     className="h-full w-full object-cover"
                   />

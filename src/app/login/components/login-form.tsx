@@ -329,7 +329,7 @@ export function LoginForm({
       onSubmit={handleEmailAuth}
     >
       <div className="flex flex-col items-start gap-2 text-center">
-        <h1 className="text-2xl font-bold text-neutral-900">
+        <h1 className="text-3xl font-bold text-neutral-900">
           {inviteContext ? 'Join Event' : 'Welcome Back'}
         </h1>
         {redirectUrl && !inviteContext && (
@@ -369,7 +369,7 @@ export function LoginForm({
         <Button
           type="button"
           variant="outline"
-          className="w-full h-12 py-4 px-3 md:text-md bg-white border-neutral-200 text-neutral-900 hover:bg-neutral-50 hover:text-neutral-900"
+          className="w-full h-12 py-4 px-3 md:text-md bg-red-500"
           onClick={() => googleLogin()}
           disabled={isLoading}
         >

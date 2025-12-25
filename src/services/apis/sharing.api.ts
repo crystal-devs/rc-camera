@@ -77,7 +77,7 @@ interface EventDetails {
   end_date?: string;
   template: string;
   visibility: 'anyone_with_link' | 'invited_only' | 'private';
-  cover_image?: { url: string };
+  cover_image?: { public_id: string };
   location?: { name: string };
   permissions: {
     can_view: boolean;
