@@ -88,7 +88,7 @@ import { toast } from "sonner";
 import useEventStore from '@/stores/useEventStore';
 
 // Types
-import { Event } from '@/types/events';
+import { Event } from '@/types/backend-types/event.type';
 
 interface GuestInvite {
   email: string;
@@ -348,7 +348,7 @@ export default function GuestManagementPage({ params }: PageProps) {
             <ArrowLeftIcon className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{event.name}</h1>
+            <h1 className="text-2xl font-bold">{event.title}</h1>
             <p className="text-gray-500">Participant Management</p>
           </div>
         </div>
@@ -471,23 +471,6 @@ export default function GuestManagementPage({ params }: PageProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuItem
-                  onClick={() => bulkUpdateRole.mutate({
-                    participantIds: selectedParticipants,
-                    role: 'co_host'
-                  })}
-                >
-                  Make Co-hosts
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => bulkUpdateRole.mutate({
-                    participantIds: selectedParticipants,
-                    role: 'viewer'
-                  })}
-                >
-                  Make Viewers
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-red-600"
                   onClick={handleBulkRemove}
@@ -662,7 +645,7 @@ export default function GuestManagementPage({ params }: PageProps) {
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Invite Participants to {event.name}</DialogTitle>
+            <DialogTitle>Invite Participants to {event.title}</DialogTitle>
             <DialogDescription>
               Invite people to view or contribute photos to this event
             </DialogDescription>
@@ -772,9 +755,9 @@ export default function GuestManagementPage({ params }: PageProps) {
             </div>
 
             <div className="text-center pt-4">
-              <p className="text-sm font-medium mb-1">{event.name}</p>
+              <p className="text-sm font-medium mb-1">{event.title}</p>
               <p className="text-xs text-gray-500">
-                {event?.access?.level === 'invited_only'
+                {event.visibility === 'invited_only'
                   ? 'Invited participants only'
                   : 'Anyone with this link can join'}
               </p>

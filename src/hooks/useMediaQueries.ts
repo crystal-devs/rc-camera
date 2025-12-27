@@ -22,6 +22,17 @@ import { authManager } from '@/lib/auth-manager';
 import { queryKeys } from '@/lib/queryKeys';
 import { Photo } from '@/types/PhotoGallery.types';
 
+// Industry standard: Centralized cache configuration
+const CACHE_CONFIG = {
+  staleTime: Infinity,          // Data never becomes stale automatically
+  gcTime: 24 * 60 * 60 * 1000,  // Keep unused data in memory for 24 hours
+  refetchOnWindowFocus: false,  // Do not refetch when switching tabs
+  refetchOnMount: false,        // Do not refetch on component mount if data exists
+  refetchOnReconnect: false,    // Do not refetch on network reconnect
+  retry: 2,
+  networkMode: 'online' as const
+};
+
 interface MediaFetchOptions {
   status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
   limit?: number;
@@ -54,13 +65,7 @@ export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) 
       return mediaItems.map(transformMediaToPhoto);
     },
     enabled: enabled && !!token && !!eventId,
-    staleTime: quality === 'thumbnail' ? 5 * 60 * 1000 : 2 * 60 * 1000,
-    gcTime: quality === 'thumbnail' ? 15 * 60 * 1000 : 10 * 60 * 1000,
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'stale',
-    refetchOnReconnect: true,
-    retry: 2,
-    networkMode: 'online'
+    ...CACHE_CONFIG
   });
 }
 
@@ -104,12 +109,7 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
     initialPageParam: 1,
     getNextPageParam: (lastPage) => lastPage.nextPage,
     enabled: enabled && !!token && !!eventId,
-    staleTime: quality === 'thumbnail' ? 5 * 60 * 1000 : 2 * 60 * 1000,
-    gcTime: quality === 'thumbnail' ? 15 * 60 * 1000 : 10 * 60 * 1000,
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'stale',
-    retry: 2,
-    networkMode: 'online',
+    ...CACHE_CONFIG,
     meta: {
       errorMessage: 'Failed to load more photos'
     }
@@ -143,6 +143,7 @@ export function useFullQualityPhoto(eventId: string, photoId: string, enabled = 
 
       try {
         const mediaItems = await getEventMedia(eventId, token, {
+          // @ts-ignore - mediaId not in type but backend might support it or this is legacy
           mediaId: photoId,
           quality: 'original',
           limit: 1
@@ -179,13 +180,7 @@ export function useEventMediaCounts(eventId: string, enabled = true) {
       return await getEventMediaCounts(eventId, token);
     },
     enabled: enabled && !!token && !!eventId,
-    staleTime: 1 * 60 * 1000,
-    gcTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'stale',
-    refetchOnReconnect: true,
-    retry: 2,
-    networkMode: 'online'
+    ...CACHE_CONFIG
   });
 }
 

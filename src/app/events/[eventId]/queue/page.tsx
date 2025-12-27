@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 // Import your components and hooks
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useQueueManagement } from '@/hooks/useQueueManagement';
-import UploadQueueVisualization from '@/components/album/UploadQueueVisualization';
+// import UploadQueueVisualization from '@/components/album/UploadQueueVisualization';
 import useEventStore from '@/stores/useEventStore';
 
 export default function AdminQueueManagement() {
@@ -250,13 +250,13 @@ export default function AdminQueueManagement() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <UploadQueueVisualization
+          {/* <UploadQueueVisualization
             eventId={eventId}
             webSocket={webSocket}
             autoRefresh={true}
             refreshInterval={5000}
             className="mt-6"
-          />
+          /> */}
         </TabsContent>
 
         <TabsContent value="monitoring" className="space-y-4">

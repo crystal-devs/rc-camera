@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, Suspense } from 'react'
 import { LoginForm } from './components/login-form'
 import { GoogleOAuthProvider } from "@react-oauth/google"
 import { Toaster } from "@/components/ui/sonner"
@@ -8,6 +8,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UserPlus, Calendar, Crown } from 'lucide-react';
 import { LoginCosmetics } from './components/login-cosmetics';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
+
+// Force dynamic rendering to avoid useSearchParams() suspense issues
+export const dynamic = 'force-dynamic';
 
 const client_id = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!
 
@@ -113,4 +116,19 @@ const LoginPage = () => {
     )
 }
 
-export default LoginPage
+const LoginPageWrapper = () => {
+    return (
+        <Suspense fallback={
+            <div className="flex w-full min-h-screen bg-background items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+                    <p>Loading...</p>
+                </div>
+            </div>
+        }>
+            <LoginPage />
+        </Suspense>
+    );
+};
+
+export default LoginPageWrapper;

@@ -5,6 +5,17 @@ import { useMemo, useState, useCallback } from 'react';
 import { getEventMediaWithGuestToken } from '@/services/apis/media.api';
 import { MediaFetchOptions, transformApiPhoto } from '@/types/events';
 
+// Industry standard: Centralized cache configuration
+const CACHE_CONFIG = {
+    staleTime: Infinity,          // Data never becomes stale automatically
+    gcTime: 24 * 60 * 60 * 1000,  // Keep unused data in memory for 24 hours
+    refetchOnWindowFocus: false,  // Do not refetch when switching tabs
+    refetchOnMount: false,        // Do not refetch on component mount if data exists
+    refetchOnReconnect: false,    // Do not refetch on network reconnect
+    retry: 2,
+    networkMode: 'online' as const
+};
+
 interface UseInfiniteMediaQueryProps {
     shareToken: string;
     auth: string | null;
@@ -94,6 +105,7 @@ export const useInfiniteMediaQuery = ({
             return lastPage.hasNext ? lastPage.page + 1 : undefined;
         },
         enabled: enabled && !!shareToken,
+        ...CACHE_CONFIG
     });
 
     // WebSocket handlers

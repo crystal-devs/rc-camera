@@ -12,7 +12,6 @@ import {
   PlusIcon,
   SearchIcon
 } from 'lucide-react';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useState, useMemo } from 'react';
 
@@ -318,14 +317,15 @@ export default function EventsPage() {
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
                   {coverUrls.get(event._id) ? (
-                    <Image
+                    <img
                       src={coverUrls.get(event._id)!}
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = '/images/event-thumbnail-placeholder.jpg'
                       }}
                       alt={event.title}
-                      fill
-                      className="object-cover"
+                      className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+                      loading="lazy"
+                      decoding="async"
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">
@@ -407,11 +407,12 @@ export default function EventsPage() {
               >
                 <div className="relative h-24 w-24 sm:h-32 sm:w-32 flex-shrink-0">
                   {coverUrls.get(event._id) ? (
-                    <Image
+                    <img
                       src={coverUrls.get(event._id)!}
                       alt={event.title}
-                      fill
-                      className="object-cover"
+                      className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+                      loading="lazy"
+                      decoding="async"
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">

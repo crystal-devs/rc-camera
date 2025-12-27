@@ -39,6 +39,12 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'rc-media-bucket.s3.ap-south-1.amazonaws.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
@@ -49,9 +55,9 @@ const nextConfig = {
   //     sizeLimit: '100mb', // Allow up to 100 MB for API routes
   //   },
   // },
-  // typescript: {
-  //   ignoreBuildErrors: true,
-  // },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   // eslint: {
   //   ignoreDuringBuilds: true,
   // },

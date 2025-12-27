@@ -7,6 +7,7 @@ import { SidebarProvider } from "./ui/sidebar";
 import { ThemeProvider } from "@/lib/ThemeContext";
 import { SecureAuthProvider } from "@/contexts/SecureAuthContext";
 import { useState } from 'react';
+import { ServiceWorkerRegister } from './ServiceWorkerRegister';
 
 interface ProvidersProps {
     children: React.ReactNode;
@@ -65,6 +66,7 @@ function Providers({ children }: ProvidersProps) {
         <QueryClientProvider client={queryClient}>
             <SecureAuthProvider>
                 <ThemeProvider>
+                    <ServiceWorkerRegister />
                     {children}
                     {/* Add React Query DevTools in development only */}
                     {process.env.NODE_ENV === 'development' && (

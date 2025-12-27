@@ -226,7 +226,7 @@ const useEventStore = create<EventStore>()(
       // Cache state (not persisted)
       eventsCache: new Map(),
       albumsCache: new Map(),
-      CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
+      CACHE_DURATION: 10 * 60 * 1000, // 10 minutes (User preference)
 
       // Transient state
       events: [],
