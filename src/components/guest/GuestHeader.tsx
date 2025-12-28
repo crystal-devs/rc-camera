@@ -6,19 +6,14 @@ import { Event } from '@/types/events';
 
 interface GuestHeaderProps {
     eventDetails: Event | null;
+    themeColors: any;
     onDownload: () => void;
     isDownloading: boolean;
     totalPhotos: number;
 }
 
-export function GuestHeader({ eventDetails, onDownload, isDownloading, totalPhotos }: GuestHeaderProps) {
+export function GuestHeader({ eventDetails, themeColors, onDownload, isDownloading, totalPhotos }: GuestHeaderProps) {
     if (!eventDetails) return null;
-
-    // Safely access theme colors
-    const themeColors = (eventDetails as any).styling?.theme_colors || {
-        secondary: '#ffffff', // Default fallback
-        text: '#000000'
-    };
 
     return (
         <header

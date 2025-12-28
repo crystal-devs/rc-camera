@@ -750,7 +750,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   if (!shareToken) {
     notFound();
   }
-  console.log(eventState, 'eventStateeventState')
+  // console.log(eventState, 'eventStateeventState')
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
       {/* Notification Banner for buffered changes */}
@@ -806,6 +806,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       {/* Sticky Guest Header */}
       <GuestHeader
         eventDetails={eventState.details}
+        themeColors={themeColors}
         onDownload={handleBulkDownload}
         isDownloading={isDownloading}
         totalPhotos={totalPhotos}

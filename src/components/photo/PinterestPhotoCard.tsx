@@ -133,8 +133,8 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
           </div>
         )}
 
-        {/* Hover overlay */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300">
+        {/* Hover overlay - Gradient at bottom only */}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-transparent group-hover:to-black/40 transition-all duration-300">
           <div className="absolute bottom-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
             <button
               onClick={handleLikeClick}
