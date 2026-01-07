@@ -3,7 +3,14 @@
 
 import React, { useState, useCallback, use, useEffect, memo, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WifiIcon, WifiOffIcon, Camera, X, Loader2, Plus, Upload, CheckCircle2, Download } from 'lucide-react';
+import {
+  Camera,
+  Upload,
+  CheckCircle2,
+  Loader2,
+  X,
+  Plus
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +31,7 @@ import { useGuestClaim } from '@/hooks/useGuestClaim';
 import { Event } from '@/types/events';
 import { createGuestBulkDownload, getDownloadStatus, downloadZipFile } from '@/services/apis/bulk-download.api';
 import { getStylingConfig, getThemeColors } from '@/constants/styling.constant';
+import { FindMeModal } from '@/components/photo/FindMeModal';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -86,6 +94,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [showUploadDialog, setShowUploadDialog] = useState<boolean>(false);
   const [showNotificationBanner, setShowNotificationBanner] = useState<boolean>(false);
+  const [showFindMeModal, setShowFindMeModal] = useState(false);
+  const [matchedMediaIds, setMatchedMediaIds] = useState<string[] | null>(null);
 
   // Bulk download states
   const [isDownloading, setIsDownloading] = useState(false);
@@ -266,7 +276,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       const items = Array.isArray(payload) ? payload : [payload];
       items.forEach(item => {
         if (item.newStatus === 'approved' && item.previousStatus !== 'approved') {
-          const approvalSignature = `media_approved:${item.mediaId}`;
+          const approvalSignature = `media_approved:${item.mediaId} `;
           if (!processedEvents.has(approvalSignature) &&
             !bufferedChanges.some((change: any) => change.photo.id === item.mediaId)) {
             toast.success('Photo approved!', {
@@ -435,7 +445,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     const poll = async () => {
       pollCount++;
-      // console.log(`🔄 [DEBUG] Poll attempt #${pollCount} for job:`, jobId);
+      // console.log(`🔄[DEBUG] Poll attempt #${ pollCount } for job: `, jobId);
 
       try {
         // console.log('📡 [DEBUG] Calling getDownloadStatus API...');
@@ -488,7 +498,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             toast.error('Download failed. Please try again.');
             return;
           } else {
-            // console.log(`⏳ [DEBUG] Download still processing: ${currentStatus}, continuing to poll...`);
+            // console.log(`⏳[DEBUG] Download still processing: ${ currentStatus }, continuing to poll...`);
           }
         } else {
           // console.log('❌ [DEBUG] Invalid API response, stopping polling:', response);
@@ -656,6 +666,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     }
   }, [claimContent]);
 
+  // NEW: Filtering logic for Find My Face
+  const displayedPhotos = useMemo(() => {
+    if (!matchedMediaIds) return photos;
+    return photos.filter(p => matchedMediaIds.includes(p.id));
+  }, [photos, matchedMediaIds]);
+
   // Content rendering
   const renderContent = useCallback(() => {
     if (isInitialLoading) {
@@ -721,18 +737,47 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     }
 
     return (
-      <PinterestPhotoGrid
-        photos={photos}
-        onPhotoClick={handlePhotoClick}
-        hasNextPage={hasNextPage}
-        isLoadingMore={isLoadingMore}
-        onLoadMore={loadMore}
-        onViewportChange={() => { }} // Handled internally by hook
-        eventStyling={(eventState.details as any)?.styling_config}
-      />
+      <div className="space-y-6">
+        {matchedMediaIds && (
+          <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 animate-in fade-in slide-in-from-top-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-600 p-2 rounded-lg text-white">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-semibold text-blue-900 dark:text-blue-200">
+                  Showing {displayedPhotos.length} photos of you
+                </p>
+                <p className="text-xs text-blue-700 dark:text-blue-300">
+                  {matchedMediaIds.length > 0 ? 'These are the best matches from the current gallery.' : 'No clear matches found yet.'}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMatchedMediaIds(null)}
+              className="border-blue-200 hover:bg-blue-100 text-blue-700"
+            >
+              Show All Photos
+            </Button>
+          </div>
+        )}
+        <PinterestPhotoGrid
+          photos={displayedPhotos}
+          onPhotoClick={handlePhotoClick}
+          hasNextPage={hasNextPage && !matchedMediaIds} // Disable infinite scroll when filtering for now as search is based on loaded data or we need a proper backend filter
+          isLoadingMore={isLoadingMore}
+          onLoadMore={loadMore}
+          onViewportChange={() => { }} // Handled internally by hook
+          eventStyling={(eventState.details as any)?.styling_config}
+        />
+      </div>
     );
   }, [
     photos,
+    displayedPhotos,
+    matchedMediaIds,
     isInitialLoading,
     isLoadingMore,
     hasNextPage,
@@ -762,7 +807,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         onAction={handleApplyBufferedChanges}
         onDismiss={handleDismissNotification}
         actionLabel="View Now"
-        position="top"
       />
 
       {/* Claiming Status Banner - Shows when claiming is in progress */}
@@ -810,6 +854,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         onDownload={handleBulkDownload}
         isDownloading={isDownloading}
         totalPhotos={totalPhotos}
+        onFindMe={() => setShowFindMeModal(true)}
+      />
+
+      <FindMeModal
+        isOpen={showFindMeModal}
+        onClose={() => setShowFindMeModal(false)}
+        eventId={eventState.details?._id || ''}
+        onMatchesFound={(ids) => setMatchedMediaIds(ids)}
       />
 
 
@@ -826,7 +878,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
               <div
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${downloadProgress.progress}%` }}
+                style={{ width: `${downloadProgress.progress}% ` }}
               />
             </div>
             <div className="text-xs text-gray-600 space-y-1">

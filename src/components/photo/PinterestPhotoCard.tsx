@@ -29,17 +29,6 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
   const [hasError, setHasError] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // ImageKit URL transformations for regular img tag
-  // const getOptimizedImageUrl = useCallback((src: string, width: number, quality: number) => {
-  //   // If it's already an ImageKit URL, add transformations
-  //   if (src.includes('ik.imagekit.io')) {
-  //     const separator = src.includes('?') ? '&' : '?';
-  //     return `${src}${separator}tr=w-${width},f-auto,pr-true,q-${quality}`;
-  //   }
-  //   // For other URLs, return as-is or implement your custom transformation logic
-  //   return src;
-  // }, []);
-
   const handleImageLoad = useCallback(() => {
     setIsLoaded(true);
 

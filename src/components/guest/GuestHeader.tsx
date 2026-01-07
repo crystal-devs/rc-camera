@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Download, Loader2, Share2, Menu } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Download, Loader2, UserSearch } from 'lucide-react';
 import { Event } from '@/types/events';
 
 interface GuestHeaderProps {
@@ -10,9 +9,10 @@ interface GuestHeaderProps {
     onDownload: () => void;
     isDownloading: boolean;
     totalPhotos: number;
+    onFindMe: () => void;
 }
 
-export function GuestHeader({ eventDetails, themeColors, onDownload, isDownloading, totalPhotos }: GuestHeaderProps) {
+export function GuestHeader({ eventDetails, themeColors, onDownload, isDownloading, totalPhotos, onFindMe }: GuestHeaderProps) {
     if (!eventDetails) return null;
 
     return (
@@ -41,6 +41,15 @@ export function GuestHeader({ eventDetails, themeColors, onDownload, isDownloadi
                     <span className="text-xs opacity-60 hidden sm:inline-block mr-2">
                         {totalPhotos} Photos
                     </span>
+                    <Button
+                        onClick={onFindMe}
+                        variant="outline"
+                        size="sm"
+                        className="mr-1 border-blue-200 hover:bg-blue-50 text-blue-700"
+                    >
+                        <UserSearch className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Find My Photos</span>
+                    </Button>
                     <Button
                         onClick={onDownload}
                         disabled={isDownloading || totalPhotos === 0}
