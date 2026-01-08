@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  X, CheckCircle, Upload, ChevronDown, ChevronUp, Pause, Play, RotateCcw, Trash2 
+import {
+  X, CheckCircle, Upload, ChevronDown, ChevronUp, Pause, Play, RotateCcw, Trash2, AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -61,156 +61,173 @@ export function UploadProgressTab({
   }
 
   const getStatusIcon = (status: string) => {
-    if (status === 'completed') return <CheckCircle className="h-3 w-3 text-green-500" />;
-    if (status === 'failed') return <X className="h-3 w-3 text-red-500" />;
-    if (status === 'paused') return <Pause className="h-3 w-3 text-yellow-500" />;
-    return <Upload className="h-3 w-3 text-blue-500" />;
+    if (status === 'completed') return <CheckCircle className="h-4 w-4 text-green-500" />;
+    if (status === 'failed') return <AlertCircle className="h-4 w-4 text-red-500" />;
+    if (status === 'paused') return <Pause className="h-4 w-4 text-yellow-500" />;
+    return <Upload className="h-4 w-4 text-blue-500 animate-pulse" />;
   };
 
   const formatSummary = () => {
     const parts: string[] = [];
-    if (summary.uploading > 0) parts.push(`${summary.uploading} uploading`);
-    if (summary.processing > 0) parts.push(`${summary.processing} processing`);
-    if ((summary.paused || 0) > 0) parts.push(`${summary.paused} paused`);
-    if (summary.completed > 0) parts.push(`${summary.completed} done`);
-    if (summary.failed > 0) parts.push(`${summary.failed} failed`);
-    return parts.join(' • ');
+    if (summary.completed > 0 && summary.failed > 0) {
+      return `${summary.completed} completed • ${summary.failed} failed`;
+    }
+    if (summary.completed === summary.total) {
+      return `${summary.completed} uploaded`;
+    }
+    if (hasActiveUploads) {
+      return `${summary.completed}/${summary.total} uploaded`;
+    }
+    return `${summary.total} items`;
   };
 
   return (
     <div className={cn(
-      "relative flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-full text-sm",
-      hasActiveUploads ? "border border-blue-200 dark:border-blue-700" : "border border-green-200 dark:border-green-700",
+      "fixed bottom-6 right-6 z-50 min-w-[320px] max-w-md",
       className
     )}>
-      {/* Summary Tab */}
-      <div className="flex items-center gap-2">
-        {hasActiveUploads ? (
-          <div className="animate-pulse">{getStatusIcon('uploading')}</div>
-        ) : (
-          getStatusIcon('completed')
-        )}
-        <span className="text-xs font-medium">
-          {summary.completed + summary.failed}/{summary.total}
-        </span>
-        {hasActiveUploads && (
-          <Progress 
-            value={summary.overallProgress} 
-            className="w-20 h-1 bg-gray-300 dark:bg-gray-600"
-          />
-        )}
-        <span className="text-xs text-gray-600 dark:text-gray-400 hidden sm:inline">
-          {formatSummary()}
-        </span>
-      </div>
+      <div className={cn(
+        "bg-white dark:bg-gray-900 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden",
+        "transition-all duration-300 ease-in-out"
+      )}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-3">
+            {hasActiveUploads ? (
+              <div className="relative">
+                <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+                <div className="absolute inset-0 h-2 w-2 bg-blue-500 rounded-full animate-ping opacity-75" />
+              </div>
+            ) : (
+              <CheckCircle className="h-5 w-5 text-green-500" />
+            )}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {hasActiveUploads ? 'Upload in progress' : 'Upload completed'}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {formatSummary()}
+              </p>
+            </div>
+          </div>
 
-      {/* Controls */}
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="h-6 w-6 p-0"
-        >
-          {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        </Button>
-        {!hasActiveUploads && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClearAll}
-            className="h-6 w-6 p-0 text-gray-500 hover:text-gray-700"
-          >
-            <X className="h-3 w-3" />
-          </Button>
-        )}
-      </div>
-
-      {/* Dropdown for Detailed Progress */}
-      {isExpanded && (
-        <div className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
-          <div className="p-2 space-y-2">
-            {progressArray.map((item) => (
-              <div
-                key={item.mediaId}
-                className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-900 rounded-md"
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="h-8 w-8 p-0 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+            </Button>
+            {!hasActiveUploads && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClearAll}
+                className="h-8 w-8 p-0 hover:bg-gray-100 dark:hover:bg-gray-800"
               >
-                {getStatusIcon(item.status)}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium truncate">{item.filename}</p>
-                    <div className="flex items-center gap-1">
-                      {item.status === 'failed' && onRetryItem && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onRetryItem(item.mediaId)}
-                          className="h-5 w-5 p-0 text-yellow-500 hover:text-yellow-700"
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                        </Button>
-                      )}
-                      {(item.status === 'uploading' || item.status === 'processing') && onPauseResumeItem && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onPauseResumeItem(item.mediaId, 'pause')}
-                          className="h-5 w-5 p-0 text-yellow-500 hover:text-yellow-700"
-                        >
-                          <Pause className="h-3 w-3" />
-                        </Button>
-                      )}
-                      {item.status === 'paused' && onPauseResumeItem && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onPauseResumeItem(item.mediaId, 'resume')}
-                          className="h-5 w-5 p-0 text-green-500 hover:text-green-700"
-                        >
-                          <Play className="h-3 w-3" />
-                        </Button>
-                      )}
-                      {(item.status === 'failed' || item.status === 'paused') && onCancelItem && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onCancelItem(item.mediaId)}
-                          className="h-5 w-5 p-0 text-red-500 hover:text-red-700"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      )}
-                      {item.status === 'completed' && onRemoveItem && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onRemoveItem(item.mediaId)}
-                          className="h-5 w-5 p-0 text-gray-400 hover:text-gray-600"
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                    {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                    {item.status !== 'failed' && item.status !== 'completed' && ` • ${item.percentage}%`}
-                    {item.status === 'failed' && item.error && ` • ${item.error}`}
-                  </div>
-                  {(item.status === 'uploading' || item.status === 'processing') && (
-                    <Progress value={item.percentage} className="h-1 mt-1" />
-                  )}
-                </div>
-              </div>
-            ))}
-            {progressArray.length === 0 && (
-              <div className="text-center py-2 text-xs text-gray-500 dark:text-gray-400">
-                No uploads in progress
-              </div>
+                <X className="h-4 w-4" />
+              </Button>
             )}
           </div>
         </div>
-      )}
+
+        {/* Progress Bar */}
+        {hasActiveUploads && (
+          <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800/50">
+            <Progress
+              value={summary.overallProgress}
+              className="h-1.5 bg-gray-200 dark:bg-gray-700"
+            />
+          </div>
+        )}
+
+        {/* File List */}
+        {isExpanded && (
+          <div className="max-h-64 overflow-y-auto">
+            <div className="divide-y divide-gray-100 dark:divide-gray-800">
+              {progressArray.map((item) => (
+                <div
+                  key={item.mediaId}
+                  className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    {getStatusIcon(item.status)}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                          {item.filename}
+                        </p>
+                        <div className="flex items-center gap-1 ml-2">
+                          {item.status === 'failed' && onRetryItem && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onRetryItem(item.mediaId)}
+                              className="h-6 w-6 p-0"
+                              title="Retry"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {item.status === 'completed' && onRemoveItem && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onRemoveItem(item.mediaId)}
+                              className="h-6 w-6 p-0"
+                              title="Remove"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "text-xs",
+                          item.status === 'completed' && "text-green-600 dark:text-green-400",
+                          item.status === 'failed' && "text-red-600 dark:text-red-400",
+                          item.status === 'uploading' && "text-blue-600 dark:text-blue-400",
+                          item.status === 'processing' && "text-purple-600 dark:text-purple-400"
+                        )}>
+                          {item.status === 'uploading' && `Uploading • ${Math.round(item.percentage)}%`}
+                          {item.status === 'processing' && 'Processing...'}
+                          {item.status === 'completed' && 'Completed'}
+                          {item.status === 'failed' && (item.error || 'Failed')}
+                        </span>
+                      </div>
+                      {(item.status === 'uploading' || item.status === 'processing') && (
+                        <Progress
+                          value={item.percentage}
+                          className="h-1 mt-2 bg-gray-200 dark:bg-gray-700"
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tabs for Completed/Failed */}
+        {!hasActiveUploads && isExpanded && (
+          <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex gap-4 text-xs">
+              <button className="text-green-600 dark:text-green-400 font-medium">
+                Completed ({summary.completed})
+              </button>
+              {summary.failed > 0 && (
+                <button className="text-red-600 dark:text-red-400 font-medium">
+                  Failed ({summary.failed})
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

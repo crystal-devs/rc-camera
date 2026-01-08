@@ -15,20 +15,23 @@ import {
   MediaApiResponse,
   MediaItem,
   getEventMediaWithPagination,
-  uploadMultipleMedia
+  uploadMultipleMedia,
+  getBulkUploadUrls
 } from '@/services/apis/media.api';
+import axios from 'axios';
+import { API_BASE_URL } from '@/lib/api-config';
 import { useAuthToken } from '@/hooks/use-auth';
 import { authManager } from '@/lib/auth-manager';
 import { queryKeys } from '@/lib/queryKeys';
 import { Photo } from '@/types/PhotoGallery.types';
 
-// Industry standard: Centralized cache configuration
+// Industry standard: Optimized cache configuration for image galleries (Google Photos style)
 const CACHE_CONFIG = {
-  staleTime: Infinity,          // Data never becomes stale automatically
-  gcTime: 24 * 60 * 60 * 1000,  // Keep unused data in memory for 24 hours
-  refetchOnWindowFocus: false,  // Do not refetch when switching tabs
-  refetchOnMount: false,        // Do not refetch on component mount if data exists
-  refetchOnReconnect: false,    // Do not refetch on network reconnect
+  staleTime: 0,                     // Always fetch fresh data (prevents stale cache issue)
+  gcTime: 1000 * 60 * 60,           // Keep in cache for 1 hour
+  refetchOnWindowFocus: false,      // Don't refetch on tab switch
+  refetchOnMount: true,             // DO refetch on mount to ensure fresh data
+  refetchOnReconnect: false,        // Don't refetch on network reconnect
   retry: 2,
   networkMode: 'online' as const
 };
@@ -38,6 +41,7 @@ interface MediaFetchOptions {
   limit?: number;
   quality?: 'small' | 'medium' | 'large' | 'original';
   enabled?: boolean;
+  maxPages?: number; // Maximum pages to auto-load (for small galleries)
 }
 
 /**
@@ -88,6 +92,8 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
       nextPage?: number;
       hasMore: boolean;
     }> => {
+      console.log(`🚀 Fetching page ${pageParam} for eventId: ${eventId}, status: ${status}`);
+
       if (!token) throw new Error('Authentication required');
 
       const response = await getEventMediaWithPagination(eventId, token, {
@@ -98,16 +104,37 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
         scrollType: 'infinite'
       });
 
+      console.log(`📄 Page ${pageParam} Response:`, {
+        photosCount: response.data?.length || 0,
+        pagination: response.pagination,
+        hasNext: response.pagination?.hasNext,
+        totalCount: response.pagination?.totalCount,
+        currentPage: response.pagination?.page
+      });
+
       const photos = (response.data || []).map(transformMediaToPhoto);
+
+      const nextPage = response.pagination?.hasNext ? pageParam + 1 : undefined;
+      console.log(`➡️ Next page param:`, nextPage);
 
       return {
         photos,
-        nextPage: response.pagination?.hasNext ? pageParam + 1 : undefined,
+        nextPage,
         hasMore: response.pagination?.hasNext || false
       };
     },
     initialPageParam: 1,
-    getNextPageParam: (lastPage) => lastPage.nextPage,
+    getNextPageParam: (lastPage) => {
+      const result = lastPage.nextPage;
+      console.log('🔍 getNextPageParam called:', {
+        nextPage: lastPage.nextPage,
+        hasMore: lastPage.hasMore,
+        photosInPage: lastPage.photos.length,
+        returning: result,
+        willHaveNextPage: result !== undefined
+      });
+      return result;
+    },
     enabled: enabled && !!token && !!eventId,
     ...CACHE_CONFIG,
     meta: {
@@ -193,7 +220,7 @@ export function useUploadMultipleMedia(
   options: {
     onSuccess?: (data: any) => void;
     onError?: (error: Error) => void;
-    onProgress?: (uploaded: any[]) => void;
+    onProgress?: (progress: Record<string, number>) => void;
   } = {}
 ) {
   const token = useAuthToken();
@@ -208,56 +235,86 @@ export function useUploadMultipleMedia(
       if (!token) throw new Error('Authentication required');
       if (!files || files.length === 0) throw new Error('No files selected');
 
-      // File validation...
-      const validPreviews = await Promise.all(
-        files.map(async (file, index) => {
-          if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-            toast.error(`"${file.name}" is not a valid image or video file.`);
-            return null;
+      // 1. Prepare files
+      const fileData = Array.from(files).map(file => ({
+        fileName: file.name,
+        fileType: file.type
+      }));
+
+      // 2. Get Presigned URLs
+      const response = await getBulkUploadUrls(eventId, fileData, token);
+      const { uploadUrls } = response.data;
+
+      const progressMap: Record<string, number> = {};
+      const results: any[] = [];
+      const errors: any[] = [];
+
+      // 3. Upload concurrently
+      const uploadPromises = files.map(async (file, index) => {
+        const uploadData = uploadUrls[index];
+        if (!uploadData) return;
+
+        try {
+          // Upload to S3
+          await axios.put(uploadData.uploadUrl, file, {
+            headers: { 'Content-Type': file.type },
+            onUploadProgress: (e) => {
+              const percent = (e.loaded / (e.total || 1)) * 100;
+              progressMap[file.name] = percent;
+              console.log(`📊 Upload progress for ${file.name}:`, Math.round(percent), '%');
+              // Throttle updates or just call it (React batches state updates usually, but throttle is safer if needed)
+              options.onProgress?.({ ...progressMap });
+            },
+          });
+
+          // Notify backend
+          const completeResponse = await axios.post(
+            `${API_BASE_URL}/media/upload-complete`,
+            {
+              key: uploadData.key,
+              eventId,
+              upload_id: uploadData.uploadId,
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+
+          // Extract result
+          const { data: responseData } = completeResponse.data;
+          if (responseData) {
+            results.push({ ...responseData, filename: file.name, status: 'completed' });
           }
-
-          const maxSize = 100 * 1024 * 1024;
-          if (file.size > maxSize) {
-            const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-            toast.error(`"${file.name}" is too large (${sizeMB}MB). Maximum size is 100MB.`);
-            return null;
-          }
-
-          const previewUrl = URL.createObjectURL(file);
-          const dimensions = await getImageDimensions(file);
-
-          return {
-            file,
-            tempId: `temp_${Date.now()}_${index}`,
-            previewUrl,
-            filename: file.name,
-            size: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
-            dimensions: dimensions ? `${dimensions.width}x${dimensions.height}` : undefined,
-            aspectRatio: dimensions ? dimensions.height / dimensions.width : undefined,
-            status: 'uploading' as const
-          };
-        })
-      );
-
-      const validFiles = validPreviews.filter(Boolean);
-      if (validFiles.length === 0) {
-        throw new Error('No valid files to upload');
-      }
-
-      const uploadResults = await uploadMultipleMedia(
-        validFiles.map(p => p!.file),
-        eventId,
-        albumId,
-        token
-      );
-
-      validFiles.forEach(preview => {
-        if (preview?.previewUrl) {
-          URL.revokeObjectURL(preview.previewUrl);
+        } catch (err: any) {
+          console.error(`Failed to upload ${file.name}:`, err);
+          errors.push({ filename: file.name, error: err.message });
+          progressMap[file.name] = 0; // Reset or mark failed? 
+          // Keep progress as is or set to 0? User might want to see where it failed.
         }
       });
 
-      return uploadResults;
+      await Promise.allSettled(uploadPromises);
+
+      if (errors.length === files.length) {
+        throw new Error('All uploads failed');
+      }
+
+      // Construct a result object similar to what existing code expects
+      return {
+        status: true,
+        data: {
+          uploads: results,
+          summary: {
+            successful: results.length,
+            failed: errors.length,
+            total: files.length
+          },
+          errors
+        }
+      };
     },
     onSuccess: (result) => {
       const { data } = result || {};
