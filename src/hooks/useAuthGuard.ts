@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useSecureAuth } from '@/contexts/SecureAuthContext';
+import { AuthGuardProps } from '@/components/auth/AuthGuard';
 
 interface UseAuthGuardOptions {
     requireAuth?: boolean;

@@ -3,11 +3,11 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { SidebarProvider } from "./ui/sidebar";
+import { AuthProvider } from '@/providers/AuthProvider';
 import { ThemeProvider } from "@/lib/ThemeContext";
 import { SecureAuthProvider } from "@/contexts/SecureAuthContext";
 import { useState } from 'react';
-import { ServiceWorkerRegister } from './ServiceWorkerRegister';
+import { ServiceWorkerRegister } from '@/components/common/ServiceWorkerRegister';
 
 interface ProvidersProps {
     children: React.ReactNode;
@@ -81,4 +81,4 @@ function Providers({ children }: ProvidersProps) {
     );
 }
 
-export default Providers;
+export { Providers };

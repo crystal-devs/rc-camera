@@ -2,6 +2,7 @@
 'use client';
 
 import { AlbumCard } from '@/components/album/AlbumCard';
+import { AuthGuard } from '@/components/auth/AuthGuard';
 import { Button } from '@/components/ui/button';
 import {
   Card,

@@ -1,5 +1,5 @@
 // app/layout.tsx
-import Providers from '@/components/Providers';
+import { Providers } from '@/providers/MainProvider';
 import { ConditionalNavigation } from '@/components/navigation/ConditionalNavigation';
 import { Toaster } from "@/components/ui/sonner";
 import { FullscreenProvider } from '@/lib/FullscreenContext';

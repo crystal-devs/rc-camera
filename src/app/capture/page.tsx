@@ -1,6 +1,6 @@
 'use client';
 
-import Camera from '@/components/Camera';
+import Camera from '@/components/camera/CameraMain';
 
 export default function Capture() {
   return (

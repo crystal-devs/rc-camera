@@ -6,7 +6,7 @@ import { BottomNavigationWithFullscreenAwareness } from '@/components/navigation
 import { ReactNode } from 'react';
 import { TopNavbar } from './TopNavbar';
 import { CustomSidebar } from './CustomSidebar';
-import { AuthGuard } from '@/components/AuthGuard';
+import { AuthGuard } from '../auth/AuthGuard';
 
 interface ConditionalNavigationProps {
   children: ReactNode;
