@@ -369,7 +369,7 @@ export function LoginForm({
         <Button
           type="button"
           variant="outline"
-          className="w-full h-12 py-4 px-3 md:text-md bg-red-500"
+          className="w-full h-12 py-4 px-3 md:text-md bg-white border border-neutral-200 text-neutral-900 !hover:bg-neutral-50"
           onClick={() => googleLogin()}
           disabled={isLoading}
         >
@@ -387,8 +387,8 @@ export function LoginForm({
         </Button>
 
         <div className="after:border-neutral-200 relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
-          <span className="bg-neutral-50 text-neutral-500 relative z-10 px-2">
-            Or continue with
+          <span className="bg-neutral-50 text-neutral-500 relative z-10 px-2 font-semibold">
+            or
           </span>
         </div>
 
@@ -399,7 +399,7 @@ export function LoginForm({
               type="text"
               placeholder="Full Name"
               required={!isLoginMode}
-              className='h-12 py-4 px-3 md:text-md bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400'
+              className='h-12 py-4 px-3 md:text-md !bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400 focus-visible:border-neutral-400'
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
             />
@@ -411,7 +411,7 @@ export function LoginForm({
             type="email"
             placeholder="m@example.com"
             required
-            className='h-12 py-4 px-3 md:text-md bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400'
+            className='h-12 py-4 px-3 md:text-md !bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400 focus-visible:border-neutral-400'
             value={formData.email}
             onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
           />
@@ -422,13 +422,13 @@ export function LoginForm({
             type="password"
             placeholder='Enter Password'
             required
-            className='h-12 py-4 px-3 md:text-md bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400'
+            className='h-12 py-4 px-3 md:text-md !bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400 focus-visible:border-neutral-400'
             value={formData.password}
             onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
           />
         </div>
         <Button type="submit" className="w-full h-12 py-4 px-3 md:text-md bg-neutral-900 text-white hover:bg-neutral-800" disabled={isLoading}>
-          {isLoading ? 'Please wait...' : (isLoginMode ? 'Log in' : 'Sign up')}
+          {isLoading ? 'Please wait...' : (isLoginMode ? 'Continue' : 'Sign up')}
         </Button>
       </div>
 

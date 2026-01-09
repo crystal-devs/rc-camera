@@ -1,7 +1,7 @@
 // components/OptimizedProgressiveImage.tsx - ENHANCED for Google Photos style UX
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { CameraIcon, CheckIcon, XIcon, EyeOffIcon, TrashIcon, DownloadIcon, MoreVertical, Edit2 } from 'lucide-react';
+import { CameraIcon, CheckIcon, XIcon, EyeOffIcon, TrashIcon, DownloadIcon, MoreVertical, Edit2, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Photo } from '@/types/PhotoGallery.types';
@@ -30,6 +30,7 @@ interface OptimizedProgressiveImageProps {
   onStatusUpdate: (photoId: string, status: string) => void;
   onDownload?: (photo: Photo) => void;
   onDelete?: (photoId: string) => void;
+  onSetCover?: (photo: Photo) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: (photoId: string) => void;
@@ -44,6 +45,7 @@ export const OptimizedProgressiveImage = ({
   onStatusUpdate,
   onDownload,
   onDelete,
+  onSetCover,
   selectionMode = false,
   isSelected = false,
   onToggleSelection
@@ -170,6 +172,12 @@ export const OptimizedProgressiveImage = ({
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+
+                  {onSetCover && (
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onSetCover(photo); }}>
+                      <ImageIcon className="mr-2 h-4 w-4" /> Set as Event Cover
+                    </DropdownMenuItem>
+                  )}
 
                   {userPermissions.moderate && (
                     <>

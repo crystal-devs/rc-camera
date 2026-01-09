@@ -26,6 +26,8 @@ import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { UploadProgressTab } from '../progress/upload-progress';
 import UploadButton from '../guest/UploadButton';
 import useEventStore from '@/stores/useEventStore';
+import { updateEvent } from '@/services/apis/events.api';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 // Extracted hooks
 import { usePhotoGalleryState } from './hooks/usePhotoGalleryState';
@@ -203,6 +205,58 @@ export default function OptimizedPhotoGallery({
     },
     [userPermissions.delete, deleteMutation]
   );
+
+  // Set Cover Image Handler
+  const { getAccessToken } = useSecureAuth();
+  // selectedEvent is already destructured at the top level
+  const { updateEventInStore } = useEventStore();
+
+  const handleSetCover = useCallback(async (photo: Photo) => {
+    // 1. Strict Permission Check
+    if (userRole !== 'creator' && userRole !== 'co_host') {
+      toast.error("You don't have permission to change the cover image.");
+      return;
+    }
+
+    const previousCover = selectedEvent?.cover_image;
+    const token = getAccessToken();
+
+    if (!token) {
+      toast.error("Authentication required.");
+      return;
+    }
+
+    // 2. Optimistic Update
+    const newCoverImage = {
+      url: photo.imageUrl,
+      public_id: photo.id,
+      uploaded_by: photo.uploaded_by || null, // Ensure ID or null, not a name string
+      thumbnail_url: photo.thumbnail || '' // Ensure string
+    };
+
+    // Update store immediately
+    updateEventInStore(eventId, {
+      cover_image: newCoverImage as any
+    });
+
+    toast.promise(
+      updateEvent(eventId, { cover_image: newCoverImage }, token),
+      {
+        loading: 'Updating cover image...',
+        success: () => {
+          return 'Cover image updated successfully';
+        },
+        error: (err) => {
+          // 3. Rollback on failure
+          console.error("Failed to update cover:", err);
+          if (previousCover) {
+            updateEventInStore(eventId, { cover_image: previousCover });
+          }
+          return 'Failed to update cover image';
+        }
+      }
+    );
+  }, [eventId, userRole, selectedEvent, updateEventInStore, getAccessToken]);
 
   const handleDownload = useCallback(
     (photo: Photo) => {
@@ -440,6 +494,7 @@ export default function OptimizedPhotoGallery({
         />
       ) : (
         <>
+          {/* Photo Grid */}
           <OptimizedPhotoGrid
             photos={photos}
             onPhotoClick={galleryState.openPhotoViewer}
@@ -448,6 +503,7 @@ export default function OptimizedPhotoGallery({
             onStatusUpdate={handleStatusUpdate}
             onDownload={handleDownload}
             onDelete={handleDelete}
+            onSetCover={handleSetCover}
             selectionMode={selection.getSelectedCount() > 0}
             selectedPhotos={selection.selectedPhotos}
             onToggleSelection={selection.togglePhotoSelection}

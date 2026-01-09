@@ -16,6 +16,7 @@ interface OptimizedPhotoGridProps {
   onStatusUpdate: (photoId: string, status: string) => void;
   onDownload?: (photo: Photo) => void;
   onDelete?: (photoId: string) => void;
+  onSetCover?: (photo: Photo) => void;
   selectionMode?: boolean;
   selectedPhotos?: Set<string>;
   onToggleSelection?: (photoId: string) => void;
@@ -30,6 +31,7 @@ export const OptimizedPhotoGrid = ({
   onStatusUpdate,
   onDownload,
   onDelete,
+  onSetCover,
   selectionMode = false,
   selectedPhotos = new Set(),
   onToggleSelection,
@@ -50,6 +52,7 @@ export const OptimizedPhotoGrid = ({
           onStatusUpdate={onStatusUpdate}
           onDownload={onDownload}
           onDelete={onDelete}
+          onSetCover={onSetCover}
           selectionMode={selectionMode}
           isSelected={selectedPhotos.has(photo.id)}
           onToggleSelection={onToggleSelection}
