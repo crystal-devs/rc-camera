@@ -1,83 +1,56 @@
-// hooks/useImagePreloader.ts
-import { useCallback, useRef } from 'react';
 
-interface PreloadOptions {
-  priority?: 'high' | 'low';
-  loading?: 'eager' | 'lazy';
-  decode?: 'sync' | 'async' | 'auto';
-}
+import { useEffect, useRef } from 'react';
+import { Photo } from '@/types/PhotoGallery.types';
+import { getBestImageUrl } from '@/types/PhotoGallery.types';
 
-export function useImagePreloader() {
-  const preloadCache = useRef(new Map<string, Promise<HTMLImageElement>>());
-  const imageCache = useRef(new Map<string, HTMLImageElement>());
+/**
+ * Hook to preload images that are about to come into view.
+ * Uses IntersectionObserver to detect when the user is near the end of the current viewport
+ * and speculatively loads the next batch of images.
+ * 
+ * @param photos List of all photos
+ * @param currentIndex Current index (if known) or used in conjunction with viewport detection
+ * @param batchSize Number of images to preload (default 5)
+ */
+export const useImagePreloader = (
+  photos: Photo[],
+  batchSize: number = 3
+) => {
+  // Keep track of preloaded URLs to avoid duplicates
+  const preloadedRef = useRef<Set<string>>(new Set());
 
-  const preloadImage = useCallback((
-    src: string, 
-    options: PreloadOptions = {}
-  ): Promise<HTMLImageElement> => {
-    // Return cached promise if already preloading
-    if (preloadCache.current.has(src)) {
-      return preloadCache.current.get(src)!;
+  // Helper to preload a single image
+  const preloadImage = (url: string) => {
+    if (!url || preloadedRef.current.has(url)) return;
+
+    const img = new Image();
+    img.src = url;
+
+    // 🚀 Browser Hint: Decode it immediately to avoid layout jank later
+    if ('decode' in img) {
+      img.decode().catch((err) => {
+        // Ignore decode errors (e.g. valid offline/cancel)
+        // console.debug('Preload decode interrupted', err);
+      });
     }
 
-    // Return cached image if already loaded
-    if (imageCache.current.has(src)) {
-      return Promise.resolve(imageCache.current.get(src)!);
-    }
-
-    const promise = new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      
-      // Set attributes for better performance
-      if (options.loading) img.loading = options.loading;
-      if (options.decode) img.decoding = options.decode;
-      
-      img.onload = () => {
-        imageCache.current.set(src, img);
-        preloadCache.current.delete(src);
-        resolve(img);
-      };
-      
-      img.onerror = () => {
-        preloadCache.current.delete(src);
-        reject(new Error(`Failed to load image: ${src}`));
-      };
-      
-      img.src = src;
-    });
-
-    preloadCache.current.set(src, promise);
-    return promise;
-  }, []);
-
-  const preloadImages = useCallback((
-    sources: string[], 
-    options: PreloadOptions = {}
-  ): Promise<HTMLImageElement[]> => {
-    return Promise.all(sources.map(src => preloadImage(src, options)));
-  }, [preloadImage]);
-
-  const isImageCached = useCallback((src: string): boolean => {
-    return imageCache.current.has(src);
-  }, []);
-
-  const clearCache = useCallback(() => {
-    preloadCache.current.clear();
-    imageCache.current.clear();
-  }, []);
-
-  const getCacheSize = useCallback(() => {
-    return {
-      preloading: preloadCache.current.size,
-      cached: imageCache.current.size
-    };
-  }, []);
-
-  return {
-    preloadImage,
-    preloadImages,
-    isImageCached,
-    clearCache,
-    getCacheSize
+    preloadedRef.current.add(url);
   };
-}
+
+  /**
+   * Preloads images starting from a specific index.
+   * This should be called when an item at `index` becomes visible.
+   */
+  const preloadBatch = (startIndex: number) => {
+    const endIndex = Math.min(startIndex + batchSize, photos.length);
+
+    for (let i = startIndex; i < endIndex; i++) {
+      const photo = photos[i];
+      // Preload the 'grid' size variant as that's what will be displayed
+      const url = getBestImageUrl(photo, 'grid', true); // Assumes WebP support for preloading
+      preloadImage(url);
+    }
+  };
+
+  return { preloadBatch };
+};

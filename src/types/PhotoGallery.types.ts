@@ -9,7 +9,16 @@ export interface Photo {
   imageUrl: string;      // Current best URL (preview during upload, high-quality when ready)
   thumbnailUrl?: string; // Legacy support - remove eventually
 
-  // 🚀 NEW: Image variants from backend (matches Media model)
+  // 🚀 NEW: Responsive URLs (Preferred over image_variants)
+  responsive_urls?: {
+    thumbnail: string | null;
+    display: string | null;
+    full: string | null;
+    original: string | null;
+  };
+
+  // 🚀 LEGACY: Image variants from backend (matches Media model)
+  // Deprecated: Use responsive_urls instead to save bandwidth
   image_variants?: {
     original: {
       url: string;
@@ -140,8 +149,8 @@ export interface Photo {
   };
 
   // 🚀 DEPRECATED: Remove these in future versions
-  thumbnail?: string;           // Use image_variants.small instead
-  progressiveUrls?: any;        // Replaced by image_variants
+  thumbnail?: string;           // Use responsive_urls.thumbnail instead
+  progressiveUrls?: any;        // Replaced by image_variants/responsive_urls
   processingStatus?: string;    // Use processing.status instead
   processingProgress?: number;  // Use processing data instead
   takenBy?: string;            // Use uploadedBy instead
@@ -277,6 +286,7 @@ export const transformBackendPhoto = (backendPhoto: any): Photo => {
     albumId: backendPhoto.album_id,
     imageUrl: backendPhoto.url,
     thumbnailUrl: backendPhoto.thumbnailUrl, // Legacy
+    responsive_urls: backendPhoto.responsive_urls,
     image_variants: backendPhoto.image_variants,
 
     // Status and processing
@@ -301,8 +311,6 @@ export const transformBackendPhoto = (backendPhoto: any): Photo => {
     uploader_type: backendPhoto.uploader_type,
     guest_uploader: backendPhoto.guest_uploader,
 
-    // Timestamps
-    createdAt: backendPhoto.created_at,
     created_at: backendPhoto.created_at,
     updated_at: backendPhoto.updated_at,
 
@@ -332,7 +340,24 @@ export const getBestImageUrl = (
     return photo.imageUrl;
   }
 
-  // Use optimized variants if available
+  // 🚀 Use responsive_urls if available (New Standard)
+  if (photo.responsive_urls) {
+    switch (context) {
+      case 'grid':
+      case 'thumbnail':
+        return photo.responsive_urls.thumbnail || photo.responsive_urls.original || photo.imageUrl;
+      case 'preview':
+        return photo.responsive_urls.display || photo.responsive_urls.thumbnail || photo.imageUrl;
+      case 'lightbox':
+        return photo.responsive_urls.full || photo.responsive_urls.display || photo.imageUrl;
+      case 'download':
+        return photo.responsive_urls.original || photo.responsive_urls.full || photo.imageUrl;
+      default:
+        return photo.responsive_urls.display || photo.imageUrl;
+    }
+  }
+
+  // Fallback to image_variants if available (Legacy)
   if (photo.image_variants) {
     const variants = photo.image_variants;
     let targetVariant;
@@ -364,7 +389,7 @@ export const getBestImageUrl = (
     }
   }
 
-  // Fallback to original URL
+  // Final fallback to original URL
   return photo.imageUrl;
 };
 
@@ -398,6 +423,7 @@ export const getProcessingStatusMessage = (photo: Photo): string => {
   if (photo.processing === true) return 'Processing...';
   return 'Ready';
 };
+
 export interface MediaFetchOptions {
   status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
   limit?: number;
@@ -423,6 +449,8 @@ export interface UploadProgress {
   failed: number;
   currentFile?: string;
   percentage: number;
+  size?: number;
+  speed?: number;
 }
 
 export interface UserPermissions {

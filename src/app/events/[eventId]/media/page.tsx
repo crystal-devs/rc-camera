@@ -3,7 +3,7 @@
 
 import { Download, Share2, AlertCircle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { use, useEffect, useState, useCallback } from 'react';
+import { use, useEffect, useState, useCallback, memo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -17,7 +17,7 @@ import { useEventData } from '@/hooks/useEventData';
 import useEventStore from '@/stores/useEventStore';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
-export default function OptimizedEventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
+const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
     const { eventId } = use(params);
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -26,13 +26,10 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
     const {
         event,
         albums,
-        isLoadingEvent,
-        isLoadingAlbums,
         isLoading,
         error,
         refreshAlbums,
-        authToken,
-        isInitialized
+        authToken
     } = useEventData(eventId);
 
     const { user, isAuthenticated, isLoading: isAuthLoading } = useSecureAuth();
@@ -269,4 +266,8 @@ export default function OptimizedEventDetailsPage({ params }: { params: Promise<
             />
         </div>
     );
-}
+});
+
+OptimizedEventDetailsPage.displayName = 'OptimizedEventDetailsPage';
+
+export default OptimizedEventDetailsPage;

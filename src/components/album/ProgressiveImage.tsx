@@ -1,11 +1,11 @@
 // components/OptimizedProgressiveImage.tsx - ENHANCED for Google Photos style UX
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { CameraIcon, CheckIcon, XIcon, EyeOffIcon, TrashIcon, DownloadIcon, MoreVertical, Edit2, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Photo } from '@/types/PhotoGallery.types';
-import { useProgressiveImage, useIntersection } from '@/hooks/useProgressiveImage';
+import { getBestImageUrl } from '@/types/PhotoGallery.types';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +34,7 @@ interface OptimizedProgressiveImageProps {
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: (photoId: string) => void;
+  priority?: boolean; // 🚀 NEW: Priority loading for above-the-fold images
 }
 
 export const OptimizedProgressiveImage = ({
@@ -48,17 +49,52 @@ export const OptimizedProgressiveImage = ({
   onSetCover,
   selectionMode = false,
   isSelected = false,
-  onToggleSelection
+  onToggleSelection,
+  priority = false
 }: OptimizedProgressiveImageProps) => {
-  const { src, loaded, error, placeholder, isOptimized, quality } = useProgressiveImage(photo, 'grid');
+  // 🚀 OPTIMIZED: Direct URL generation without duplicate preloading
+  const { src, placeholder } = useMemo(() => {
+    const supportsWebP = typeof window !== 'undefined' && sessionStorage.getItem('webp-support') === 'true';
+    const bestSrc = getBestImageUrl(photo, 'grid', supportsWebP);
+
+    let placeholderSrc: string | undefined = photo.thumbnailUrl;
+    if (photo.responsive_urls?.thumbnail) {
+      placeholderSrc = photo.responsive_urls.thumbnail;
+    } else if (photo.image_variants?.small?.jpeg?.url) {
+      placeholderSrc = photo.image_variants.small.jpeg.url;
+    }
+
+    return {
+      src: bestSrc,
+      placeholder: placeholderSrc || null
+    };
+  }, [photo]);
+
   const [imageLoaded, setImageLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   // Intersection observer for lazy loading
-  const isInView = useIntersection(imgRef as React.RefObject<Element>, {
-    threshold: 0.1,
-    rootMargin: '100px'
-  });
+  // 🚀 OPTIMIZATION: Priority images load immediately, others lazy load
+  const [isInView, setIsInView] = useState(priority);
+  useEffect(() => {
+    if (priority) return; // Already true
+
+    const element = imgRef.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsInView(entry.isIntersecting);
+      },
+      {
+        threshold: 0.1,
+        rootMargin: '100px'
+      }
+    );
+
+    observer.observe(element);
+    return () => observer.unobserve(element);
+  }, [priority]);
 
   const handleImageLoad = () => {
     setImageLoaded(true);
@@ -114,26 +150,70 @@ export const OptimizedProgressiveImage = ({
             />
           )}
 
-          {/* Main Image */}
-          <img
-            srcSet={
-              photo.progressiveUrls
-                ? `${photo.progressiveUrls.thumbnail} 400w,
-                  ${photo.progressiveUrls.display} 800w`
-                : undefined
-            }
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-            src={photo.progressiveUrls?.display || photo.imageUrl}
-            alt={`Photo ${index + 1}`}
-            className={cn(
-              "w-full h-full object-cover transition-opacity duration-300",
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            )}
-            onLoad={handleImageLoad}
-            onError={handleImageError}
-            loading="lazy"
-            decoding="async"
-          />
+          {/* Main Image with Picture Element for WebP Support */}
+          <picture>
+            {photo.responsive_urls ? (
+              // 🚀 NEW: Standardized Responsive URLs
+              <source
+                srcSet={
+                  [
+                    photo.responsive_urls.thumbnail ? `${photo.responsive_urls.thumbnail} 400w` : null,
+                    photo.responsive_urls.display ? `${photo.responsive_urls.display} 1080w` : null,
+                    photo.responsive_urls.full ? `${photo.responsive_urls.full} 1920w` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(', ') || undefined
+                }
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+              />
+            ) : photo.image_variants ? (
+              // 🚀 LEGACY: Nested Image Variants
+              <>
+                {/* WebP Sources */}
+                <source
+                  type="image/webp"
+                  srcSet={
+                    [
+                      photo.image_variants.small?.webp?.url ? `${photo.image_variants.small.webp.url} 400w` : null,
+                      photo.image_variants.medium?.webp?.url ? `${photo.image_variants.medium.webp.url} 800w` : null,
+                      photo.image_variants.large?.webp?.url ? `${photo.image_variants.large.webp.url} 1200w` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ') || undefined
+                  }
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                />
+                {/* JPEG Sources */}
+                <source
+                  type="image/jpeg"
+                  srcSet={
+                    [
+                      photo.image_variants.small?.jpeg?.url ? `${photo.image_variants.small.jpeg.url} 400w` : null,
+                      photo.image_variants.medium?.jpeg?.url ? `${photo.image_variants.medium.jpeg.url} 800w` : null,
+                      photo.image_variants.large?.jpeg?.url ? `${photo.image_variants.large.jpeg.url} 1200w` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ') || undefined
+                  }
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                />
+              </>
+            ) : null}
+
+            {/* Fallback / Main Image */}
+            <img
+              src={src || photo.imageUrl}
+              alt={`Photo ${index + 1}`}
+              className={cn(
+                "w-full h-full object-cover transition-opacity duration-300",
+                imageLoaded ? 'opacity-100' : 'opacity-0'
+              )}
+              onLoad={handleImageLoad}
+              onError={handleImageError}
+              loading="lazy"
+              decoding="async"
+            />
+          </picture>
 
           {/* Selection Checkbox - Visible on Hover or Selected */}
           {!isUploading && (

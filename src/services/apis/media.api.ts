@@ -24,6 +24,13 @@ export interface MediaItem {
     event_id: string;
     url: string;
     thumbnail_url?: string;
+    // 🚀 NEW: Responsive URLs key
+    responsive_urls?: {
+        thumbnail: string | null;
+        display: string | null;
+        full: string | null;
+        original: string | null;
+    };
     image_variants?: {
         small: { webp: { url: string }, jpeg: { url: string } };
         medium: { webp: { url: string }, jpeg: { url: string } };
@@ -1285,22 +1292,22 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
         mediaItem.url !== '' &&
         !mediaItem.url.startsWith('placeholder://');
 
-    // 🔧 FIX 2: Build progressive URLs with fallbacks
+    // 🚀 NEW: Progressive URLs (Legacy support)
     const progressiveUrls = {
-        placeholder: mediaItem.image_variants?.small?.jpeg?.url ||
-            mediaItem.responsive_urls?.thumbnail ||
+        placeholder: mediaItem.responsive_urls?.thumbnail ||
+            mediaItem.image_variants?.small?.jpeg?.url ||
             mediaItem.url || '',
-        thumbnail: mediaItem.image_variants?.small?.jpeg?.url ||
-            mediaItem.responsive_urls?.thumbnail ||
+        thumbnail: mediaItem.responsive_urls?.thumbnail ||
+            mediaItem.image_variants?.small?.jpeg?.url ||
             mediaItem.url || '',
-        display: mediaItem.image_variants?.medium?.jpeg?.url ||
-            mediaItem.responsive_urls?.medium ||
+        display: mediaItem.responsive_urls?.display ||
+            mediaItem.image_variants?.medium?.jpeg?.url ||
             mediaItem.url || '',
-        full: mediaItem.image_variants?.large?.jpeg?.url ||
-            mediaItem.responsive_urls?.large ||
+        full: mediaItem.responsive_urls?.full ||
+            mediaItem.image_variants?.large?.jpeg?.url ||
             mediaItem.url || '',
-        original: mediaItem.image_variants?.original?.url ||
-            mediaItem.responsive_urls?.original ||
+        original: mediaItem.responsive_urls?.original ||
+            mediaItem.image_variants?.original?.url ||
             mediaItem.url || ''
     };
 
@@ -1312,18 +1319,30 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
         id: mediaItem._id || mediaItem.id,
         albumId: mediaItem.album_id,
         eventId: mediaItem.event_id,
-        takenBy: mediaItem.uploader_display_name || mediaItem.created_by,
+        uploadedBy: mediaItem.uploader_display_name || mediaItem.created_by || 'Unknown',
+        uploaded_by: mediaItem.uploaded_by,
 
-        // 🔧 FIX 4: Use display URL for main imageUrl, empty if processing
-        imageUrl: hasValidUrl ? progressiveUrls.display : '',
-        thumbnail: progressiveUrls.thumbnail,
+        // 🚀 FIX 4: Use display URL for main imageUrl, fallback to original
+        imageUrl: hasValidUrl ? (progressiveUrls.display || progressiveUrls.original) : '',
+        thumbnailUrl: progressiveUrls.thumbnail,
+
+        // 🚀 NEW: Direct mapping of responsive_urls
+        responsive_urls: mediaItem.responsive_urls || {
+            thumbnail: mediaItem.image_variants?.small?.webp?.url || null,
+            display: mediaItem.image_variants?.medium?.webp?.url || null,
+            full: mediaItem.image_variants?.large?.webp?.url || null,
+            original: mediaItem.image_variants?.original?.url || null
+        },
+
+        // 🚀 LEGACY: Maintain image_variants for backward compatibility
+        image_variants: mediaItem.image_variants,
 
         createdAt: new Date(mediaItem.created_at),
         originalFilename: mediaItem.original_filename || `Image-${mediaItem._id}`,
 
         // 🔧 FIX 5: Remove extra comma and fix variable name
         processingStatus: processingStatus as 'pending' | 'processing' | 'completed' | 'failed',
-        processingProgress: mediaItem.processing?.progress || 0, // Fixed: was 'media', should be 'mediaItem'
+        processingProgress: mediaItem.processing?.progress || 0,
 
         approval: {
             status: mediaItem.approval?.status || (mediaItem.approval_status ? 'approved' : 'pending'),

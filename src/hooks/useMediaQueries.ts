@@ -27,11 +27,11 @@ import { Photo } from '@/types/PhotoGallery.types';
 
 // Industry standard: Optimized cache configuration for image galleries (Google Photos style)
 const CACHE_CONFIG = {
-  staleTime: 0,                     // Always fetch fresh data (prevents stale cache issue)
-  gcTime: 1000 * 60 * 60,           // Keep in cache for 1 hour
-  refetchOnWindowFocus: false,      // Don't refetch on tab switch
-  refetchOnMount: true,             // DO refetch on mount to ensure fresh data
-  refetchOnReconnect: false,        // Don't refetch on network reconnect
+  staleTime: 1000 * 60 * 5,         // 5 minutes
+  gcTime: 1000 * 60 * 60,           // 1 hour
+  refetchOnWindowFocus: false,
+  refetchOnMount: false,            // Only refetch if stale
+  refetchOnReconnect: false,
   retry: 2,
   networkMode: 'online' as const
 };
