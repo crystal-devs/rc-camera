@@ -9,16 +9,18 @@ import {
   CheckCircle2,
   Loader2,
   X,
-  Plus
+  Plus,
+  WifiOffIcon,
+  WifiIcon
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { BulkDownloadButton } from './components/BulkDownloadButton';
+import { BulkDownloadButton } from './BulkDownloadButton';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TransformedPhoto } from '@/types/events';
 import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
-import { notFound, useRouter } => 'next/navigation';
+import { notFound, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
@@ -1045,25 +1047,33 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           <FullscreenPhotoViewer
             selectedPhoto={{
               ...selectedPhoto,
-              takenBy: 0, // Guest user ID
+              takenBy: 'Guest', // Guest user ID
               imageUrl: selectedPhoto.src,
               createdAt: new Date(selectedPhoto.createdAt),
+              metadata: {
+                width: selectedPhoto.width,
+                height: selectedPhoto.height
+              },
               approval: {
                 ...selectedPhoto.approval,
                 approved_by: selectedPhoto.approval?.approved_by || undefined,
-                approved_at: selectedPhoto.approval?.approved_at ? new Date(selectedPhoto.approval.approved_at) : undefined
+                approved_at: selectedPhoto.approval?.approved_at ? new Date(selectedPhoto.approval.approved_at).toISOString() : undefined
               }
             }}
             selectedPhotoIndex={selectedPhotoIndex}
             photos={photos.map(photo => ({
               ...photo,
-              takenBy: 0, // Guest user ID
+              takenBy: 'Guest', // Guest user ID
               imageUrl: photo.src,
               createdAt: new Date(photo.createdAt),
+              metadata: {
+                width: photo.width,
+                height: photo.height
+              },
               approval: {
                 ...photo.approval,
                 approved_by: photo.approval?.approved_by || undefined,
-                approved_at: photo.approval?.approved_at ? new Date(photo.approval.approved_at) : undefined
+                approved_at: photo.approval?.approved_at ? new Date(photo.approval.approved_at).toISOString() : undefined
               }
             }))}
             onClose={() => setPhotoViewerOpen(false)}

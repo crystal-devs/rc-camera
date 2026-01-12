@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, InfoIcon, TrashIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Photo } from '../album/PhotoGallery.types';
+import { Photo } from '@/types/PhotoGallery.types';
 import { useFullscreen } from '@/lib/FullscreenContext';
 import { PhotoInfoSheet } from './PhotoInfoSheet';
 
@@ -45,33 +45,39 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const controlsTimeoutRef = useRef<NodeJS.Timeout>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // Smart URL resolution with support for original quality
-  const highResUrl = selectedPhoto?.progressiveUrls?.original || selectedPhoto?.progressiveUrls?.full || selectedPhoto?.imageUrl;
-  const originalUrl = selectedPhoto?.progressiveUrls?.original || selectedPhoto?.imageUrl || highResUrl;
-
-  // Smart URL resolution with proper progressive loading
+  // Smart URL resolution with support for responsive_urls and legacy progressiveUrls
   const getImageUrls = useMemo(() => {
-    const progressiveUrls = selectedPhoto.progressiveUrls;
-
-    if (progressiveUrls) {
+    // 🚀 Check for new responsive_urls structure (WebP supported)
+    if (selectedPhoto.responsive_urls) {
       return {
-        thumbnail: progressiveUrls.thumbnail || progressiveUrls.display,
-        display: progressiveUrls.display || progressiveUrls.full,
-        high: progressiveUrls.full || progressiveUrls.original,
-        original: progressiveUrls.original
+        thumbnail: selectedPhoto.responsive_urls.thumbnail,
+        display: selectedPhoto.responsive_urls.display || selectedPhoto.responsive_urls.thumbnail,
+        high: selectedPhoto.responsive_urls.full || selectedPhoto.responsive_urls.display,
+        original: selectedPhoto.responsive_urls.original || selectedPhoto.responsive_urls.full
       };
     }
 
-    // Fallback for backward compatibility
+    // Check for legacy progressiveUrls
+    if (selectedPhoto.progressiveUrls) {
+      return {
+        thumbnail: selectedPhoto.progressiveUrls.thumbnail || selectedPhoto.progressiveUrls.display,
+        display: selectedPhoto.progressiveUrls.display || selectedPhoto.progressiveUrls.full,
+        high: selectedPhoto.progressiveUrls.full || selectedPhoto.progressiveUrls.original,
+        original: selectedPhoto.progressiveUrls.original
+      };
+    }
+
+    // Fallback
+    const fallbackUrl = selectedPhoto.imageUrl;
     return {
-      placeholder: selectedPhoto.thumbnail,
-      thumbnail: selectedPhoto.thumbnail,
-      display: selectedPhoto.imageUrl,
-      high: selectedPhoto.imageUrl,
-      original: selectedPhoto.imageUrl
+      thumbnail: selectedPhoto.thumbnailUrl || selectedPhoto.thumbnail || fallbackUrl,
+      display: fallbackUrl,
+      high: fallbackUrl,
+      original: fallbackUrl
     };
   }, [selectedPhoto]);
 
+  const originalUrl = getImageUrls.original || getImageUrls.high;
 
   // Preload adjacent images (with smart caching)
   useEffect(() => {
@@ -82,20 +88,41 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
     adjacentIndices.forEach(index => {
       const photo = photos[index];
-      const urls = photo.progressiveUrls;
 
-      if (urls?.full) {
+      // Resolve URLs for prefetch item
+      let prefetchUrl: string | null = null;
+      let srcSet: string | null = null;
+
+      if (photo.responsive_urls?.full) {
+        prefetchUrl = photo.responsive_urls.full;
+        srcSet = `${photo.responsive_urls.thumbnail} 400w, ${photo.responsive_urls.display} 800w, ${photo.responsive_urls.full} 1600w`;
+      } else if (photo.progressiveUrls?.full) {
+        prefetchUrl = photo.progressiveUrls.full;
+        srcSet = `${photo.progressiveUrls.thumbnail} 800w, ${photo.progressiveUrls.display} 1600w, ${photo.progressiveUrls.full} 2400w`;
+      } else if (photo.imageUrl) {
+        prefetchUrl = photo.imageUrl;
+      }
+
+      if (prefetchUrl) {
         // Create link preload element
         const link = document.createElement('link');
         link.rel = 'preload';
         link.as = 'image';
-        link.href = urls.full;
-        link.imageSrcset = `${urls.thumbnail} 800w, ${urls.display} 1600w, ${urls.full} 2400w`;
-        link.imageSizes = '100vw';
+        link.href = prefetchUrl;
+        if (srcSet) {
+          link.imageSrcset = srcSet;
+          link.imageSizes = '100vw';
+        }
         document.head.appendChild(link);
 
         // Cleanup
-        return () => document.head.removeChild(link);
+        return () => {
+          try {
+            document.head.removeChild(link);
+          } catch (e) {
+            // Ignore removal errors
+          }
+        };
       }
     });
   }, [selectedPhotoIndex, photos]);
@@ -509,8 +536,8 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
                 }}
                 draggable={false}
                 onClick={(e) => e.stopPropagation()}
-                width={selectedPhoto.metadata?.originalWidth}
-                height={selectedPhoto.metadata?.originalHeight}
+                width={selectedPhoto.metadata?.width}
+                height={selectedPhoto.metadata?.height}
               />
 
               {/* Loading indicator */}
@@ -524,9 +551,9 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
               )}
 
               {/* Success indicator with dimensions */}
-              {imageLoaded && !isHighResLoading && selectedPhoto.metadata && (
+              {imageLoaded && !isHighResLoading && selectedPhoto.metadata?.width && selectedPhoto.metadata?.height && (
                 <div className="absolute top-4 right-4 bg-green-500/80 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm z-10 opacity-0 animate-[fadeInOut_2s_ease-in-out]">
-                  {selectedPhoto.metadata.originalWidth}×{selectedPhoto.metadata.originalHeight}
+                  {selectedPhoto.metadata.width}×{selectedPhoto.metadata.height}
                 </div>
               )}
             </div>
@@ -548,19 +575,19 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           uploadedAt: selectedPhoto.createdAt?.toString() || '',
           takenAt: selectedPhoto.createdAt?.toString() || '', // Metadata doesn't have timestamp
           location: selectedPhoto.metadata?.location ? {
-            name: `${selectedPhoto.metadata.location.lat}, ${selectedPhoto.metadata.location.lng}`,
-            address: ''
+            name: `${selectedPhoto.metadata.location.latitude}, ${selectedPhoto.metadata.location.longitude}`,
+            address: selectedPhoto.metadata.location.address || ''
           } : undefined,
           metadata: {
-            width: selectedPhoto.metadata?.originalWidth,
-            height: selectedPhoto.metadata?.originalHeight,
-            size: selectedPhoto.metadata?.fileSize,
-            camera: selectedPhoto.metadata?.device,
+            width: selectedPhoto.metadata?.width,
+            height: selectedPhoto.metadata?.height,
+            size: selectedPhoto.size_mb,
+            camera: selectedPhoto.metadata?.device_info?.model,
             lens: undefined,
-            iso: undefined,
-            aperture: undefined,
-            shutterSpeed: undefined,
-            focalLength: undefined
+            iso: selectedPhoto.metadata?.camera_settings?.iso,
+            aperture: selectedPhoto.metadata?.camera_settings?.aperture,
+            shutterSpeed: selectedPhoto.metadata?.camera_settings?.shutter_speed,
+            focalLength: selectedPhoto.metadata?.camera_settings?.focal_length
           },
           stats: {
             views: undefined,
