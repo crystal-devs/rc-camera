@@ -173,259 +173,259 @@ export const useEventSettings = (eventId: string) => {
   } = useEventStore()
 
   // Local state
-    const [formData, setFormData] = useState<EventFormData | null>(null)
-    const [originalData, setOriginalData] = useState<EventFormData | null>(null)
-    const [isSubmitting, setIsSubmitting] = useState(false)
-    const [coverImageFile, setCoverImageFile] = useState<File | null>(null)
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-    const [isInitialized, setIsInitialized] = useState(false)
-  
-    // Load event data and convert to form data
-    useEffect(() => {
-      if (!eventId) {
-        console.log(`Missing eventId: ${eventId}`)
-        return
-      }
-  
-      const loadEventData = async () => {
-        try {
-          let event = selectedEvent
-  
-          // If we don't have the event or it's different, fetch it
-          if (!event || event._id !== eventId) {
-            event = await getEventFromCacheOrFetch(eventId, token!)
-          }
-  
-          if (!event) {
-            console.error(`Event ${eventId} not found`)
-            toast.error("Event not found")
-            router.push('/events')
-            return
-          }
-  
-          // Convert to form data
-          const convertedData = convertEventToFormData(event)
-  
-          setFormData(convertedData)
-          setOriginalData(convertedData)
-          setPreviewUrl(event.cover_image?.url || null)
-          setIsInitialized(true)
-        } catch (error) {
-          console.error('Error loading event settings:', error)
-          toast.error("Failed to load event settings")
-          router.push('/events')
-        }
-      }
-  
-      loadEventData()
-    }, [eventId, token, selectedEvent, getEventFromCacheOrFetch, router])
-  
-    // Memoized change detection
-    const hasChanges = useMemo(() => {
-      if (!originalData || !formData) return false
-      return JSON.stringify(formData) !== JSON.stringify(originalData)
-    }, [formData, originalData])
-  
-    // Handle input changes with deep nested support
-    const handleInputChange = useCallback((field: string, value: any) => {
-      if (!formData) return
-  
-      const fieldParts = field.split('.')
-      setFormData(prev => {
-        if (!prev) return prev
-  
-        let newData = { ...prev }
-        let current: any = newData
-  
-        for (let i = 0; i < fieldParts.length - 1; i++) {
-          current[fieldParts[i]] = { ...current[fieldParts[i]] }
-          current = current[fieldParts[i]]
-        }
-  
-        current[fieldParts[fieldParts.length - 1]] = value
-        return newData
-      })
-    }, [formData])
-  
-    // Handle cover image changes
-    const handleCoverImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files || e.target.files.length === 0) {
-        setCoverImageFile(null)
-        return
-      }
-  
-      const selectedFile = e.target.files[0]
-      const maxSize = 10 * 1024 * 1024 // 10MB
-  
-      if (selectedFile.size > maxSize) {
-        toast.error("Image size should be less than 10MB")
-        e.target.value = ''
-        return
-      }
-  
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
-      if (!allowedTypes.includes(selectedFile.type)) {
-        toast.error("Please select a valid image file (JPEG, PNG, WebP)")
-        e.target.value = ''
-        return
-      }
-  
-      setCoverImageFile(selectedFile)
-  
-      // Clean up previous preview URL
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(previewUrl)
-      }
-  
-      const objectUrl = URL.createObjectURL(selectedFile)
-      setPreviewUrl(objectUrl)
-    }, [previewUrl])
-  
-    // Clear cover image
-    const handleClearImage = useCallback(() => {
-      setCoverImageFile(null)
-      setPreviewUrl(null)
-      handleInputChange('cover_image.url', '')
-    }, [handleInputChange])
-  
-    // Submit form
-    const handleSubmit = useCallback(async (e?: React.FormEvent) => {
-      if (e) e.preventDefault()
-  
-      if (!formData?.title.trim()) {
-        toast.error("Event name is required")
-        return
-      }
-  
-      if (!token) {
-        toast.error("Authentication required")
-        return
-      }
-  
-      setIsSubmitting(true)
-  
-      // Store original data for rollback
-      const originalFormData = { ...formData }
-      const originalPreviewUrl = previewUrl
-  
-      try {
-        let updatedFormData = { ...formData }
-  
-        // Upload cover image if changed
-        if (coverImageFile) {
-          toast.info("Uploading cover image...")
-          try {
-            const imageUrl = await uploadCoverImage(
-              coverImageFile,
-              'event-covers',
-              token,
-              {
-                compressionQuality: 'high',
-                maxWidth: 1920,
-                maxHeight: 1080
-              }
-            )
-  
-            updatedFormData.cover_image = {
-              url: imageUrl,
-              public_id: '',
-            }
-  
-            toast.success("Cover image uploaded successfully!")
-          } catch (uploadError: any) {
-            console.error('Cover image upload failed:', uploadError)
-            toast.error(uploadError.message || "Failed to upload cover image")
-            return
-          }
-        }
-  
-        // Optimistically update UI immediately
-        setFormData(updatedFormData)
-        setOriginalData(updatedFormData)
-        if (updatedFormData.cover_image.url) {
-          setPreviewUrl(updatedFormData.cover_image.url)
-        }
-  
-        // Prepare and submit data
-        const submitData = prepareSubmitData(updatedFormData)
-  
-        // Use the mutation for optimistic updates
-        await updateEventMutation.mutateAsync({ eventId, eventData: submitData })
-  
-        // Update store cache
-        updateEventInStore(eventId, submitData as any)
-  
-        // Clear cover image file after successful upload
-        setCoverImageFile(null)
-  
-        toast.success("Event updated successfully!")
-  
-      } catch (error: any) {
-        console.error('Error updating event:', error)
-        toast.error(error.message || "Failed to update event")
-  
-        // Rollback optimistic updates on error
-        setFormData(originalFormData)
-        setOriginalData(originalFormData)
-        setPreviewUrl(originalPreviewUrl)
-  
-        // Invalidate cache on error to ensure fresh data on next load
-        invalidateEventCache(eventId)
-      } finally {
-        setIsSubmitting(false)
-      }
-    }, [formData, token, eventId, coverImageFile, updateEventInStore, invalidateEventCache, previewUrl, updateEventMutation])
-  
-    // Delete event
-    const handleDeleteEvent = useCallback(async () => {
-      if (!token) return
-  
-      try {
-        await deleteEventMutation.mutateAsync(eventId)
-  
-        // Remove from store
-        deleteEventFromStore(eventId)
-  
-        toast.success("Event deleted successfully!")
-        router.push('/events')
-      } catch (error) {
-        console.error('Error deleting event:', error)
-        toast.error("Failed to delete event")
-      }
-    }, [eventId, token, deleteEventFromStore, router, deleteEventMutation])
-  
-    // Get user info
-    const currentUserId = selectedEvent?.created_by
-    const isEventCreator = currentUserId && selectedEvent?.created_by && currentUserId === selectedEvent.created_by
-  
-    return {
-      // Form data
-      formData,
-      originalData,
-  
-      // Loading states
-      isLoading: isLoadingEvent || !isInitialized,
-      isSubmitting,
-      hasChanges,
-  
-      // Error state
-      error,
-  
-      // User info
-      currentUserId,
-      isEventCreator,
-  
-      // Form handlers
-      handleInputChange,
-      handleCoverImageChange,
-      handleClearImage,
-      handleSubmit,
-      handleDeleteEvent,
-  
-      // Image preview
-      previewUrl,
-  
-      // Auth token for child components
-      authToken: token
+  const [formData, setFormData] = useState<EventFormData | null>(null)
+  const [originalData, setOriginalData] = useState<EventFormData | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+
+  // Load event data and convert to form data
+  useEffect(() => {
+    if (!eventId) {
+      console.log(`Missing eventId: ${eventId}`)
+      return
     }
+
+    const loadEventData = async () => {
+      try {
+        let event = selectedEvent
+
+        // If we don't have the event or it's different, fetch it
+        if (!event || event._id !== eventId) {
+          event = await getEventFromCacheOrFetch(eventId, token!)
+        }
+
+        if (!event) {
+          console.error(`Event ${eventId} not found`)
+          toast.error("Event not found")
+          router.push('/events')
+          return
+        }
+
+        // Convert to form data
+        const convertedData = convertEventToFormData(event)
+
+        setFormData(convertedData)
+        setOriginalData(convertedData)
+        setPreviewUrl(event.cover_image?.url || null)
+        setIsInitialized(true)
+      } catch (error) {
+        console.error('Error loading event settings:', error)
+        toast.error("Failed to load event settings")
+        router.push('/events')
+      }
+    }
+
+    loadEventData()
+  }, [eventId, token, selectedEvent, getEventFromCacheOrFetch, router])
+
+  // Memoized change detection
+  const hasChanges = useMemo(() => {
+    if (!originalData || !formData) return false
+    return JSON.stringify(formData) !== JSON.stringify(originalData)
+  }, [formData, originalData])
+
+  // Handle input changes with deep nested support
+  const handleInputChange = useCallback((field: string, value: any) => {
+    if (!formData) return
+
+    const fieldParts = field.split('.')
+    setFormData(prev => {
+      if (!prev) return prev
+
+      let newData = { ...prev }
+      let current: any = newData
+
+      for (let i = 0; i < fieldParts.length - 1; i++) {
+        current[fieldParts[i]] = { ...current[fieldParts[i]] }
+        current = current[fieldParts[i]]
+      }
+
+      current[fieldParts[fieldParts.length - 1]] = value
+      return newData
+    })
+  }, [formData])
+
+  // Handle cover image changes
+  const handleCoverImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) {
+      setCoverImageFile(null)
+      return
+    }
+
+    const selectedFile = e.target.files[0]
+    const maxSize = 10 * 1024 * 1024 // 10MB
+
+    if (selectedFile.size > maxSize) {
+      toast.error("Image size should be less than 10MB")
+      e.target.value = ''
+      return
+    }
+
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+    if (!allowedTypes.includes(selectedFile.type)) {
+      toast.error("Please select a valid image file (JPEG, PNG, WebP)")
+      e.target.value = ''
+      return
+    }
+
+    setCoverImageFile(selectedFile)
+
+    // Clean up previous preview URL
+    if (previewUrl && previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(previewUrl)
+    }
+
+    const objectUrl = URL.createObjectURL(selectedFile)
+    setPreviewUrl(objectUrl)
+  }, [previewUrl])
+
+  // Clear cover image
+  const handleClearImage = useCallback(() => {
+    setCoverImageFile(null)
+    setPreviewUrl(null)
+    handleInputChange('cover_image.url', '')
+  }, [handleInputChange])
+
+  // Submit form
+  const handleSubmit = useCallback(async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+
+    if (!formData?.title.trim()) {
+      toast.error("Event name is required")
+      return
+    }
+
+    if (!token) {
+      toast.error("Authentication required")
+      return
+    }
+
+    setIsSubmitting(true)
+
+    // Store original data for rollback
+    const originalFormData = { ...formData }
+    const originalPreviewUrl = previewUrl
+
+    try {
+      let updatedFormData = { ...formData }
+
+      // Upload cover image if changed
+      if (coverImageFile) {
+        toast.info("Uploading cover image...")
+        try {
+          const imageUrl = await uploadCoverImage(
+            coverImageFile,
+            'event-covers',
+            token,
+            {
+              compressionQuality: 'high',
+              maxWidth: 1920,
+              maxHeight: 1080
+            }
+          )
+
+          updatedFormData.cover_image = {
+            url: imageUrl,
+            public_id: '',
+          }
+
+          toast.success("Cover image uploaded successfully!")
+        } catch (uploadError: any) {
+          console.error('Cover image upload failed:', uploadError)
+          toast.error(uploadError.message || "Failed to upload cover image")
+          return
+        }
+      }
+
+      // Optimistically update UI immediately
+      setFormData(updatedFormData)
+      setOriginalData(updatedFormData)
+      if (updatedFormData.cover_image.url) {
+        setPreviewUrl(updatedFormData.cover_image.url)
+      }
+
+      // Prepare and submit data
+      const submitData = prepareSubmitData(updatedFormData)
+
+      // Use the mutation and get the verified response
+      const updatedEvent = await updateEventMutation.mutateAsync({ eventId, eventData: submitData })
+
+      // Update store cache with the ACTUAL server response
+      updateEventInStore(eventId, updatedEvent as any)
+
+      // Clear cover image file after successful upload
+      setCoverImageFile(null)
+
+      toast.success("Event updated successfully!")
+
+    } catch (error: any) {
+      console.error('Error updating event:', error)
+      toast.error(error.message || "Failed to update event")
+
+      // Rollback optimistic updates on error
+      setFormData(originalFormData)
+      setOriginalData(originalFormData)
+      setPreviewUrl(originalPreviewUrl)
+
+      // Invalidate cache on error to ensure fresh data on next load
+      invalidateEventCache(eventId)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }, [formData, token, eventId, coverImageFile, updateEventInStore, invalidateEventCache, previewUrl, updateEventMutation])
+
+  // Delete event
+  const handleDeleteEvent = useCallback(async () => {
+    if (!token) return
+
+    try {
+      await deleteEventMutation.mutateAsync(eventId)
+
+      // Remove from store
+      deleteEventFromStore(eventId)
+
+      toast.success("Event deleted successfully!")
+      router.push('/events')
+    } catch (error) {
+      console.error('Error deleting event:', error)
+      toast.error("Failed to delete event")
+    }
+  }, [eventId, token, deleteEventFromStore, router, deleteEventMutation])
+
+  // Get user info
+  const currentUserId = selectedEvent?.created_by
+  const isEventCreator = currentUserId && selectedEvent?.created_by && currentUserId === selectedEvent.created_by
+
+  return {
+    // Form data
+    formData,
+    originalData,
+
+    // Loading states
+    isLoading: isLoadingEvent || !isInitialized,
+    isSubmitting,
+    hasChanges,
+
+    // Error state
+    error,
+
+    // User info
+    currentUserId,
+    isEventCreator,
+
+    // Form handlers
+    handleInputChange,
+    handleCoverImageChange,
+    handleClearImage,
+    handleSubmit,
+    handleDeleteEvent,
+
+    // Image preview
+    previewUrl,
+
+    // Auth token for child components
+    authToken: token
+  }
 }

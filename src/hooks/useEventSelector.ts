@@ -114,20 +114,8 @@ export const useEventSelector = (options: UseEventSelectorOptions = {}) => {
     initializeSelection();
   }, [events, enableAutoSelect, hasInitialized, selectedEvent, pathname, lastEventId, setSelectedEvent]);
 
-  // Sync selected event with updated events list
-  useEffect(() => {
-    if (!selectedEvent || !events || events.length === 0) return;
-
-    const updatedSelectedEvent = events.find((e: Event) => e._id === selectedEvent._id);
-    if (updatedSelectedEvent && (
-      updatedSelectedEvent.title !== selectedEvent.title ||
-      updatedSelectedEvent.description !== selectedEvent.description ||
-      updatedSelectedEvent.start_date !== selectedEvent.start_date
-    )) {
-      console.log('Syncing selected event with updated data:', updatedSelectedEvent.title);
-      setSelectedEvent(updatedSelectedEvent as unknown as StoreEvent, selectedEvent.user_role);
-    }
-  }, [events, selectedEvent, setSelectedEvent]);
+  // Sync effect removed to prevent stale list data from overwriting detailed event state
+  // Updates are now handled explicitly via useEventStore and updateEventInStore
 
   // Event selection handler
   const selectEvent = useCallback((event: any) => {
