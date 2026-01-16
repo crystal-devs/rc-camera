@@ -76,8 +76,8 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
         try {
             const authState = authManager.getCurrentState();
             const sessionValid = authState.mode === 'authenticated' &&
-                               !!authState.expiresAt &&
-                               Date.now() < authState.expiresAt;
+                !!authState.expiresAt &&
+                Date.now() < authState.expiresAt;
             return sessionValid && !!user;
         } catch (error) {
             return false;

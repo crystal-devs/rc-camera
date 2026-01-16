@@ -6,6 +6,7 @@ export interface Photo {
   eventId: string;
 
   // 🚀 CORE URLs: Backend provides these optimized URLs
+  type: 'image' | 'video'; // 🚀 NEW: Media Type
   imageUrl: string;      // Current best URL (preview during upload, high-quality when ready)
   thumbnailUrl?: string; // Legacy support - remove eventually
 
@@ -284,6 +285,7 @@ export const transformBackendPhoto = (backendPhoto: any): Photo => {
     id: backendPhoto._id || backendPhoto.id,
     eventId: backendPhoto.event_id,
     albumId: backendPhoto.album_id,
+    type: backendPhoto.type || 'image', // Default to image if missing
     imageUrl: backendPhoto.url,
     thumbnailUrl: backendPhoto.thumbnailUrl, // Legacy
     responsive_urls: backendPhoto.responsive_urls,
@@ -295,13 +297,17 @@ export const transformBackendPhoto = (backendPhoto: any): Photo => {
     approvalStatus: backendPhoto.approval?.status || (backendPhoto.approval_status ? 'approved' : 'pending'),
 
     // Metadata
-    metadata: backendPhoto.metadata,
+    metadata: backendPhoto.metadata || (backendPhoto.dimensions ? {
+      width: backendPhoto.dimensions.width,
+      height: backendPhoto.dimensions.height
+    } : undefined),
     originalFilename: backendPhoto.original_filename,
     filename: backendPhoto.original_filename,
     size_mb: backendPhoto.size_mb,
     format: backendPhoto.format,
-    dimensions: backendPhoto.metadata ?
-      `${backendPhoto.metadata.width}x${backendPhoto.metadata.height}` : undefined,
+    dimensions: backendPhoto.dimensions ?
+      `${backendPhoto.dimensions.width}x${backendPhoto.dimensions.height}` :
+      (backendPhoto.metadata ? `${backendPhoto.metadata.width}x${backendPhoto.metadata.height}` : undefined),
 
     // Uploader info
     uploadedBy: backendPhoto.uploader_display_name ||

@@ -150,6 +150,25 @@ export const OptimizedProgressiveImage = ({
             />
           )}
 
+          {/* 🚀 VIDEO INDICATOR: Play Icon Overlay */}
+          {photo.type === 'video' && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+              <div className="bg-black/40 rounded-full p-3 backdrop-blur-sm border border-white/20 shadow-lg">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="white"
+                  className="w-8 h-8 drop-shadow-md"
+                >
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+              <div className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-medium text-white flex items-center gap-1 backdrop-blur-md">
+                Video
+              </div>
+            </div>
+          )}
+
           {/* Main Image with Picture Element for WebP Support */}
           <picture>
             {photo.responsive_urls ? (
@@ -202,7 +221,7 @@ export const OptimizedProgressiveImage = ({
 
             {/* Fallback / Main Image */}
             <img
-              src={src || photo.imageUrl}
+              src={(src || photo.imageUrl) || null}
               alt={`Photo ${index + 1}`}
               className={cn(
                 "w-full h-full object-cover transition-opacity duration-300",
