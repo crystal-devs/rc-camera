@@ -63,6 +63,14 @@ export interface MediaItem {
     created_at: string;
     created_by: number;
     updated_at: string;
+    uploader_display_name?: string;
+    uploaded_by?: any;
+    original_filename?: string;
+    processing_status?: string;
+    has_variants?: boolean;
+    dimensions?: { width: number; height: number };
+    stats?: any;
+    type?: 'image' | 'video';
 }
 
 export interface MediaApiResponse {
@@ -747,13 +755,14 @@ export const bulkDeleteMedia = async (
     try {
         console.log(`Bulk deleting ${mediaIds.length} media items for event: ${eventId}`);
 
-        const response = await apiClient.delete(API_ROUTES.MEDIA.BULK_DELETE(eventId), {
-            data: { media_ids: mediaIds },
+        const response = await apiClient.post(API_ROUTES.MEDIA.BULK_DELETE(eventId), {
+            media_ids: mediaIds
+        }, {
             headers: {
                 'Authorization': `Bearer ${authToken}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000, // 30 seconds for bulk operations
+            timeout: 30000,
         });
 
         if (response.data && response.data.status === true) {
@@ -761,11 +770,14 @@ export const bulkDeleteMedia = async (
             imageCache.clear();
 
             const result = response.data.data || {};
-            console.log(`Bulk delete completed: ${result.deleted || mediaIds.length} deleted, ${result.failed || 0} failed`);
+            // Backend returns modifiedCount
+            const deletedCount = result.modifiedCount ?? result.deleted ?? mediaIds.length;
+
+            console.log(`Bulk delete completed: ${deletedCount} deleted`);
 
             return {
-                deleted: result.deleted || mediaIds.length,
-                failed: result.failed || 0,
+                deleted: deletedCount,
+                failed: (result.requestedCount || mediaIds.length) - deletedCount,
                 errors: result.errors
             };
         }
@@ -1321,6 +1333,7 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
         eventId: mediaItem.event_id,
         uploadedBy: mediaItem.uploader_display_name || mediaItem.created_by || 'Unknown',
         uploaded_by: mediaItem.uploaded_by,
+        type: mediaItem.type || 'image', // Fix: added missing type property
 
         // 🚀 FIX 4: Use display URL for main imageUrl, fallback to original
         imageUrl: hasValidUrl ? (progressiveUrls.display || progressiveUrls.original) : '',
