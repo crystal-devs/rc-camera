@@ -134,105 +134,109 @@ export const OptimizedProgressiveImage = ({
       className={cn(
         "group relative aspect-square overflow-hidden rounded-lg bg-muted cursor-pointer transition-all duration-200",
         !isUploading && "hover:shadow-md",
-        isSelected && "ring-2 ring-primary ring-offset-2",
         isUploading && "opacity-70"
       )}
       onClick={handleClick}
     >
       {isInView && (
         <>
-          {/* Placeholder */}
-          {!imageLoaded && placeholder && !isUploading && (
-            <img
-              src={placeholder}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover filter blur-sm scale-110 opacity-50"
-            />
-          )}
-
-          {/* 🚀 VIDEO INDICATOR: Play Icon Overlay */}
-          {photo.type === 'video' && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-              <div className="bg-black/40 rounded-full p-3 backdrop-blur-sm border border-white/20 shadow-lg">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="white"
-                  className="w-8 h-8 drop-shadow-md"
-                >
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-              <div className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-medium text-white flex items-center gap-1 backdrop-blur-md">
-                Video
-              </div>
-            </div>
-          )}
-
-          {/* Main Image with Picture Element for WebP Support */}
-          <picture>
-            {photo.responsive_urls ? (
-              // 🚀 NEW: Standardized Responsive URLs
-              <source
-                srcSet={
-                  [
-                    photo.responsive_urls.thumbnail ? `${photo.responsive_urls.thumbnail} 400w` : null,
-                    photo.responsive_urls.display ? `${photo.responsive_urls.display} 1080w` : null,
-                    photo.responsive_urls.full ? `${photo.responsive_urls.full} 1920w` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(', ') || undefined
-                }
-                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+          {/* Scalable Content Wrapper */}
+          <div className={cn(
+            "relative w-full h-full transition-transform duration-200 ease-in-out origin-center transform will-change-transform",
+            isSelected && "scale-90 shadow-sm rounded-md overflow-hidden"
+          )}>
+            {/* Placeholder */}
+            {!imageLoaded && placeholder && !isUploading && (
+              <img
+                src={placeholder}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover filter blur-sm scale-110 opacity-50"
               />
-            ) : photo.image_variants ? (
-              // 🚀 LEGACY: Nested Image Variants
-              <>
-                {/* WebP Sources */}
-                <source
-                  type="image/webp"
-                  srcSet={
-                    [
-                      photo.image_variants.small?.webp?.url ? `${photo.image_variants.small.webp.url} 400w` : null,
-                      photo.image_variants.medium?.webp?.url ? `${photo.image_variants.medium.webp.url} 800w` : null,
-                      photo.image_variants.large?.webp?.url ? `${photo.image_variants.large.webp.url} 1200w` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(', ') || undefined
-                  }
-                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
-                />
-                {/* JPEG Sources */}
-                <source
-                  type="image/jpeg"
-                  srcSet={
-                    [
-                      photo.image_variants.small?.jpeg?.url ? `${photo.image_variants.small.jpeg.url} 400w` : null,
-                      photo.image_variants.medium?.jpeg?.url ? `${photo.image_variants.medium.jpeg.url} 800w` : null,
-                      photo.image_variants.large?.jpeg?.url ? `${photo.image_variants.large.jpeg.url} 1200w` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(', ') || undefined
-                  }
-                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
-                />
-              </>
-            ) : null}
+            )}
 
-            {/* Fallback / Main Image */}
-            <img
-              src={(src || photo.imageUrl) || null}
-              alt={`Photo ${index + 1}`}
-              className={cn(
-                "w-full h-full object-cover transition-opacity duration-300",
-                imageLoaded ? 'opacity-100' : 'opacity-0'
-              )}
-              onLoad={handleImageLoad}
-              onError={handleImageError}
-              loading="lazy"
-              decoding="async"
-            />
-          </picture>
+            {/* 🚀 VIDEO INDICATOR: Play Icon Overlay */}
+            {photo.type === 'video' && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                <div className="bg-black/40 rounded-full p-3 backdrop-blur-sm border border-white/20 shadow-lg">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="white"
+                    className="w-8 h-8 drop-shadow-md"
+                  >
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+                <div className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-medium text-white flex items-center gap-1 backdrop-blur-md">
+                  Video
+                </div>
+              </div>
+            )}
+
+            {/* Main Image with Picture Element for WebP Support */}
+            <picture>
+              {photo.responsive_urls ? (
+                // 🚀 NEW: Standardized Responsive URLs
+                <source
+                  srcSet={
+                    [
+                      photo.responsive_urls.thumbnail ? `${photo.responsive_urls.thumbnail} 400w` : null,
+                      photo.responsive_urls.display ? `${photo.responsive_urls.display} 1080w` : null,
+                      photo.responsive_urls.full ? `${photo.responsive_urls.full} 1920w` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ') || undefined
+                  }
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                />
+              ) : photo.image_variants ? (
+                // 🚀 LEGACY: Nested Image Variants
+                <>
+                  {/* WebP Sources */}
+                  <source
+                    type="image/webp"
+                    srcSet={
+                      [
+                        photo.image_variants.small?.webp?.url ? `${photo.image_variants.small.webp.url} 400w` : null,
+                        photo.image_variants.medium?.webp?.url ? `${photo.image_variants.medium.webp.url} 800w` : null,
+                        photo.image_variants.large?.webp?.url ? `${photo.image_variants.large.webp.url} 1200w` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(', ') || undefined
+                    }
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                  />
+                  {/* JPEG Sources */}
+                  <source
+                    type="image/jpeg"
+                    srcSet={
+                      [
+                        photo.image_variants.small?.jpeg?.url ? `${photo.image_variants.small.jpeg.url} 400w` : null,
+                        photo.image_variants.medium?.jpeg?.url ? `${photo.image_variants.medium.jpeg.url} 800w` : null,
+                        photo.image_variants.large?.jpeg?.url ? `${photo.image_variants.large.jpeg.url} 1200w` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(', ') || undefined
+                    }
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                  />
+                </>
+              ) : null}
+
+              <img
+                src={(src || photo.imageUrl) || undefined}
+                alt={`Photo ${index + 1}`}
+                className={cn(
+                  "w-full h-full object-cover transition-opacity duration-300",
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
+                )}
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+                loading="lazy"
+                decoding="async"
+              />
+            </picture>
+          </div>
 
           {/* Selection Checkbox - Visible on Hover or Selected */}
           {!isUploading && (
