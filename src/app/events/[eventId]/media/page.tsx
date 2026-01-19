@@ -263,6 +263,9 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
                 eventId={eventId}
                 albumId={null}
                 canUpload={true}
+                displayConfig={{
+                    targetRowHeight: 170 // Adjust request density
+                }}
             />
         </div>
     );

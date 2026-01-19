@@ -4,6 +4,8 @@ import { PinterestPhotoCard } from "./PinterestPhotoCard";
 import { TransformedPhoto } from "@/types/events";
 import Skeleton from "./skeleton/skeleton";
 import { STYLING_CONSTANTS, getStylingConfig } from '@/constants/styling.constant';
+import computeRowsLayout, { LayoutModel } from "./layout/rows-layout";
+import { Photo } from "@/types/PhotoGallery.types"; // Import generic Photo type for compatibility
 
 interface GridItem extends TransformedPhoto {
   calculatedHeight: number;
@@ -14,6 +16,7 @@ interface Position {
   x: number;
   y: number;
   width: number;
+  height?: number; // Added height for rows layout
 }
 
 interface ViewportInfo {
@@ -43,6 +46,7 @@ export const PinterestPhotoGrid: React.FC<{
       fontset_id: number;
     };
   };
+  layout?: 'masonry' | 'rows'; // New prop to control layout mode
 }> = ({
   photos,
   onPhotoClick,
@@ -50,13 +54,16 @@ export const PinterestPhotoGrid: React.FC<{
   isLoadingMore = false,
   onLoadMore,
   onViewportChange, // NEW
-  eventStyling
+  eventStyling,
+  layout = 'masonry' // Default to masonry
 }) => {
     const [likedPhotos, setLikedPhotos] = useState<Set<string>>(new Set());
     const [containerWidth, setContainerWidth] = useState(0);
     const [columnHeights, setColumnHeights] = useState<number[]>([]);
     const [itemPositions, setItemPositions] = useState<Map<string, Position>>(new Map());
     const [imageHeights, setImageHeights] = useState<Map<string, number>>(new Map());
+    // Unified container height state
+    const [filesContainerHeight, setFilesContainerHeight] = useState<number>(300);
 
     const containerRef = useRef<HTMLDivElement | null>(null);
     const observerRef = useRef<IntersectionObserver | null>(null);
@@ -82,53 +89,49 @@ export const PinterestPhotoGrid: React.FC<{
       const grid_spacing = eventStyling?.gallery?.grid_spacing ?? 1; // 0: xs, 1: sm, 2: md, 3: lg
 
       let columns: number;
+      let targetRowHeight: number;
 
+      // Determine columns and row height based on thumbnail size
       switch (thumbnail_size) {
-        case 0: // small
-          if (width < 640) columns = 3;
-          else if (width < 768) columns = 4;
-          else if (width < 1024) columns = 5;
-          else columns = 6;
+        case 0: // small / tight
+          if (width < 640) { columns = 3; targetRowHeight = 150; }
+          else if (width < 768) { columns = 4; targetRowHeight = 180; }
+          else if (width < 1024) { columns = 5; targetRowHeight = 200; }
+          else { columns = 6; targetRowHeight = 220; }
           break;
-        case 1: // medium
-          if (width < 640) columns = 2;
-          else if (width < 768) columns = 3;
-          else columns = 4;
+        case 1: // medium / standard
+          if (width < 640) { columns = 2; targetRowHeight = 200; }
+          else if (width < 768) { columns = 3; targetRowHeight = 250; }
+          else { columns = 4; targetRowHeight = 300; }
           break;
         case 2: // large
-          if (width < 640) columns = 1;
-          else if (width < 768) columns = 2;
-          else columns = 3;
+          if (width < 640) { columns = 1; targetRowHeight = 250; }
+          else if (width < 768) { columns = 2; targetRowHeight = 350; }
+          else { columns = 3; targetRowHeight = 400; }
           break;
         default:
           columns = 3;
+          targetRowHeight = 300;
       }
 
       let gap: number, padding: number;
-
-      switch (grid_spacing) {
-        case 0: // xs
-          gap = 4;
-          padding = 4;
-          break;
-        case 1: // sm
-          gap = 8;
-          padding = 8;
-          break;
-        case 2: // md
-          gap = 12;
-          padding = 12;
-          break;
-        case 3: // lg
-          gap = 16;
-          padding = 16;
-          break;
-        default:
-          gap = 8;
-          padding = 8;
+      const spacingValue = STYLING_CONSTANTS.gridSpacing[grid_spacing as keyof typeof STYLING_CONSTANTS.gridSpacing]?.value || '8px';
+      const parsedSpacing = parseInt(spacingValue);
+      // Use parsed value if available, otherwise fallback to switch
+      if (!isNaN(parsedSpacing)) {
+        gap = parsedSpacing;
+        padding = parsedSpacing;
+      } else {
+        switch (grid_spacing) {
+          case 0: gap = 4; padding = 4; break;
+          case 1: gap = 8; padding = 8; break;
+          case 2: gap = 12; padding = 12; break;
+          case 3: gap = 16; padding = 16; break;
+          default: gap = 8; padding = 8;
+        }
       }
 
-      return { columns, gap, padding };
+      return { columns, gap, padding, targetRowHeight };
     }, [eventStyling]);
 
     // Main grid configuration selector
@@ -253,36 +256,85 @@ export const PinterestPhotoGrid: React.FC<{
 
     // Calculate positions - let images determine their own height
     useEffect(() => {
-      if (!containerWidth || gridItems.length === 0) return;
+      if (!containerWidth || photos.length === 0) return;
 
       const config = getGridConfig(containerWidth);
-      const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
-      const columnWidth = Math.floor(availableWidth / config.columns);
-
-      const heights = Array(config.columns).fill(0);
       const positions = new Map<string, Position>();
 
-      gridItems.forEach((item) => {
-        // Find shortest column
-        const shortestColumnIndex = heights.indexOf(Math.min(...heights));
-        const x = config.padding + shortestColumnIndex * (columnWidth + config.gap);
-        const y = heights[shortestColumnIndex];
+      if (layout === 'rows') {
+        // --- ROWS LAYOUT ---
+        // Map TransformedPhoto to a structure compatible with computeRowsLayout's Photo type
+        // computeRowsLayout needs: id, width, height. We can cast safely for internal use.
+        const layoutPhotos = (photos as unknown as any[]).map(p => ({
+          id: p.id,
+          width: p.width || 100,
+          height: p.height || 100,
+          src: p.src || '',
+          aspectRatio: (p.width && p.height) ? p.width / p.height : 1
+        }));
 
-        // Store position (no fixed height!)
-        positions.set(item.id, {
-          x,
-          y,
-          width: columnWidth
+        const rowsLayout = computeRowsLayout(
+          layoutPhotos,
+          config.gap, // Spacing
+          config.padding, // Padding
+          containerWidth,
+          config.targetRowHeight
+        );
+
+        if (rowsLayout) {
+          let currentY = config.padding;
+
+          rowsLayout.tracks.forEach((track) => {
+            let currentX = config.padding;
+            // Assuming all photos in a track have the same height
+            const rowHeight = track.photos[0]?.height || config.targetRowHeight;
+
+            track.photos.forEach((photoItem) => {
+              positions.set(photoItem.photo.id, {
+                x: currentX,
+                y: currentY,
+                width: photoItem.width,
+                height: photoItem.height
+              });
+              currentX += photoItem.width + config.gap;
+            });
+
+            currentY += rowHeight + config.gap;
+          });
+
+          setFilesContainerHeight(currentY);
+        }
+
+      } else {
+        // --- MASONRY LAYOUT ---
+        const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
+        const columnWidth = Math.floor(availableWidth / config.columns);
+        const heights = Array(config.columns).fill(0);
+
+        gridItems.forEach((item) => {
+          // Find shortest column
+          const shortestColumnIndex = heights.indexOf(Math.min(...heights));
+          const x = config.padding + shortestColumnIndex * (columnWidth + config.gap);
+          const y = heights[shortestColumnIndex];
+
+          // Store position (no fixed height!)
+          positions.set(item.id, {
+            x,
+            y,
+            width: columnWidth
+          });
+
+          // Use actual loaded height if available, otherwise use calculated
+          const itemHeight = imageHeights.get(item.id) || item.calculatedHeight;
+          heights[shortestColumnIndex] += itemHeight + config.gap;
         });
 
-        // Use actual loaded height if available, otherwise use calculated
-        const itemHeight = imageHeights.get(item.id) || item.calculatedHeight;
-        heights[shortestColumnIndex] += itemHeight + config.gap;
-      });
+        setColumnHeights([...heights]);
+        setFilesContainerHeight(Math.max(...heights, 300));
+      }
 
-      setColumnHeights([...heights]);
       setItemPositions(positions);
-    }, [gridItems, containerWidth, getGridConfig, imageHeights]);
+    }, [gridItems, containerWidth, getGridConfig, imageHeights, layout, photos]);
 
     // Container resize handler
     useEffect(() => {
@@ -355,8 +407,6 @@ export const PinterestPhotoGrid: React.FC<{
       return {};
     }, [stylingConfig]);
 
-    const containerHeight = Math.max(...columnHeights, 300);
-
     if (photos.length === 0 && (isLoadingMore || hasNextPage)) {
       return <Skeleton />;
     }
@@ -366,9 +416,9 @@ export const PinterestPhotoGrid: React.FC<{
         <div
           ref={containerRef}
           className="relative w-full"
-          style={{ minHeight: containerHeight }}
+          style={{ minHeight: filesContainerHeight }}
         >
-          {gridItems.map((photo, index) => {
+          {photos.map((photo, index) => {
             const position = itemPositions.get(photo.id);
             if (!position) return null;
 
@@ -376,18 +426,19 @@ export const PinterestPhotoGrid: React.FC<{
               <div
                 key={photo.id}
                 ref={(el) => registerItemRef(index, el)} // NEW: Register for viewport tracking
-                className="absolute"
+                className="absolute transition-all duration-500 ease-out"
                 style={{
                   left: position.x,
                   top: position.y,
                   width: position.width,
+                  height: position.height // Apply explicit height if available (Rows layout)
                 }}
               >
                 <PinterestPhotoCard
                   photo={photo}
                   index={index}
                   baseWidth={position.width}
-                  expectedHeight={photo.calculatedHeight}
+                  expectedHeight={position.height || (photo as any).calculatedHeight || 300} // Use calculated position height or fallback
                   isLiked={likedPhotos.has(photo.id)}
                   onLike={() => handleLike(photo.id)}
                   onClick={() => onPhotoClick(photo, index)}

@@ -50,8 +50,9 @@ export const OptimizedProgressiveImage = ({
   selectionMode = false,
   isSelected = false,
   onToggleSelection,
-  priority = false
-}: OptimizedProgressiveImageProps) => {
+  priority = false,
+  layout = 'grid' // 'grid' | 'rows'
+}: OptimizedProgressiveImageProps & { layout?: 'grid' | 'rows' }) => {
   // 🚀 OPTIMIZED: Direct URL generation without duplicate preloading
   const { src, placeholder } = useMemo(() => {
     const supportsWebP = typeof window !== 'undefined' && sessionStorage.getItem('webp-support') === 'true';
@@ -132,8 +133,9 @@ export const OptimizedProgressiveImage = ({
     <div
       ref={imgRef}
       className={cn(
-        "group relative aspect-square overflow-hidden rounded-lg bg-muted cursor-pointer transition-all duration-200",
-        !isUploading && "hover:shadow-md",
+        "group relative overflow-hidden bg-muted cursor-pointer transition-all duration-200",
+        layout === 'grid' && "aspect-square", // Only force square aspect ratio in grid mode
+        layout === 'rows' && "h-full w-full", // In rows mode, fill the container which has explicit dimensions
         isUploading && "opacity-70"
       )}
       onClick={handleClick}
@@ -143,7 +145,7 @@ export const OptimizedProgressiveImage = ({
           {/* Scalable Content Wrapper */}
           <div className={cn(
             "relative w-full h-full transition-transform duration-200 ease-in-out origin-center transform will-change-transform",
-            isSelected && "scale-90 shadow-sm rounded-md overflow-hidden"
+            isSelected && "scale-90 overflow-hidden"
           )}>
             {/* Placeholder */}
             {!imageLoaded && placeholder && !isUploading && (

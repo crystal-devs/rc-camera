@@ -322,27 +322,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
 
   // Gallery Layouts
   galleryLayouts: {
-    0: {
-      name: "Grid",
-      description: "Equal sized grid layout",
-      icon: "⬜",
-      css: {
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(var(--thumbnail-size), 1fr))",
-        gap: "var(--grid-spacing)",
-        padding: "var(--grid-spacing)"
-      },
-      itemStyle: {
-        aspectRatio: "1/1",
-        borderRadius: "var(--border-radius)",
-        overflow: "hidden"
-      },
-      responsive: {
-        mobile: { gridTemplateColumns: "repeat(2, 1fr)" },
-        tablet: { gridTemplateColumns: "repeat(3, 1fr)" },
-        desktop: { gridTemplateColumns: "repeat(auto-fill, minmax(var(--thumbnail-size), 1fr))" }
-      }
-    },
+    // 1: Masonry (Pinterest style) - Default
     1: {
       name: "Masonry",
       description: "Pinterest-style varying heights",
@@ -365,6 +345,28 @@ export const STYLING_CONSTANTS: StylingConstants = {
         mobile: { columnCount: 2 },
         tablet: { columnCount: 3 },
         desktop: { columnCount: "auto" }
+      }
+    },
+    // 2: Horizontal (Rows/Google Photos style)
+    2: {
+      name: "Horizontal",
+      description: "Row-based layout like Google Photos",
+      icon: "↔️",
+      css: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "var(--grid-spacing)",
+        padding: "var(--grid-spacing)"
+      },
+      itemStyle: {
+        height: "var(--thumbnail-size)",
+        borderRadius: "var(--border-radius)",
+        overflow: "hidden"
+      },
+      responsive: {
+        mobile: { height: "200px" },
+        tablet: { height: "250px" },
+        desktop: { height: "300px" }
       }
     }
   },
@@ -824,7 +826,7 @@ export const getStylingConfig = (event: any) => {
 
   // Safely get IDs with fallbacks
   const coverTemplateId = styling.cover?.template_id ?? 1;
-  const galleryLayoutId = styling.gallery?.layout_id ?? 0;
+  const galleryLayoutId = styling.gallery?.layout_id ?? 1; // Default to 1 (Masonry)
   const gridSpacingId = styling.gallery?.grid_spacing ?? 1;
   const thumbnailSizeId = styling.gallery?.thumbnail_size ?? 1;
   const themeId = styling.theme?.theme_id ?? 0;
@@ -836,7 +838,7 @@ export const getStylingConfig = (event: any) => {
 
   return {
     coverTemplate: STYLING_CONSTANTS.coverTemplates[coverTemplateId] || STYLING_CONSTANTS.coverTemplates[1],
-    galleryLayout: STYLING_CONSTANTS.galleryLayouts[galleryLayoutId] || STYLING_CONSTANTS.galleryLayouts[0],
+    galleryLayout: STYLING_CONSTANTS.galleryLayouts[galleryLayoutId] || STYLING_CONSTANTS.galleryLayouts[1], // Fallback to 1
     gridSpacing: STYLING_CONSTANTS.gridSpacing[gridSpacingId] || STYLING_CONSTANTS.gridSpacing[1],
     thumbnailSize: STYLING_CONSTANTS.thumbnailSizes[thumbnailSizeId] || STYLING_CONSTANTS.thumbnailSizes[1],
     theme: STYLING_CONSTANTS.themes[themeId] || STYLING_CONSTANTS.themes[0],
@@ -999,7 +1001,7 @@ export const validateStylingConfig = (config: any): boolean => {
 export const getDefaultStylingConfig = () => {
   return {
     cover: { template_id: 1 },
-    gallery: { layout_id: 0, grid_spacing: 1, thumbnail_size: 1 },
+    gallery: { layout_id: 1, grid_spacing: 1, thumbnail_size: 1 }, // Default layout 1
     theme: {
       theme_id: 0,
       fontset_id: 0,

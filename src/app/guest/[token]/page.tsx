@@ -20,6 +20,9 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TransformedPhoto } from '@/types/events';
 import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
+import { RowsPhotoGallery } from '@/components/photo/layout/RowsPhotoGallery';
+import { Photo } from '@/types/PhotoGallery.types';
+
 import { notFound, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
@@ -33,7 +36,7 @@ import { NotificationBanner } from '@/components/guest/NotificationBanner';
 import { useGuestClaim } from '@/hooks/useGuestClaim';
 import { Event } from '@/types/events';
 import { createGuestBulkDownload, getDownloadStatus, downloadZipFile } from '@/services/apis/bulk-download.api';
-import { getStylingConfig, getThemeColors } from '@/constants/styling.constant';
+import { getStylingConfig, getThemeColors, generateEventCSS } from '@/constants/styling.constant';
 import { FindMeModal } from '@/components/photo/FindMeModal';
 
 const queryClient = new QueryClient({
@@ -739,8 +742,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       );
     }
 
+    // Generate CSS variables for the event
+    const eventStyles = eventState.details ? generateEventCSS(eventState.details) : {};
+
     return (
-      <div className="space-y-6">
+      <div className="space-y-6" style={eventStyles as React.CSSProperties}>
         {matchedMediaIds && (
           <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 animate-in fade-in slide-in-from-top-4">
             <div className="flex items-center gap-3">
@@ -766,15 +772,86 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             </Button>
           </div>
         )}
-        <PinterestPhotoGrid
-          photos={displayedPhotos}
-          onPhotoClick={handlePhotoClick}
-          hasNextPage={hasNextPage && !matchedMediaIds} // Disable infinite scroll when filtering for now as search is based on loaded data or we need a proper backend filter
-          isLoadingMore={isLoadingMore}
-          onLoadMore={loadMore}
-          onViewportChange={() => { }} // Handled internally by hook
-          eventStyling={(eventState.details as any)?.styling_config}
-        />
+        {(() => {
+          // Simplify Component Selection
+          const styling = (eventState.details as any)?.styling_config;
+          const layoutId = styling?.gallery?.layout_id ?? 1;
+
+          if (layoutId === 2) {
+            // Map TransformedPhoto to Photo for RowsPhotoGallery
+            const galleryPhotos = displayedPhotos.map(p => ({
+              id: p.id,
+              eventId: p.eventId || '',
+              albumId: p.albumId,
+              type: 'image',
+              imageUrl: p.src,
+              responsive_urls: p.responsive_urls,
+              width: p.width,
+              height: p.height,
+              metadata: { width: p.width, height: p.height },
+              approval: p.approval,
+              uploadedBy: p.uploaded_by,
+              createdAt: p.createdAt
+            } as unknown as Photo));
+
+            const spacingId = styling?.gallery?.grid_spacing ?? 1;
+            const spacingMap: Record<number, number> = { 0: 4, 1: 8, 2: 12, 3: 16 };
+            const spacing = spacingMap[spacingId] || 8;
+
+            return (
+              <RowsPhotoGallery
+                photos={galleryPhotos}
+                onPhotoClick={(photo, index) => {
+                  // Map back to TransformedPhoto for handler
+                  const original = displayedPhotos.find(p => p.id === photo.id);
+                  if (original) handlePhotoClick(original, index);
+                }}
+                userPermissions={{
+                  upload: eventState.details?.default_guest_permissions?.upload ?? true, // Fallback to safe default or actual permission
+                  download: eventState.details?.default_guest_permissions?.download ?? true,
+                  moderate: false,
+                  delete: false
+                }}
+                currentTab="approved"
+                onStatusUpdate={() => { }}
+                onDownload={(photo) => {
+                  const original = displayedPhotos.find(p => p.id === photo.id);
+                  if (original) {
+                    // Trigger download logic
+                    const link = document.createElement('a');
+                    link.href = original.responsive_urls?.original || original.src;
+                    link.download = `photo-${original.id}`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }
+                }}
+                selectionMode={false}
+                spacing={spacing}
+                targetRowHeight={styling?.gallery?.thumbnail_size === 0 ? 180 : styling?.gallery?.thumbnail_size === 2 ? 350 : 250}
+              />
+            );
+          }
+
+
+
+          return (
+            <PinterestPhotoGrid
+              photos={displayedPhotos}
+              onPhotoClick={handlePhotoClick}
+              hasNextPage={hasNextPage && !matchedMediaIds}
+              isLoadingMore={isLoadingMore}
+              onLoadMore={loadMore}
+              onViewportChange={() => { }}
+              eventStyling={(eventState.details as any)?.styling_config}
+              layout="masonry"
+            />
+          );
+        })()}
+
+
+
+
       </div>
     );
   }, [
@@ -1047,6 +1124,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           <FullscreenPhotoViewer
             selectedPhoto={{
               ...selectedPhoto,
+              type: 'image' as const, // Fix lint error
               takenBy: 'Guest', // Guest user ID
               imageUrl: selectedPhoto.src,
               createdAt: new Date(selectedPhoto.createdAt),
@@ -1063,6 +1141,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             selectedPhotoIndex={selectedPhotoIndex}
             photos={photos.map(photo => ({
               ...photo,
+              type: 'image' as const, // Fix lint error
               takenBy: 'Guest', // Guest user ID
               imageUrl: photo.src,
               createdAt: new Date(photo.createdAt),

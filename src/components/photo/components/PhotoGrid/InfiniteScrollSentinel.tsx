@@ -10,7 +10,7 @@ interface InfiniteScrollSentinelProps {
     hasNextPage: boolean;
     isFetchingNextPage: boolean;
     onLoadMore: () => void;
-    sentinelRef: React.RefObject<HTMLDivElement>;
+    sentinelRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export function InfiniteScrollSentinel({

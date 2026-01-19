@@ -145,7 +145,7 @@ export function useWebSocketUploadProgress(
   // FIXED: Handle new_media_uploaded event (optimistic preview)
   const handleNewMediaUploaded = useCallback((data: NewMediaUploadedEvent) => {
     console.log('📸 New media uploaded (optimistic):', data.mediaId.substring(0, 8));
-    
+
     // Initialize progress tracking with optimistic state
     setUploadProgress(prev => ({
       ...prev,
@@ -187,7 +187,7 @@ export function useWebSocketUploadProgress(
 
     setUploadProgress(prev => {
       const existing = prev[data.mediaId];
-      
+
       // Skip if same data
       if (existing &&
         existing.percentage === data.progressPercentage &&

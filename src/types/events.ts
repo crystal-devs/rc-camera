@@ -166,7 +166,15 @@ export interface ApiPhoto {
     display: string;
     full: string;
     original: string;
-  }
+  };
+  // Add optional properties for robust handling
+  dimensions?: { width: number; height: number };
+  image_variants?: {
+    original?: { width: number; height: number; url: string };
+    large?: { width: number; height: number };
+    medium?: { width: number; height: number };
+    small?: { width: number; height: number };
+  };
   metadata: {
     width: number;
     height: number;
@@ -233,15 +241,30 @@ export interface MediaResponse {
 }
 
 // Transform function
-export const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => ({
-  id: apiPhoto._id,
-  src: apiPhoto.url,
-  width: apiPhoto.metadata?.width || 400,
-  height: apiPhoto.metadata?.height || 600,
-  uploaded_by: "Guest",
-  approval: apiPhoto.approval,
-  createdAt: apiPhoto.createdAt,
-  albumId: apiPhoto.albumId,
-  eventId: apiPhoto.eventId,
-  responsive_urls: apiPhoto.responsive_urls
-});
+export const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => {
+  // Robust dimension extraction logic
+  const width = apiPhoto.metadata?.width ||
+    (apiPhoto as any).dimensions?.width ||
+    apiPhoto.responsive_urls?.original && (apiPhoto as any).image_variants?.original?.width ||
+    apiPhoto.image_variants?.original?.width ||
+    800; // Better default than 400
+
+  const height = apiPhoto.metadata?.height ||
+    (apiPhoto as any).dimensions?.height ||
+    apiPhoto.responsive_urls?.original && (apiPhoto as any).image_variants?.original?.height ||
+    apiPhoto.image_variants?.original?.height ||
+    600; // Better default than 600
+
+  return {
+    id: apiPhoto._id,
+    src: apiPhoto.url,
+    width: Number(width),
+    height: Number(height),
+    uploaded_by: "Guest",
+    approval: apiPhoto.approval,
+    createdAt: apiPhoto.createdAt,
+    albumId: apiPhoto.albumId,
+    eventId: apiPhoto.eventId,
+    responsive_urls: apiPhoto.responsive_urls
+  };
+};

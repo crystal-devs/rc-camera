@@ -20,7 +20,7 @@ import {
 import { EmptyState } from '../album/EmptyState';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
-import { OptimizedPhotoGrid } from './PhotoGrid';
+import { RowsPhotoGallery } from './layout/RowsPhotoGallery';
 import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { UploadProgressTab } from '../progress/upload-progress';
@@ -58,6 +58,7 @@ export default function OptimizedPhotoGallery({
     moderate: true,
     delete: true,
   },
+  displayConfig, // 🚀 EXTRACTED
 }: OptimizedPhotoGalleryProps) {
   // Get user role from event store
   const { selectedEvent } = useEventStore();
@@ -138,7 +139,7 @@ export default function OptimizedPhotoGallery({
   // Upload hook
   const upload = usePhotoUpload({
     eventId,
-    albumId,
+    albumId: albumId || undefined,
     canUpload: galleryState.canUserUploadPhotos,
     onUploadStart: (mediaIds, filenames) => {
       startMonitoring(mediaIds, filenames);
@@ -495,8 +496,9 @@ export default function OptimizedPhotoGallery({
       ) : (
         <>
           {/* Photo Grid */}
-          <OptimizedPhotoGrid
+          <RowsPhotoGallery
             photos={photos}
+            targetRowHeight={displayConfig?.targetRowHeight} // 🚀 NEW: Pass configured height
             onPhotoClick={galleryState.openPhotoViewer}
             userPermissions={galleryState.effectivePermissions}
             currentTab={galleryState.activeTab}

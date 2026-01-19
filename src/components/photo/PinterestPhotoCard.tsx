@@ -74,7 +74,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
 
   return (
     <div
-      className="group relative w-full bg-white rounded overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer"
+      className="group relative w-full bg-white overflow-hidden transition-all duration-300 cursor-pointer"
       onClick={onClick}
     >
       <div className="relative w-full">

@@ -251,6 +251,7 @@ export interface PhotoGalleryProps {
     lazyLoadThreshold?: number;
     showMetadata?: boolean;
     enableFullscreen?: boolean;
+    targetRowHeight?: number; // 🚀 NEW: Control row density for rows layout
   };
 }
 
