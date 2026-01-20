@@ -95,13 +95,17 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
               ref={imageRef}
               srcSet={
                 photo.responsive_urls
-                  ? `${photo.responsive_urls.thumbnail} 400w,
-                    ${photo.responsive_urls.display} 800w,
-                    ${photo.responsive_urls.full} 1600w`
+                  ? [
+                    photo.responsive_urls.thumbnail ? `${photo.responsive_urls.thumbnail} 400w` : null,
+                    photo.responsive_urls.display ? `${photo.responsive_urls.display} 800w` : null,
+                    photo.responsive_urls.full ? `${photo.responsive_urls.full} 1600w` : null
+                  ]
+                    .filter(Boolean)
+                    .join(', ') || undefined
                   : undefined
               }
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-              src={photo.responsive_urls?.display}
+              src={photo.responsive_urls?.display || photo.src}
               alt={`Photo ${photo.id}`}
               className={`
                 w-full h-auto object-cover transition-all duration-500

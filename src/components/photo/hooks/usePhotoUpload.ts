@@ -89,8 +89,8 @@ export function usePhotoUpload({
                                 original: upload.originalUrl,
                             },
                             metadata: {
-                                width: 0,
-                                height: 0,
+                                width: upload.width || 0,
+                                height: upload.height || 0,
                             },
                             stats: {
                                 views: 0,

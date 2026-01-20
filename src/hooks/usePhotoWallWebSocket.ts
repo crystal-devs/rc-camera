@@ -52,7 +52,7 @@ export const usePhotoWallWebSocket = (
   // INDUSTRY STANDARD: Check if event should be processed
   const shouldProcessEvent = useCallback((eventType: string, payload: any): boolean => {
     const signature = createEventSignature(eventType, payload);
-    
+
     if (processedEventsRef.current.has(signature)) {
       console.log(`⏭️ PhotoWall: Skipping duplicate ${eventType} event:`, signature);
       return false;
@@ -77,10 +77,10 @@ export const usePhotoWallWebSocket = (
     const initializeConnection = async () => {
       try {
         console.log('📺 PhotoWall: Initializing WebSocket connection');
-        
+
         // Connect with photowall user type
         await connect(shareToken, 'photowall', eventId);
-        
+
         // Subscribe to the event
         if (eventId) {
           await subscribe(eventId, shareToken);
@@ -106,7 +106,7 @@ export const usePhotoWallWebSocket = (
 
     const handleNewMediaUploaded = (payload: any) => {
       if (!shouldProcessEvent('new_media_uploaded', payload)) return;
-      
+
       console.log('📺 PhotoWall: Processing new media upload:', payload);
 
       // Transform to PhotoWall format
@@ -114,7 +114,8 @@ export const usePhotoWallWebSocket = (
         id: payload.mediaId || payload.media?.id || `temp_${Date.now()}`,
         imageUrl: payload.media?.url || payload.media?.responsive_urls?.preferred || payload.media?.thumbnailUrl || '',
         uploaderName: payload.uploadedBy?.name || payload.uploader_display_name || 'Anonymous',
-        uploadedAt: payload.uploadedAt || payload.created_at || new Date().toISOString(),
+        timestamp: new Date(payload.uploadedAt || payload.created_at || Date.now()),
+        position: 0,
         isNew: true
       };
 
@@ -123,9 +124,9 @@ export const usePhotoWallWebSocket = (
 
     const handleMediaRemoved = (payload: any) => {
       if (!shouldProcessEvent('media_removed', payload)) return;
-      
+
       console.log('📺 PhotoWall: Processing media removal:', payload);
-      
+
       const mediaId = payload.mediaId || payload._id || payload.id;
       if (mediaId) {
         onMediaRemoved(mediaId);
@@ -134,16 +135,16 @@ export const usePhotoWallWebSocket = (
 
     const handleProcessingComplete = (payload: any) => {
       if (!shouldProcessEvent('media_processing_complete', payload)) return;
-      
+
       console.log('📺 PhotoWall: Processing completion event:', payload);
       onProcessingComplete(payload);
     };
 
     const handleEventStatsUpdate = (payload: any) => {
       if (!shouldProcessEvent('event_stats_update', payload)) return;
-      
+
       console.log('📺 PhotoWall: Event stats update:', payload);
-      
+
       if (payload.stats) {
         onStatsUpdate({
           totalImages: payload.stats.approved || payload.stats.totalMedia || 0,
@@ -155,15 +156,27 @@ export const usePhotoWallWebSocket = (
     const handleRoomStats = (payload: any) => {
       // No deduplication for room stats - they can change frequently
       console.log('📺 PhotoWall: Room stats update:', payload);
-      
+
       onStatsUpdate({
         totalImages: 0, // Keep existing count
         viewerCount: payload.guestCount || payload.photowall_count || payload.total || 0
       });
     };
 
+    // NEW: Handle batch media uploaded event
+    const handleBatchMediaUploaded = (payload: any) => {
+      console.log('📦 PhotoWall: Batch media uploaded event:', payload.items?.length);
+
+      if (payload.items && Array.isArray(payload.items)) {
+        payload.items.forEach((item: any) => {
+          handleNewMediaUploaded(item);
+        });
+      }
+    };
+
     // Set up event listeners using same events as guest page
     socket.on('new_media_uploaded', handleNewMediaUploaded);
+    socket.on('batch_media_uploaded', handleBatchMediaUploaded);
     socket.on('media_removed', handleMediaRemoved);
     socket.on('guest_media_removed', handleMediaRemoved);
     socket.on('media_processing_complete', handleProcessingComplete);
@@ -173,6 +186,7 @@ export const usePhotoWallWebSocket = (
     // Cleanup listeners
     return () => {
       socket.off('new_media_uploaded', handleNewMediaUploaded);
+      socket.off('batch_media_uploaded', handleBatchMediaUploaded);
       socket.off('media_removed', handleMediaRemoved);
       socket.off('guest_media_removed', handleMediaRemoved);
       socket.off('media_processing_complete', handleProcessingComplete);

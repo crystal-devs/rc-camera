@@ -1,5 +1,4 @@
-import findShortestPath from "./dijkstra";
-import { ratio, round } from "./utils";
+import { ratio } from "./utils";
 import { Photo } from "@/types/PhotoGallery.types";
 
 export interface LayoutTrack {
@@ -19,74 +18,7 @@ export interface LayoutModel {
     horizontal: boolean;
 }
 
-// guesstimate how many neighboring nodes should be searched based on
-// the aspect ratio of the container with images and minimal aspect ratio of all photos
-// as the maximum amount of photos per row, plus some nodes
-function findIdealNodeSearch(photos: Photo[], containerWidth: number, targetRowHeight: number, minPhotos?: number) {
-    return (
-        round(containerWidth / targetRowHeight / Math.min(...photos.map((photo) => ratio(photo)))) + (minPhotos || 0) + 2
-    );
-}
-
-// get the height for a set of photos in a potential row
-function getCommonHeight(photos: Photo[], containerWidth: number, spacing: number, padding: number) {
-    return (
-        (containerWidth - (photos.length - 1) * spacing - 2 * padding * photos.length) /
-        photos.reduce((acc, photo) => acc + ratio(photo), 0)
-    );
-}
-
-// calculate the cost of breaking at this node (edge weight)
-function cost(
-    photos: Photo[],
-    i: number,
-    j: number,
-    width: number,
-    spacing: number,
-    padding: number,
-    targetRowHeight: number,
-    isLastRow: boolean,
-) {
-    const row = photos.slice(i, j);
-    const commonHeight = getCommonHeight(row, width, spacing, padding);
-
-    if (isLastRow) {
-        // For the last row, we want to use target height, so penalize deviation from target
-        return commonHeight > 0 ? (commonHeight - targetRowHeight) ** 2 * row.length : undefined;
-    } else {
-        // For other rows, penalize deviation from target for justification
-        return commonHeight > 0 ? (commonHeight - targetRowHeight) ** 2 * row.length : undefined;
-    }
-}
-
-// return function that gets the neighboring nodes of node and returns costs
-function makeGetRowNeighbors(
-    photos: Photo[],
-    spacing: number,
-    padding: number,
-    containerWidth: number,
-    targetRowHeight: number,
-    limitNodeSearch: number,
-    minPhotos?: number,
-    maxPhotos?: number,
-) {
-    return (node: number) => {
-        const results = new Map<number, number>();
-        results.set(node, 0);
-        const startOffset = minPhotos || 1;
-        const endOffset = Math.min(limitNodeSearch, maxPhotos || Infinity);
-        for (let i = node + startOffset; i < photos.length + 1; i += 1) {
-            if (i - node > endOffset) break;
-            const isLastRow = i === photos.length;
-            const currentCost = cost(photos, node, i, containerWidth, spacing, padding, targetRowHeight, isLastRow);
-            if (currentCost === undefined) break;
-            results.set(i, currentCost);
-        }
-        return results;
-    };
-}
-
-// Justified rows layout with adjusted heights for non-last rows, uniform height for all
+// Justified rows layout with greedy approach
 export default function computeRowsLayout(
     photos: Photo[],
     spacing: number,
@@ -148,8 +80,8 @@ export default function computeRowsLayout(
         const photosInRow = row.photos.map((photo, idx) => ({
             photo,
             index: row.startIndex + idx,
-            width: commonHeight * ratio(photo),
-            height: commonHeight,
+            width: row.height * ratio(photo),
+            height: row.height,
         }));
 
         tracks.push({ photos: photosInRow });

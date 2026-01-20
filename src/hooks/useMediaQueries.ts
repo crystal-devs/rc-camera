@@ -16,7 +16,8 @@ import {
   MediaItem,
   getEventMediaWithPagination,
   uploadMultipleMedia,
-  getBulkUploadUrls
+  getBulkUploadUrls,
+  uploadBatchComplete
 } from '@/services/apis/media.api';
 import axios from 'axios';
 import { API_BASE_URL } from '@/lib/api-config';
@@ -248,8 +249,9 @@ export function useUploadMultipleMedia(
       const progressMap: Record<string, number> = {};
       const results: any[] = [];
       const errors: any[] = [];
+      const batchUploads: any[] = [];
 
-      // 3. Upload concurrently
+      // 3. Upload concurrently to S3
       const uploadPromises = files.map(async (file, index) => {
         const uploadData = uploadUrls[index];
         if (!uploadData) return;
@@ -261,42 +263,66 @@ export function useUploadMultipleMedia(
             onUploadProgress: (e) => {
               const percent = (e.loaded / (e.total || 1)) * 100;
               progressMap[file.name] = percent;
-              console.log(`📊 Upload progress for ${file.name}:`, Math.round(percent), '%');
-              // Throttle updates or just call it (React batches state updates usually, but throttle is safer if needed)
-              options.onProgress?.({ ...progressMap });
+              // options.onProgress?.({ ...progressMap }); // Reduce chatter
             },
           });
 
-          // Notify backend
-          const completeResponse = await axios.post(
-            `${API_BASE_URL}/media/upload-complete`,
-            {
-              key: uploadData.key,
-              eventId,
-              upload_id: uploadData.uploadId,
-            },
-            {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
+          // Calculate dimensions if it's an image
+          let width = 0;
+          let height = 0;
+          if (file.type.startsWith('image/')) {
+            const dims = await getImageDimensions(file);
+            if (dims) {
+              width = dims.width;
+              height = dims.height;
             }
-          );
-
-          // Extract result
-          const { data: responseData } = completeResponse.data;
-          if (responseData) {
-            results.push({ ...responseData, filename: file.name, status: 'completed' });
           }
+
+          // Accumulate for batch completion
+          batchUploads.push({
+            key: uploadData.key,
+            upload_id: uploadData.uploadId,
+            width,
+            height,
+            filename: file.name
+          });
+
+          // Set progress to 100% locally
+          progressMap[file.name] = 100;
+          options.onProgress?.({ ...progressMap });
+
         } catch (err: any) {
           console.error(`Failed to upload ${file.name}:`, err);
           errors.push({ filename: file.name, error: err.message });
-          progressMap[file.name] = 0; // Reset or mark failed? 
-          // Keep progress as is or set to 0? User might want to see where it failed.
+          progressMap[file.name] = 0;
         }
       });
 
       await Promise.allSettled(uploadPromises);
+
+      // 4. Call Batch Complete API if we have successful uploads
+      if (batchUploads.length > 0) {
+        try {
+          const batchResult = await uploadBatchComplete(eventId, batchUploads, token);
+          const { results: completedItems } = batchResult.data;
+
+          if (completedItems && Array.isArray(completedItems)) {
+            completedItems.forEach((item: any) => {
+              // Find original filename to map back
+              const original = batchUploads.find(b => b.upload_id === item.upload_id);
+              results.push({
+                ...item,
+                filename: original?.filename || 'image.jpg',
+                status: 'completed'
+              });
+            });
+          }
+        } catch (err: any) {
+          console.error('Batch completion failed:', err);
+          // If batch fails, we should probably throw or report error
+          throw new Error('Failed to finalize uploads: ' + err.message);
+        }
+      }
 
       if (errors.length === files.length) {
         throw new Error('All uploads failed');

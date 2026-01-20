@@ -335,6 +335,17 @@ export function useWebSocketUploadProgress(
     });
   }, [uploadProgress, updatePhotoInCache, showToasts]);
 
+  // NEW: Handle batch_media_uploaded event
+  const handleBatchMediaUploaded = useCallback((data: { eventId: string; items: NewMediaUploadedEvent[] }) => {
+    console.log('📦 Batch media uploaded event:', data.items?.length);
+
+    if (data.items && Array.isArray(data.items)) {
+      data.items.forEach(item => {
+        handleNewMediaUploaded(item);
+      });
+    }
+  }, [handleNewMediaUploaded]);
+
   // Set up WebSocket listeners ONLY ONCE with CORRECT event names
   useEffect(() => {
     if (!webSocket.socket || listenersSetup.current) return;
@@ -344,6 +355,7 @@ export function useWebSocketUploadProgress(
 
     // FIXED: Listen to the ACTUAL events your backend emits
     webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
+    webSocket.socket.on('batch_media_uploaded', handleBatchMediaUploaded);
     webSocket.socket.on('media_processing_progress', handleMediaProcessingProgress);
     webSocket.socket.on('media_processing_complete', handleMediaProcessingComplete);
     webSocket.socket.on('media_upload_failed', handleMediaUploadFailed);
@@ -352,13 +364,14 @@ export function useWebSocketUploadProgress(
       if (webSocket.socket) {
         console.log('🔌 Cleaning up WebSocket upload progress listeners');
         webSocket.socket.off('new_media_uploaded', handleNewMediaUploaded);
+        webSocket.socket.off('batch_media_uploaded', handleBatchMediaUploaded);
         webSocket.socket.off('media_processing_progress', handleMediaProcessingProgress);
         webSocket.socket.off('media_processing_complete', handleMediaProcessingComplete);
         webSocket.socket.off('media_upload_failed', handleMediaUploadFailed);
       }
       listenersSetup.current = false;
     };
-  }, [webSocket.socket, handleNewMediaUploaded, handleMediaProcessingProgress, handleMediaProcessingComplete, handleMediaUploadFailed]);
+  }, [webSocket.socket, handleNewMediaUploaded, handleBatchMediaUploaded, handleMediaProcessingProgress, handleMediaProcessingComplete, handleMediaUploadFailed]);
 
   useEffect(() => {
     const hasActiveUploads = Object.values(uploadProgress).some(

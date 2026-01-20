@@ -412,14 +412,64 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       );
 
       if (result.status) {
+        // Optimistically update the cache with the new photos
+        if (result.data.uploads && Array.isArray(result.data.uploads)) {
+          const newPhotos = result.data.uploads.map((upload: any) => ({
+            id: upload.mediaId,
+            src: upload.originalUrl,
+            width: upload.width || 800,
+            height: upload.height || 600,
+            uploaded_by: guestInfo.name || 'Guest',
+            approval: upload.approval || { status: 'approved' },
+            createdAt: new Date().toISOString(),
+            albumId: eventState.details?._id,
+            eventId: eventState.details?._id,
+            type: 'image',
+            imageUrl: upload.originalUrl,
+            responsive_urls: {
+              thumbnail: upload.originalUrl,
+              display: upload.originalUrl,
+              full: upload.originalUrl,
+              original: upload.originalUrl
+            },
+            processing: { status: 'processing' } // Mark as processing but show image
+          } as TransformedPhoto));
+
+          queryClient.setQueryData(['guest-media', shareToken], (oldData: any) => {
+            if (!oldData) return oldData;
+            const pages = oldData.pages || [];
+            if (pages.length === 0) return oldData;
+            const firstPage = pages[0];
+
+            // Prepend new photos
+            return {
+              ...oldData,
+              pages: [
+                {
+                  ...firstPage,
+                  photos: [...newPhotos, ...firstPage.photos],
+                  total: (firstPage.total || 0) + newPhotos.length
+                },
+                ...pages.slice(1)
+              ]
+            };
+          });
+        }
+
         const { summary } = result.data;
-        if (summary.success > 0) {
+        if (summary && summary.success > 0) {
           toast.success(
             summary.failed === 0
               ? `All ${summary.success} photo(s) uploaded successfully!`
               : `${summary.success} photo(s) uploaded, ${summary.failed} failed`
           );
 
+          setSelectedFiles([]);
+          setGuestInfo({ name: '', email: '' });
+          setShowUploadDialog(false);
+        } else if (result.data.uploads?.length > 0) {
+          // Fallback if summary is missing but uploads exist
+          toast.success('Photos uploaded successfully!');
           setSelectedFiles([]);
           setGuestInfo({ name: '', email: '' });
           setShowUploadDialog(false);

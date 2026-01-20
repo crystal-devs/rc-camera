@@ -1185,6 +1185,49 @@ export const uploadMultipleMedia = async (
 };
 
 /**
+ * 🚀 BATCH OPTIMIZATION: Complete multiple uploads in one call
+ */
+export const uploadBatchComplete = async (
+    eventId: string,
+    uploads: Array<{
+        key: string;
+        upload_id: string;
+        width?: number;
+        height?: number;
+    }>,
+    authToken: string
+) => {
+    try {
+        console.log(`🚀 Completing batch upload for ${uploads.length} items`);
+
+        const response = await fetch(buildApiUrl('/media/upload-complete/batch'), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                eventId,
+                uploads
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('✅ Batch upload completed:', result);
+        return result;
+
+    } catch (error: any) {
+        console.error('❌ Batch completion error:', error);
+        throw new Error(error.message || 'Batch completion failed');
+    }
+};
+
+/**
  * Enhanced error handling for uploads
  */
 function handleUploadError(error: any) {
