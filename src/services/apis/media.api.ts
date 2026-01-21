@@ -1461,3 +1461,35 @@ export const getSignedUrlForKey = async (
         throw error;
     }
 };
+
+/**
+ * Search for photos containing faces from a selfie
+ */
+export const searchFaces = async (
+    eventId: string,
+    file: File,
+    authToken?: string
+): Promise<MediaItem[]> => {
+    try {
+        const formData = new FormData();
+        formData.append('eventId', eventId);
+        formData.append('image', file);
+
+        const response = await apiClient.post(API_ROUTES.MEDIA.SEARCH_FACES, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+            },
+            timeout: 30000
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data;
+        }
+
+        throw new Error(response.data?.message || 'No matching photos found');
+    } catch (error: any) {
+        console.error('Error searching faces:', error);
+        throw error;
+    }
+};

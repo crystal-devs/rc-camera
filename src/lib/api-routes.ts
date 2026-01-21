@@ -42,7 +42,8 @@ export const API_ROUTES = {
     BULK_HIDE: (eventId: string) => `/bulk/media/event/${eventId}/hide`,
     UPLOAD_URLS: '/media/upload-url',
     GUEST_ACCESS: (token: string) => `/media/guest/${token}`,
-    GUEST_ALBUM: (albumId: string) => `/media/album/${albumId}/guest`
+    GUEST_ALBUM: (albumId: string) => `/media/album/${albumId}/guest`,
+    SEARCH_FACES: '/media/search/faces',
   },
 
   // Sharing & Tokens

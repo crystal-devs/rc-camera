@@ -1,4 +1,3 @@
-// app/guest/[token]/page.tsx - Optimized Guest Page
 'use client';
 
 import React, { useState, useCallback, use, useEffect, memo, useMemo } from 'react';
@@ -18,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { BulkDownloadButton } from './BulkDownloadButton';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { TransformedPhoto } from '@/types/events';
+import { TransformedPhoto, transformApiPhoto } from '@/types/events';
 import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
 import { RowsPhotoGallery } from '@/components/photo/layout/RowsPhotoGallery';
 import { Photo } from '@/types/PhotoGallery.types';
@@ -37,7 +36,7 @@ import { useGuestClaim } from '@/hooks/useGuestClaim';
 import { Event } from '@/types/events';
 import { createGuestBulkDownload, getDownloadStatus, downloadZipFile } from '@/services/apis/bulk-download.api';
 import { getStylingConfig, getThemeColors, generateEventCSS } from '@/constants/styling.constant';
-import { FindMeModal } from '@/components/photo/FindMeModal';
+import { SelfieUploadModal } from '@/components/guest/SelfieUploadModal';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -101,7 +100,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [showUploadDialog, setShowUploadDialog] = useState<boolean>(false);
   const [showNotificationBanner, setShowNotificationBanner] = useState<boolean>(false);
   const [showFindMeModal, setShowFindMeModal] = useState(false);
-  const [matchedMediaIds, setMatchedMediaIds] = useState<string[] | null>(null);
+  const [matchedPhotos, setMatchedPhotos] = useState<TransformedPhoto[] | null>(null);
 
   // Bulk download states
   const [isDownloading, setIsDownloading] = useState(false);
@@ -146,6 +145,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     auth,
     limit: 20
   });
+
+  // Filtering logic
+  const displayedPhotos = useMemo(() => {
+    if (matchedPhotos) return matchedPhotos;
+    return photos;
+  }, [photos, matchedPhotos]);
 
   // Guest claim hook - auto-claims on mount if authenticated
   const {
@@ -722,11 +727,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     }
   }, [claimContent]);
 
-  // NEW: Filtering logic for Find My Face
-  const displayedPhotos = useMemo(() => {
-    if (!matchedMediaIds) return photos;
-    return photos.filter(p => matchedMediaIds.includes(p.id));
-  }, [photos, matchedMediaIds]);
 
   // Content rendering
   const renderContent = useCallback(() => {
@@ -797,7 +797,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     return (
       <div className="space-y-6" style={eventStyles as React.CSSProperties}>
-        {matchedMediaIds && (
+        {matchedPhotos && (
           <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 animate-in fade-in slide-in-from-top-4">
             <div className="flex items-center gap-3">
               <div className="bg-blue-600 p-2 rounded-lg text-white">
@@ -808,14 +808,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
                   Showing {displayedPhotos.length} photos of you
                 </p>
                 <p className="text-xs text-blue-700 dark:text-blue-300">
-                  {matchedMediaIds.length > 0 ? 'These are the best matches from the current gallery.' : 'No clear matches found yet.'}
+                  {matchedPhotos.length > 0 ? 'These are the best matches from the current gallery.' : 'No clear matches found yet.'}
                 </p>
               </div>
             </div>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setMatchedMediaIds(null)}
+              onClick={() => setMatchedPhotos(null)}
               className="border-blue-200 hover:bg-blue-100 text-blue-700"
             >
               Show All Photos
@@ -889,7 +889,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             <PinterestPhotoGrid
               photos={displayedPhotos}
               onPhotoClick={handlePhotoClick}
-              hasNextPage={hasNextPage && !matchedMediaIds}
+              hasNextPage={hasNextPage && !matchedPhotos}
               isLoadingMore={isLoadingMore}
               onLoadMore={loadMore}
               onViewportChange={() => { }}
@@ -907,7 +907,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   }, [
     photos,
     displayedPhotos,
-    matchedMediaIds,
+    matchedPhotos,
     isInitialLoading,
     isLoadingMore,
     hasNextPage,
@@ -987,11 +987,18 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         onFindMe={() => setShowFindMeModal(true)}
       />
 
-      <FindMeModal
+      <SelfieUploadModal
         isOpen={showFindMeModal}
         onClose={() => setShowFindMeModal(false)}
         eventId={eventState.details?._id || ''}
-        onMatchesFound={(ids) => setMatchedMediaIds(ids)}
+        onSearchResults={(results) => {
+          if (!results || results.length === 0) {
+            setMatchedPhotos(null);
+          } else {
+            const transformed = results.map(r => transformApiPhoto(r));
+            setMatchedPhotos(transformed);
+          }
+        }}
       />
 
 
