@@ -96,7 +96,7 @@ export default function OptimizedPhotoGallery({
     refetch: refetchInfinite,
   } = useInfiniteEventMediaFlat(eventId, {
     status: mediaStatus,
-    limit: 30,
+    limit: 50,
     quality: gridQuality,
     enabled: true,
   });
@@ -378,7 +378,7 @@ export default function OptimizedPhotoGallery({
       },
       {
         root: scrollRef.current, // Explicitly check against the scroll container
-        rootMargin: '2000px', // Pre-fetch when within 2000px of bottom
+        rootMargin: '500px', // Pre-fetch when within 500px of bottom
         threshold: 0.1,
       }
     );
@@ -512,6 +512,7 @@ export default function OptimizedPhotoGallery({
             selectionMode={selection.getSelectedCount() > 0}
             selectedPhotos={selection.selectedPhotos}
             onToggleSelection={selection.togglePhotoSelection}
+            onNearEnd={handleLoadMore}
           />
 
           {/* Floating Bulk Action Bar */}

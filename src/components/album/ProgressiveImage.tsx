@@ -89,7 +89,7 @@ export const OptimizedProgressiveImage = ({
       },
       {
         threshold: 0.1,
-        rootMargin: '100px'
+        rootMargin: '1000px'
       }
     );
 
@@ -234,7 +234,8 @@ export const OptimizedProgressiveImage = ({
                 )}
                 onLoad={handleImageLoad}
                 onError={handleImageError}
-                loading="lazy"
+                loading={priority ? "eager" : "lazy"}
+                fetchPriority={priority ? "high" : "auto"}
                 decoding="async"
               />
             </picture>

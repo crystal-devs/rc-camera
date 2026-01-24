@@ -28,6 +28,7 @@ interface RowsPhotoGalleryProps {
     className?: string;
     targetRowHeight?: number;
     spacing?: number;
+    onNearEnd?: () => void;
 }
 
 export const RowsPhotoGallery = ({
@@ -45,6 +46,7 @@ export const RowsPhotoGallery = ({
     className = "",
     targetRowHeight,
     spacing = 8,
+    onNearEnd,
 }: RowsPhotoGalleryProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerWidth, setContainerWidth] = useState<number>(0);
@@ -96,7 +98,7 @@ export const RowsPhotoGallery = ({
             const height = track?.photos[0]?.height || 300;
             return height + spacing;
         },
-        overscan: 5,
+        overscan: 10,
     });
 
     // Ensure virtualizer updates when layout changes
@@ -105,7 +107,7 @@ export const RowsPhotoGallery = ({
     }, [layout, rowVirtualizer]);
 
     // Optimized Preload Logic: Uses virtualizer state instead of DOM observers
-    const { preloadBatch } = useImagePreloader(photos, 3);
+    const { preloadBatch } = useImagePreloader(photos, 10);
     const virtualRows = rowVirtualizer.getVirtualItems();
 
     useEffect(() => {
@@ -117,8 +119,13 @@ export const RowsPhotoGallery = ({
         if (track && track.photos.length > 0) {
             const lastPhotoIndex = track.photos[track.photos.length - 1].index;
             preloadBatch(lastPhotoIndex + 1);
+
+            // Trigger infinite scroll when near the end (last 10 photos visible)
+            if (onNearEnd && lastPhotoIndex >= photos.length - 10) {
+                onNearEnd();
+            }
         }
-    }, [virtualRows, layout, preloadBatch]);
+    }, [virtualRows, layout, preloadBatch, onNearEnd, photos.length]);
 
     if (!layout) {
         return <div ref={containerRef} className={`w-full ${className}`} />;
@@ -166,7 +173,7 @@ export const RowsPhotoGallery = ({
                                         selectionMode={selectionMode}
                                         isSelected={selectedPhotos.has(photo.id)}
                                         onToggleSelection={onToggleSelection}
-                                        priority={index < 10}
+                                        priority={index < 30}
                                         layout="rows"
                                     />
                                 </div>

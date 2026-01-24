@@ -102,7 +102,7 @@ export const PinterestPhotoGrid: React.FC<{
         case 1: // medium / standard
           if (width < 640) { columns = 2; targetRowHeight = 200; }
           else if (width < 768) { columns = 3; targetRowHeight = 250; }
-          else { columns = 4; targetRowHeight = 300; }
+          else { columns = 5; targetRowHeight = 300; }
           break;
         case 2: // large
           if (width < 640) { columns = 1; targetRowHeight = 250; }

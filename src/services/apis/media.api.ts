@@ -130,12 +130,19 @@ export const getEventMediaWithPagination = async (
 
         console.log(`Calling API: ${endpoint}?${params}`);
 
+        const headers: any = {
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'no-cache', // Let React Query handle caching
+        };
+
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
         const response = await apiClient.get(endpoint, {
             params,
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-            },
-            timeout: 15000,
+            headers,
+            timeout: 10000, // Reduced timeout for faster failure detection
         });
 
         console.log('Media API Response Status:', response.status);

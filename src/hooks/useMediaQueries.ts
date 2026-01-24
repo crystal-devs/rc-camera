@@ -34,7 +34,8 @@ const CACHE_CONFIG = {
   refetchOnMount: false,            // Only refetch if stale
   refetchOnReconnect: false,
   retry: 2,
-  networkMode: 'online' as const
+  networkMode: 'online' as const,
+  keepPreviousData: true,           // Smooth transitions between pages
 };
 
 interface MediaFetchOptions {
@@ -78,6 +79,7 @@ export function useEventMedia(eventId: string, options: MediaFetchOptions = {}) 
  * 🚀 Infinite query with quality-aware pagination
  */
 export function useInfiniteEventMedia(eventId: string, options: MediaFetchOptions = {}) {
+  const queryClient = useQueryClient();
   const token = useAuthToken();
   const {
     status = 'approved',
@@ -86,7 +88,7 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
     enabled = true
   } = options;
 
-  return useInfiniteQuery({
+  const query = useInfiniteQuery({
     queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
     queryFn: async ({ pageParam = 1 }): Promise<{
       photos: Photo[];
@@ -118,6 +120,29 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
       const nextPage = response.pagination?.hasNext ? pageParam + 1 : undefined;
       console.log(`➡️ Next page param:`, nextPage);
 
+      // 🚀 Prefetch next page for smoother loading
+      if (nextPage && photos.length === limit) {
+        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, nextPage];
+        queryClient.prefetchQuery({
+          queryKey: prefetchQueryKey,
+          queryFn: async () => {
+            const prefetchResponse = await getEventMediaWithPagination(eventId, token, {
+              status,
+              limit,
+              quality: quality as 'small' | 'medium' | 'large' | 'original',
+              page: nextPage,
+              scrollType: 'infinite'
+            });
+            return {
+              photos: (prefetchResponse.data || []).map(transformMediaToPhoto),
+              nextPage: prefetchResponse.pagination?.hasNext ? nextPage + 1 : undefined,
+              hasMore: prefetchResponse.pagination?.hasNext || false
+            };
+          },
+          staleTime: CACHE_CONFIG.staleTime
+        });
+      }
+
       return {
         photos,
         nextPage,
@@ -142,6 +167,8 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
       errorMessage: 'Failed to load more photos'
     }
   });
+
+  return query;
 }
 
 /**
