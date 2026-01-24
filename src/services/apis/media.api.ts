@@ -145,8 +145,12 @@ export const getEventMediaWithPagination = async (
         console.log('Auth token being used:', authToken ? `${authToken.substring(0, 20)}...` : 'No token');
 
         if (response.data && response.data.status === true) {
-            // Return the full response structure
-            return response.data as MediaApiResponse;
+            // Normalize pagination: Backend puts it in 'other.pagination'
+            const apiResponse = response.data as any;
+            if (!apiResponse.pagination && apiResponse.other?.pagination) {
+                apiResponse.pagination = apiResponse.other.pagination;
+            }
+            return apiResponse as MediaApiResponse;
         }
 
         throw new Error(response.data?.message || 'Failed to fetch event media');

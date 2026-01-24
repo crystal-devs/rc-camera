@@ -65,3 +65,57 @@ export const uploadGuestPhotos = async (
         throw new Error('Upload failed. Please try again.');
     }
 };
+export const loginWithFace = async (file: File, eventId: string): Promise<{
+    token: string;
+    faceId: string;
+    isNewIdentity: boolean;
+    message: string;
+}> => {
+    try {
+        const formData = new FormData();
+        formData.append('selfie', file);
+        formData.append('eventId', eventId);
+
+        const response = await axios.post(
+            `${API_BASE_URL}/guest/auth/face`,
+            formData,
+            { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+
+        return response.data.data;
+    } catch (error) {
+        throw new Error('Face login failed');
+    }
+};
+
+export const getMyPhotos = async (token: string): Promise<any[]> => {
+    try {
+        const response = await axios.get(
+            `${API_BASE_URL}/guest/media/mine`,
+            {
+                headers: { 'Authorization': `Bearer ${token}` }
+            }
+        );
+        return response.data.data;
+    } catch (error) {
+        throw new Error('Failed to fetch personal photos');
+    }
+};
+
+export const loginWithGlobalIdentity = async (eventId: string): Promise<{
+    token: string;
+    faceId: string;
+    isNewIdentity: boolean;
+    message: string;
+}> => {
+    try {
+        const response = await axios.post(
+            `${API_BASE_URL}/guest/auth/global-identity`,
+            { eventId },
+            { withCredentials: true }
+        );
+        return response.data.data;
+    } catch (error) {
+        throw new Error('Global login failed');
+    }
+};

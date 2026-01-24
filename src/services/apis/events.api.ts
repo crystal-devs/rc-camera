@@ -785,6 +785,60 @@ export const manageEventGuests = async (
   }
 };
 
+// guest session types
+export interface GuestSession {
+  _id: string;
+  session_id: string;
+  aws_face_id?: string;
+  access_method: 'face_login' | 'qr_code' | 'share_link' | 'invitation_link';
+  status: 'active' | 'claimed' | 'expired' | 'blocked';
+  last_activity_at: string;
+  guest_info?: {
+    name?: string;
+    email?: string;
+  };
+  device_fingerprint?: {
+    platform?: string;
+    user_agent?: string;
+  };
+}
+
+export const getEventGuestSessions = async (
+  eventId: string,
+  token: string,
+  params: { page?: number; limit?: number; status?: string; access_method?: string } = {}
+): Promise<{ data: GuestSession[]; pagination: any }> => {
+  try {
+    // Build query string manually or use axios params
+    const response = await axios.get(`${API_BASE_URL}/event/${eventId}/guest-sessions`, {
+      headers: { Authorization: `Bearer ${token}` },
+      params
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching guest sessions', error);
+    throw error;
+  }
+};
+
+export const revokeGuestSession = async (
+  eventId: string,
+  sessionId: string,
+  token: string
+): Promise<any> => {
+  try {
+    const response = await axios.patch(
+      `${API_BASE_URL}/event/${eventId}/guest-sessions/${sessionId}/revoke`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error revoking session', error);
+    throw error;
+  }
+};
+
 /**
  * Add guests to an event
  * This function adds guests to an event and updates the share token

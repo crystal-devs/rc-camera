@@ -100,6 +100,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [showUploadDialog, setShowUploadDialog] = useState<boolean>(false);
   const [showNotificationBanner, setShowNotificationBanner] = useState<boolean>(false);
   const [showFindMeModal, setShowFindMeModal] = useState(false);
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'all' | 'my_photos' | 'highlights'>('all');
   const [matchedPhotos, setMatchedPhotos] = useState<TransformedPhoto[] | null>(null);
 
   // Bulk download states
@@ -116,9 +118,55 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [uploading, setUploading] = useState<boolean>(false);
   const [guestInfo, setGuestInfo] = useState({ name: '', email: '' });
 
+  // Guest Token State (Phase 2 Persistence)
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+
+  // Initialize Guest Token from LocalStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && eventState.details?._id) {
+      const storedToken = localStorage.getItem(`guest_token_${eventState.details._id}`);
+      if (storedToken) {
+        setGuestToken(storedToken);
+      }
+    }
+  }, [eventState.details?._id]);
+
+  // Fetch My Photos when tab changes or token is set
+  useEffect(() => {
+    const fetchPersonalPhotos = async () => {
+      if (activeTab === 'my_photos' && guestToken) {
+        try {
+          const { getMyPhotos } = await import('@/services/apis/guest.api');
+          const personalPhotos = await getMyPhotos(guestToken);
+
+          if (personalPhotos && personalPhotos.length > 0) {
+            const transformed = personalPhotos.map(p => transformApiPhoto(p));
+            setMatchedPhotos(transformed);
+          } else {
+            // Token valid but no photos yet? Or maybe token invalid.
+            setMatchedPhotos([]);
+          }
+        } catch (error) {
+          console.error("Failed to fetch personal photos", error);
+          // If 401, maybe clear token? 
+          // setGuestToken(null);
+          // localStorage.removeItem(`guest_token_${eventState.details?._id}`);
+        }
+      }
+    };
+
+    fetchPersonalPhotos();
+  }, [activeTab, guestToken, eventState.details?._id]);
+
+
+
   const [auth] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('authToken');
+      try {
+        return localStorage.getItem('authToken');
+      } catch (e) {
+        return null;
+      }
     }
     return null;
   });
@@ -146,13 +194,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     limit: 20
   });
 
-  // Filtering logic
-  const displayedPhotos = useMemo(() => {
-    if (matchedPhotos) return matchedPhotos;
-    return photos;
-  }, [photos, matchedPhotos]);
-
-  // Guest claim hook - auto-claims on mount if authenticated
+  // Guest claim hook
   const {
     summary: claimSummary,
     isChecking: isCheckingClaim,
@@ -164,8 +206,49 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     eventId: eventState.details?._id || '',
     authToken: auth,
     enabled: !!eventState.details?._id && !!auth,
-    autoClaimOnMount: true, // Auto-claim on mount
+    autoClaimOnMount: true,
   });
+
+
+
+  // Filtering logic
+  const displayedPhotos = useMemo(() => {
+    if (activeTab === 'my_photos' && matchedPhotos) {
+      return matchedPhotos;
+    }
+    return photos;
+  }, [photos, matchedPhotos, activeTab]);
+
+  const handleSearchResults = useCallback((results: any[]) => {
+    // In Phase 2, 'results' contains [{ token, isNewIdentity }] from the Login Modal
+    if (results && results.length > 0 && results[0].token) {
+      const { token, isNewIdentity } = results[0];
+
+      // Save token
+      setGuestToken(token);
+      if (eventState.details?._id) {
+        localStorage.setItem(`guest_token_${eventState.details._id}`, token);
+      }
+
+      // Switch tab (Effect will fetch photos)
+      setActiveTab('my_photos');
+    }
+  }, [eventState.details?._id]);
+
+  const handleTabChange = useCallback((tab: 'all' | 'my_photos' | 'highlights') => {
+    if (tab === 'my_photos') {
+      // If we have a token, we switch and let the effect fetch/show photos.
+      // If NO token, we open the modal to "Login".
+      if (guestToken) {
+        setActiveTab('my_photos');
+      } else {
+        setShowFindMeModal(true);
+        return;
+      }
+    } else {
+      setActiveTab(tab);
+    }
+  }, [guestToken]);
 
   // Refresh photos after successful claim
   useEffect(() => {
@@ -797,7 +880,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
     return (
       <div className="space-y-6" style={eventStyles as React.CSSProperties}>
-        {matchedPhotos && (
+        {matchedPhotos && activeTab === 'my_photos' && (
           <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 animate-in fade-in slide-in-from-top-4">
             <div className="flex items-center gap-3">
               <div className="bg-blue-600 p-2 rounded-lg text-white">
@@ -805,21 +888,31 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               </div>
               <div>
                 <p className="font-semibold text-blue-900 dark:text-blue-200">
-                  Showing {displayedPhotos.length} photos of you
+                  Showing {matchedPhotos.length} photos of you
                 </p>
                 <p className="text-xs text-blue-700 dark:text-blue-300">
-                  {matchedPhotos.length > 0 ? 'These are the best matches from the current gallery.' : 'No clear matches found yet.'}
+                  These are the best matches from the current gallery.
                 </p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setMatchedPhotos(null)}
-              className="border-blue-200 hover:bg-blue-100 text-blue-700"
-            >
-              Show All Photos
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-white hover:bg-white/80 text-blue-700 border-blue-200"
+                onClick={() => setShowFindMeModal(true)}
+              >
+                Rescan
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-blue-700 hover:bg-blue-100"
+                onClick={() => handleTabChange('all')}
+              >
+                Show All Photos
+              </Button>
+            </div>
           </div>
         )}
         {(() => {
@@ -985,6 +1078,9 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         isDownloading={isDownloading}
         totalPhotos={totalPhotos}
         onFindMe={() => setShowFindMeModal(true)}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        hasMatches={!!matchedPhotos && matchedPhotos.length > 0}
       />
 
       <SelfieUploadModal
@@ -996,7 +1092,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             setMatchedPhotos(null);
           } else {
             const transformed = results.map(r => transformApiPhoto(r));
-            setMatchedPhotos(transformed);
+            handleSearchResults(transformed);
           }
         }}
       />

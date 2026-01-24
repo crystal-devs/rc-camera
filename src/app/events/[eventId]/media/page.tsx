@@ -212,7 +212,7 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
     }
 
     return (
-        <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+        <div className="w-full px-2 sm:px-4 py-4 sm:py-8">
             {/* Header with actions */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>

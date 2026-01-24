@@ -28,6 +28,7 @@ import UploadButton from '../guest/UploadButton';
 import useEventStore from '@/stores/useEventStore';
 import { updateEvent } from '@/services/apis/events.api';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
+import { useScrollContainer } from '@/contexts/ScrollContext';
 
 // Extracted hooks
 import { usePhotoGalleryState } from './hooks/usePhotoGalleryState';
@@ -64,6 +65,7 @@ export default function OptimizedPhotoGallery({
   const { selectedEvent } = useEventStore();
   const userRole = selectedEvent?.user_role || 'participant';
   const isGuest = isGuestUser(userRole);
+  const { scrollRef } = useScrollContainer();
 
   // Refs
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -375,7 +377,8 @@ export default function OptimizedPhotoGallery({
         }
       },
       {
-        rootMargin: '200px',
+        root: scrollRef.current, // Explicitly check against the scroll container
+        rootMargin: '2000px', // Pre-fetch when within 2000px of bottom
         threshold: 0.1,
       }
     );
@@ -387,16 +390,16 @@ export default function OptimizedPhotoGallery({
     };
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // Auto-load for small galleries (Google Photos style)
+  // Auto-load for very small initial loads only (fill the screen)
   useEffect(() => {
-    const totalPhotos = displayCounts[galleryState.activeTab as keyof typeof displayCounts] || 0;
-    if (totalPhotos <= 60 && !isLoading && !isFetchingNextPage && hasNextPage) {
+    // Only auto-load if we have very few photos (e.g. initial load didn't fill screen)
+    if (photos.length > 0 && photos.length < 15 && !isLoading && !isFetchingNextPage && hasNextPage) {
       const timer = setTimeout(() => {
         fetchNextPage();
-      }, 50);
+      }, 100);
       return () => clearTimeout(timer);
     }
-  }, [hasNextPage, isFetchingNextPage, isLoading, fetchNextPage, galleryState.activeTab, displayCounts]);
+  }, [hasNextPage, isFetchingNextPage, isLoading, fetchNextPage, photos.length]);
 
   // Error handling
   if (photosError) {

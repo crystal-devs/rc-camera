@@ -3,7 +3,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Photo } from '@/types/PhotoGallery.types';
 import { OptimizedProgressiveImage } from '../../album/ProgressiveImage';
-import computeRowsLayout, { LayoutModel } from './rows-layout';
+import computeRowsLayout from './rows-layout';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useScrollContainer } from '@/contexts/ScrollContext';
 import { useImagePreloader } from '@/hooks/useImagePreloader';
 
 interface RowsPhotoGalleryProps {
@@ -46,6 +48,7 @@ export const RowsPhotoGallery = ({
 }: RowsPhotoGalleryProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerWidth, setContainerWidth] = useState<number>(0);
+    const { scrollRef } = useScrollContainer();
 
     // Resize Observer
     useEffect(() => {
@@ -65,96 +68,113 @@ export const RowsPhotoGallery = ({
     const layout = useMemo(() => {
         if (containerWidth === 0 || photos.length === 0) return undefined;
 
-        // 🚀 OPTIMIZATION: Mimic react-photo-album's responsive logic
-        // If user provides a specific height, use it.
-        // Otherwise, use a heuristic relative to container width (e.g., try to fit 3-5 columns)
+        // Responsive row height calculation
         const calcRowHeight = (width: number) => {
             if (targetRowHeight) return targetRowHeight;
             if (width < 500) return width / 2; // 2 columns on mobile
             if (width < 900) return width / 3; // 3 columns on tablet
-            return width / 4; // 4 columns on desktop (approx 250-300px)
+            return width / 4; // 4 columns on desktop
         };
 
         const calculatedHeight = calcRowHeight(containerWidth);
 
         return computeRowsLayout(
             photos,
-            spacing, // Dynamic spacing
+            spacing,
             0, // padding
             containerWidth,
             calculatedHeight
         );
     }, [photos, containerWidth, targetRowHeight, spacing]);
 
-    // Preload Logic (adapted from PhotoGrid)
+    // Virtualizer
+    const rowVirtualizer = useVirtualizer({
+        count: layout?.tracks.length || 0,
+        getScrollElement: () => scrollRef.current || document.querySelector('.custom-scrollbar'),
+        estimateSize: (index) => {
+            const track = layout?.tracks[index];
+            const height = track?.photos[0]?.height || 300;
+            return height + spacing;
+        },
+        overscan: 5,
+    });
+
+    // Ensure virtualizer updates when layout changes
+    useEffect(() => {
+        rowVirtualizer.measure();
+    }, [layout, rowVirtualizer]);
+
+    // Optimized Preload Logic: Uses virtualizer state instead of DOM observers
     const { preloadBatch } = useImagePreloader(photos, 3);
-    const observerRef = useRef<IntersectionObserver | null>(null);
+    const virtualRows = rowVirtualizer.getVirtualItems();
 
     useEffect(() => {
-        if (observerRef.current) observerRef.current.disconnect();
+        if (!virtualRows.length || !layout) return;
 
-        observerRef.current = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const index = parseInt(entry.target.getAttribute('data-index') || '0', 10);
-                    preloadBatch(index + 1);
-                }
-            });
-        }, {
-            rootMargin: '200px',
-            threshold: 0.1
-        });
+        const lastVirtualRow = virtualRows[virtualRows.length - 1];
+        const track = layout.tracks[lastVirtualRow.index];
 
-        const items = document.querySelectorAll('.photo-row-item');
-        items.forEach((item, idx) => {
-            // Observe fewer items for performance, but ensure coverage
-            if (idx % 5 === 0) {
-                observerRef.current?.observe(item);
-            }
-        });
-
-        return () => observerRef.current?.disconnect();
-    }, [layout, preloadBatch]); // Depend on layout regen
+        if (track && track.photos.length > 0) {
+            const lastPhotoIndex = track.photos[track.photos.length - 1].index;
+            preloadBatch(lastPhotoIndex + 1);
+        }
+    }, [virtualRows, layout, preloadBatch]);
 
     if (!layout) {
         return <div ref={containerRef} className={`w-full ${className}`} />;
     }
 
     return (
-        <div ref={containerRef} className={`w-full flex flex-col gap-2 ${className}`}>
-            {layout.tracks.map((track, trackIndex) => (
-                <div
-                    key={`row-${trackIndex}`}
-                    className="flex flex-row gap-2 w-full"
-                    style={{ height: track.photos[0]?.height || 'auto' }} // All photos in row have same height
-                >
-                    {track.photos.map(({ photo, width, height, index }) => (
+        <div ref={containerRef} className={`w-full ${className}`}>
+            <div
+                style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                }}
+            >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const track = layout.tracks[virtualRow.index];
+                    const rowHeight = track?.photos[0]?.height || 300;
+
+                    return (
                         <div
-                            key={photo.id}
-                            data-index={index}
-                            className="photo-row-item relative"
-                            style={{ width: width, height: height }}
+                            key={virtualRow.key}
+                            className="flex flex-row gap-2 w-full absolute top-0 left-0"
+                            style={{
+                                height: `${rowHeight}px`,
+                                transform: `translateY(${virtualRow.start}px)`,
+                            }}
                         >
-                            <OptimizedProgressiveImage
-                                photo={photo}
-                                index={index}
-                                onPhotoClick={onPhotoClick}
-                                userPermissions={userPermissions}
-                                currentTab={currentTab}
-                                onStatusUpdate={onStatusUpdate}
-                                onDownload={onDownload}
-                                onDelete={onDelete}
-                                onSetCover={onSetCover}
-                                selectionMode={selectionMode}
-                                isSelected={selectedPhotos.has(photo.id)}
-                                onToggleSelection={onToggleSelection}
-                                priority={index < 10}
-                                layout="rows"
-                            />
+                            {track.photos.map(({ photo, width, height, index }) => (
+                                <div
+                                    key={photo.id}
+                                    data-index={index}
+                                    className="photo-row-item relative"
+                                    style={{ width: width, height: height }}
+                                >
+                                    <OptimizedProgressiveImage
+                                        photo={photo}
+                                        index={index}
+                                        onPhotoClick={onPhotoClick}
+                                        userPermissions={userPermissions}
+                                        currentTab={currentTab}
+                                        onStatusUpdate={onStatusUpdate}
+                                        onDownload={onDownload}
+                                        onDelete={onDelete}
+                                        onSetCover={onSetCover}
+                                        selectionMode={selectionMode}
+                                        isSelected={selectedPhotos.has(photo.id)}
+                                        onToggleSelection={onToggleSelection}
+                                        priority={index < 10}
+                                        layout="rows"
+                                    />
+                                </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
-            ))}
+                    );
+                })}
+            </div>
         </div>
     );
 };

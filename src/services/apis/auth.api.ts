@@ -20,6 +20,7 @@ export interface UserData {
     provider: "google" | "email";
     profile_pic?: string;
     phone_number?: string;
+    aws_face_id?: string;
 }
 
 export interface AuthTokens {
@@ -138,7 +139,8 @@ export const registerUser = async (credentials: RegisterCredentials): Promise<{ 
                 name: user.name,
                 email: user.email,
                 avatar: user.avatar,
-                provider: (user.provider || 'email') as "google" | "email"
+                provider: (user.provider || 'email') as "google" | "email",
+                aws_face_id: user.aws_face_id
             };
 
             // Refresh CSRF token after successful registration
@@ -282,7 +284,8 @@ export const handleGoogleOAuthCallback = async (code: string): Promise<{ user: U
                 name: user.name,
                 email: user.email,
                 avatar: user.avatar,
-                provider: 'google'
+                provider: 'google',
+                aws_face_id: user.aws_face_id
             };
 
             await csrfService.refreshToken();

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Upload, Loader2, Search } from 'lucide-react';
-import { searchFaces } from '@/services/apis/media.api';
+import { loginWithFace, loginWithGlobalIdentity } from '@/services/apis/guest.api';
 import { Button } from '@/components/ui/button'; // Assuming you have a Button component
 import { toast } from 'sonner';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 interface SelfieUploadModalProps {
     isOpen: boolean;
@@ -20,9 +21,28 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
     onSearchResults,
     token
 }) => {
+    const { user } = useSecureAuth();
     const [isUploading, setIsUploading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+    // Auto-login logic
+    const handleGlobalLogin = async () => {
+        setIsUploading(true);
+        try {
+            // We need a specific API for this
+            const { token: sessionToken, isNewIdentity, message } = await loginWithGlobalIdentity(eventId);
+            if (sessionToken) {
+                onSearchResults([{ token: sessionToken, isNewIdentity }]);
+                toast.success("Welcome back! " + message);
+                onClose();
+            }
+        } catch (error) {
+            toast.error("Auto-login failed. Please try a selfie.");
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -38,21 +58,20 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
 
         setIsUploading(true);
         try {
-            const results = await searchFaces(eventId, selectedFile, token);
+            // Perform Face Login
+            const { token, isNewIdentity, message } = await loginWithFace(selectedFile, eventId);
 
-            if (results && results.length > 0) {
-                toast.success(`Found ${results.length} photos of you!`);
-                // Pass full results back to parent
-                onSearchResults(results);
+            // Save Token
+            if (token) {
+                // We'll manage token in parent, but can also save globally here if needed.
+                // Better to pass it up.
+                onSearchResults([{ token, isNewIdentity }]);
+                toast.success(message);
                 onClose();
-            } else {
-                toast.info("No matching photos found yet. Try again later!");
-                onSearchResults([]); // Optional: clear filter or keep previous?
-                // Maybe don't close, let them try another selfie
             }
         } catch (error: any) {
-            console.error("Search failed", error);
-            toast.error(error.message || "Failed to search photos");
+            console.error("Login failed", error);
+            toast.error("Failed to process selfie. Please try again.");
         } finally {
             setIsUploading(false);
         }
@@ -95,6 +114,26 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
 
                     {/* Body */}
                     <div className="p-6 flex flex-col items-center gap-6">
+
+                        {/* Global Identity Option */}
+                        {user?.aws_face_id && !previewUrl && (
+                            <div className="w-full bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl flex flex-col items-center gap-3 border border-indigo-100 dark:border-indigo-800">
+                                <div className="text-sm font-medium text-indigo-900 dark:text-indigo-200">
+                                    Identity Found
+                                </div>
+                                <Button
+                                    onClick={handleGlobalLogin}
+                                    disabled={isUploading}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                                >
+                                    {isUploading ? <Loader2 className="animate-spin" /> : "Use My Saved Face"}
+                                </Button>
+                                <div className="text-xs text-center text-gray-500">
+                                    OR upload a new selfie below
+                                </div>
+                            </div>
+                        )}
+
                         {!previewUrl ? (
                             <label className="w-full aspect-square max-w-[240px] rounded-full border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 transition-colors bg-zinc-50 dark:bg-zinc-900/50 group">
                                 <input
@@ -117,14 +156,39 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
                                 <img
                                     src={previewUrl}
                                     alt="Selfie preview"
-                                    className="w-full h-full object-cover rounded-full border-4 border-white dark:border-zinc-800 shadow-lg"
+                                    className="w-full h-full object-cover rounded-full border-4 border-white dark:border-zinc-800 shadow-lg relative z-10"
                                 />
-                                <button
-                                    onClick={clearSelection}
-                                    className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full shadow-md hover:bg-red-600 transition-colors"
-                                >
-                                    <X size={16} />
-                                </button>
+
+                                {isUploading && (
+                                    <>
+                                        {/* Scanning Overlay */}
+                                        <div className="absolute inset-0 rounded-full overflow-hidden z-20">
+                                            <motion.div
+                                                className="w-full h-1 bg-green-500/80 shadow-[0_0_15px_rgba(34,197,94,0.8)]"
+                                                animate={{ top: ['0%', '100%', '0%'] }}
+                                                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                                                style={{ position: 'absolute' }}
+                                            />
+                                            <div className="absolute inset-0 bg-green-500/10" />
+                                        </div>
+
+                                        {/* Pulse Effect */}
+                                        <motion.div
+                                            className="absolute -inset-4 border-2 border-green-500 rounded-full z-0"
+                                            animate={{ scale: [1, 1.2], opacity: [0.8, 0] }}
+                                            transition={{ duration: 1.5, repeat: Infinity }}
+                                        />
+                                    </>
+                                )}
+
+                                {!isUploading && (
+                                    <button
+                                        onClick={clearSelection}
+                                        className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full shadow-md hover:bg-red-600 transition-colors z-30"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                )}
                             </div>
                         )}
 
