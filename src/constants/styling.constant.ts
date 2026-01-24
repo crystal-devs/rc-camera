@@ -441,7 +441,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
 
   // Themes - Expanded with more options
   themes: {
-    1: {
+    0: {
       name: "Sage Elegance",
       description: "Sophisticated sage green with cream and charcoal",
       colors: {
@@ -468,7 +468,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
         "--color-border": "#E8EDE6"
       }
     },
-    2: {
+    1: {
       name: "Pearl Blush",
       description: "Soft pearl white with dusty rose and warm gray",
       colors: {
@@ -495,7 +495,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
         "--color-border": "#F0EBEB"
       }
     },
-    3: {
+    2: {
       name: "Coastal Breeze",
       description: "Soft blue-gray with cream and seafoam",
       colors: {
@@ -522,7 +522,7 @@ export const STYLING_CONSTANTS: StylingConstants = {
         "--color-border": "#E6EEF4"
       }
     },
-    4: {
+    3: {
       name: "Warm Linen",
       description: "Natural linen with warm beige and soft brown",
       colors: {

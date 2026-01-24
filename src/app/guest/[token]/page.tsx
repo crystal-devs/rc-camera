@@ -1133,7 +1133,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       }
 
       {/* Photo Gallery Section */}
-      <div className="max-w-full mx-auto px-4 pb-0"
+      <div className="max-w-full mx-auto px-3 pb-0"
         style={{
           backgroundColor: themeColors.background,
         }}
