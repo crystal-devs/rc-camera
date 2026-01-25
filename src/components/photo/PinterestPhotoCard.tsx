@@ -96,16 +96,20 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
     >
       {!hasError ? (
         <>
-          {/* Pinterest-style loading placeholder */}
-          {!isLoaded && (
-            <div
-              className="w-full rounded-2xl animate-pulse"
-              style={{
-                height: expectedHeight,
-                backgroundColor: '#e8e8e8'
-              }}
-            />
-          )}
+          {/* Placeholder Background (Visible until covered by image) */}
+          <div
+            className="absolute inset-0 bg-[#e8e8e8] dark:bg-[#d1d1d1] rounded-2xl"
+            aria-hidden="true"
+          >
+            {/* Optional: Blurred Thumbnail for context */}
+            {photo.responsive_urls?.thumbnail && (
+              <img
+                src={photo.responsive_urls.thumbnail}
+                alt=""
+                className="w-full h-full object-cover rounded-2xl"
+              />
+            )}
+          </div>
 
           {/* Actual Image */}
           <img
@@ -125,13 +129,11 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
             src={photo.responsive_urls?.display || photo.src}
             alt={`Photo ${photo.id}`}
-            className={`
-              w-full h-full object-cover rounded-2xl transition-opacity duration-300
-              ${isLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}
-            `}
+            className="w-full h-full object-cover rounded-2xl relative z-10"
             onLoad={handleImageLoad}
             onError={handleImageError}
             loading={index < 12 ? "eager" : "lazy"}
+            decoding="async"
           />
         </>
       ) : (

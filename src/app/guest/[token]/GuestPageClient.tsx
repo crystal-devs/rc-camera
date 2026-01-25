@@ -237,17 +237,10 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
     }, [eventState.details?._id]);
 
     const handleTabChange = useCallback((tab: 'all' | 'my_photos' | 'highlights') => {
-        if (tab === 'my_photos') {
-            if (guestToken) {
-                setActiveTab('my_photos');
-            } else {
-                setShowFindMeModal(true);
-                return;
-            }
-        } else {
-            setActiveTab(tab);
-        }
-    }, [guestToken]);
+        // Always allow switching to any tab
+        setActiveTab(tab);
+        // The empty state component will handle prompting for selfie upload
+    }, []);
 
     // Refresh photos after successful claim
     useEffect(() => {
@@ -639,6 +632,8 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
                 totalPhotos={totalPhotos}
                 onFindMe={() => setShowFindMeModal(true)}
                 hasMatches={!!matchedPhotos && matchedPhotos.length > 0}
+                onUpload={() => setShowUploadDialog(true)}
+                connectionStatus={<ConnectionStatus />}
             />
 
             {/* Dynamic Cover with Title */}
@@ -649,56 +644,6 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
             >
                 {/* Can place upload button here if needed, but keeping it simple for now */}
             </DynamicEventCover>
-
-            {/* Tab Navigation */}
-            <div className="sticky top-0 z-30 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center justify-between h-14">
-                        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-                            <button
-                                onClick={() => handleTabChange('all')}
-                                className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === 'all'
-                                    ? 'bg-[var(--primary-color)] text-[var(--primary-foreground)] shadow-sm'
-                                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                    }`}
-                            >
-                                All Photos
-                            </button>
-                            <button
-                                onClick={() => handleTabChange('my_photos')}
-                                className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === 'my_photos'
-                                    ? 'bg-[var(--primary-color)] text-[var(--primary-foreground)] shadow-sm'
-                                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                    }`}
-                            >
-                                My Photos
-                            </button>
-                            <button
-                                onClick={() => handleTabChange('highlights')}
-                                className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === 'highlights'
-                                    ? 'bg-[var(--primary-color)] text-[var(--primary-foreground)] shadow-sm'
-                                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                    }`}
-                            >
-                                Highlights
-                            </button>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            <ConnectionStatus />
-                            {/* Desktop Upload Button */}
-                            <Button
-                                size="sm"
-                                onClick={() => setShowUploadDialog(true)}
-                                className="hidden md:flex items-center gap-1.5 bg-[var(--primary-color)] text-[var(--primary-foreground)] hover:brightness-110"
-                            >
-                                <Upload className="w-4 h-4" />
-                                Add Photos
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
                 {/* Notification Banner */}
@@ -756,22 +701,24 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
                     />
                 </div>
 
-                {/* Rows Layout (Google Photos Style) */}
-                <RowsPhotoGallery
-                    photos={displayedPhotos as any}
-                    onPhotoClick={(photo, index) => handlePhotoClick(photo as any, index)}
-                    userPermissions={{
-                        upload: eventState.access?.can_upload || true,
-                        download: eventState.access?.can_download || true,
-                        moderate: false,
-                        delete: false
-                    }}
-                    currentTab="approved"
-                    onStatusUpdate={() => { }}
-                    targetRowHeight={220}
-                    onNearEnd={hasNextPage && !isInitialLoading ? loadMore : undefined}
-                    selectionMode={false}
-                />
+                {/* Rows Layout (Google Photos Style) - Only show if not showing empty state */}
+                {!(activeTab === 'my_photos' && !guestToken) && (
+                    <RowsPhotoGallery
+                        photos={displayedPhotos as any}
+                        onPhotoClick={(photo, index) => handlePhotoClick(photo as any, index)}
+                        userPermissions={{
+                            upload: eventState.access?.can_upload || true,
+                            download: eventState.access?.can_download || true,
+                            moderate: false,
+                            delete: false
+                        }}
+                        currentTab="approved"
+                        onStatusUpdate={() => { }}
+                        targetRowHeight={220}
+                        onNearEnd={hasNextPage && !isInitialLoading ? loadMore : undefined}
+                        selectionMode={false}
+                    />
+                )}
 
                 {/* Loading States */}
                 {isInitialLoading && (
@@ -795,7 +742,54 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
                 )}
 
                 {/* Empty State */}
-                {!isInitialLoading && displayedPhotos.length === 0 && (
+                {!isInitialLoading && activeTab === 'my_photos' && !guestToken && (
+                    <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 py-12">
+                        <div className="relative mb-8">
+                            <div className="w-32 h-32 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/20 dark:to-purple-900/20 flex items-center justify-center">
+                                <Camera className="w-16 h-16 text-blue-500 dark:text-blue-400" />
+                            </div>
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3 text-center">
+                            Find Your Photos
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-400 text-center max-w-md mb-8">
+                            Upload a quick selfie and our AI will instantly find all the photos you appear in.
+                            No more scrolling through hundreds of images!
+                        </p>
+                        <Button
+                            onClick={() => setShowFindMeModal(true)}
+                            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-6 text-lg rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                        >
+                            <Camera className="w-5 h-5 mr-2" />
+                            Upload Selfie to Find Me
+                        </Button>
+                        <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl">
+                            <div className="text-center">
+                                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/20 rounded-xl flex items-center justify-center mx-auto mb-3">
+                                    <span className="text-2xl">⚡</span>
+                                </div>
+                                <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm mb-1">Instant Results</h4>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">AI scans the entire gallery in seconds</p>
+                            </div>
+                            <div className="text-center">
+                                <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 rounded-xl flex items-center justify-center mx-auto mb-3">
+                                    <span className="text-2xl">🔒</span>
+                                </div>
+                                <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm mb-1">Private & Secure</h4>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Your selfie is not stored or shared</p>
+                            </div>
+                            <div className="text-center">
+                                <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-xl flex items-center justify-center mx-auto mb-3">
+                                    <span className="text-2xl">✨</span>
+                                </div>
+                                <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm mb-1">Accurate Matching</h4>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Advanced facial recognition technology</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {!isInitialLoading && displayedPhotos.length === 0 && activeTab !== 'my_photos' && (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
                         <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
                             <Camera className="w-10 h-10 text-gray-400" />

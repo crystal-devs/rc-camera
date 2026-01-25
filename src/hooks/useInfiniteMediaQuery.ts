@@ -78,7 +78,7 @@ export const useInfiniteMediaQuery = ({
             const hasNext = (response as any).other?.pagination?.hasNext ?? (approvedPhotos.length === limit);
             const total = (response as any).other?.pagination?.totalCount ?? approvedPhotos.length;
 
-            console.log(transformedPhotos, 'transformedPhotos')
+
             return {
                 photos: transformedPhotos,
                 hasNext,
@@ -178,7 +178,7 @@ export const useInfiniteMediaQuery = ({
         return Math.max(...infiniteQuery.data.pages.map(page => page.total));
     }, [infiniteQuery.data?.pages]);
 
-    console.log(allPhotos, 'allPhotosallPhotosallPhotos')
+
     return {
         photos: allPhotos,
         totalPhotos,

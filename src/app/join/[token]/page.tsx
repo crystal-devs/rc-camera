@@ -92,7 +92,7 @@ export default function JoinPage() {
       // Check if user has already joined this event
       const joinedKey = `joined_${token}`;
       if (typeof window !== 'undefined' && localStorage.getItem(joinedKey) === 'true' && access.canJoin) {
-        console.log('🚀 User has already joined, redirecting to event...');
+        console.debug('🚀 User has already joined, redirecting to event...');
         setIsRedirecting(true);
         router.push(`/guest/${token}`);
         return;
@@ -101,7 +101,7 @@ export default function JoinPage() {
       // --- AUTO-REDIRECTION LOGIC ---
       // If user is already authenticated and has access, redirect immediately
       if (authToken && access.canJoin && !access.requiresAuth) {
-        console.log('🚀 User already has access, redirecting to event...');
+        console.debug('🚀 User already has access, redirecting to event...');
         setIsRedirecting(true);
         router.push(`/guest/${token}`);
         return;

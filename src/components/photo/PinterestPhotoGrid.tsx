@@ -2,7 +2,7 @@
 import { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { PinterestPhotoCard } from "./PinterestPhotoCard";
 import { TransformedPhoto } from "@/types/events";
-import Skeleton from "./skeleton/skeleton";
+import { PhotoGridSkeleton } from "./skeleton/PhotoGridSkeleton";
 import { STYLING_CONSTANTS, getStylingConfig } from '@/constants/styling.constant';
 import computeRowsLayout, { LayoutModel } from "./layout/rows-layout";
 import { Photo } from "@/types/PhotoGallery.types"; // Import generic Photo type for compatibility
@@ -267,7 +267,11 @@ export const PinterestPhotoGrid: React.FC<{
           width: p.width || 100,
           height: p.height || 100,
           src: p.src || '',
-          aspectRatio: (p.width && p.height) ? p.width / p.height : 1
+          aspectRatio: (p.width && p.height) ? p.width / p.height : 1,
+          // Add required Photo properties for type compatibility
+          eventId: p.eventId || '',
+          type: p.type || 'photo',
+          imageUrl: p.imageUrl || p.src || ''
         }));
 
         const rowsLayout = computeRowsLayout(
@@ -306,29 +310,28 @@ export const PinterestPhotoGrid: React.FC<{
         // --- MASONRY LAYOUT ---
         const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
         const columnWidth = Math.floor(availableWidth / config.columns);
-        const heights = Array(config.columns).fill(0);
+        const heights = Array(config.columns).fill(config.padding);
 
-        gridItems.forEach((item) => {
+        gridItems.forEach((item, index) => {
           // Find shortest column
           const shortestColumnIndex = heights.indexOf(Math.min(...heights));
           const x = config.padding + shortestColumnIndex * (columnWidth + config.gap);
           const y = heights[shortestColumnIndex];
 
-          // Store position (no fixed height!)
+          // Store position with calculated height
           positions.set(item.id, {
             x,
             y,
-            width: columnWidth
+            width: columnWidth,
+            height: item.calculatedHeight
           });
 
-          // IMPORTANT: Always use calculatedHeight, never actual loaded height
-          // This prevents images from rearranging after they load
-          const itemHeight = item.calculatedHeight;
-          heights[shortestColumnIndex] += itemHeight + config.gap;
+          // Update column height: add this item's height + gap for next item
+          heights[shortestColumnIndex] += item.calculatedHeight + config.gap;
         });
 
         setColumnHeights([...heights]);
-        setFilesContainerHeight(Math.max(...heights, 300));
+        setFilesContainerHeight(Math.max(...heights) + config.padding);
       }
 
       setItemPositions(positions);
@@ -406,7 +409,7 @@ export const PinterestPhotoGrid: React.FC<{
     }, [stylingConfig]);
 
     if (photos.length === 0 && (isLoadingMore || hasNextPage)) {
-      return <Skeleton />;
+      return <PhotoGridSkeleton />;
     }
 
     return (
@@ -423,20 +426,21 @@ export const PinterestPhotoGrid: React.FC<{
             return (
               <div
                 key={photo.id}
-                ref={(el) => registerItemRef(index, el)} // NEW: Register for viewport tracking
-                className="absolute transition-all duration-500 ease-out"
                 style={{
+                  position: 'absolute',
                   left: position.x,
                   top: position.y,
                   width: position.width,
-                  height: position.height // Apply explicit height if available (Rows layout)
+                  height: position.height
                 }}
+                className="transition-[left,top,width,height] duration-300 ease-out"
+                ref={(el) => registerItemRef(index, el)}
               >
                 <PinterestPhotoCard
                   photo={photo}
                   index={index}
                   baseWidth={position.width}
-                  expectedHeight={position.height || (photo as any).calculatedHeight || 300} // Use calculated position height or fallback
+                  expectedHeight={position.height || (photo as any).calculatedHeight || 300}
                   isLiked={likedPhotos.has(photo.id)}
                   onLike={() => handleLike(photo.id)}
                   onClick={() => onPhotoClick(photo, index)}
@@ -447,7 +451,7 @@ export const PinterestPhotoGrid: React.FC<{
 
           {isLoadingMore && (
             <div className="mt-8">
-              <Skeleton count={12} />
+              <PhotoGridSkeleton />
             </div>
           )}
         </div>

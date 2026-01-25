@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Download, Loader2, UserSearch } from 'lucide-react';
+import { Download, Loader2, UserSearch, Upload, Sparkles } from 'lucide-react';
 import { Event } from '@/types/events';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +15,9 @@ interface GuestHeaderProps {
     activeTab: 'all' | 'my_photos' | 'highlights';
     onTabChange: (tab: 'all' | 'my_photos' | 'highlights') => void;
     hasMatches: boolean;
+    // New props for upload and connection
+    onUpload?: () => void;
+    connectionStatus?: React.ReactNode;
 }
 
 export function GuestHeader({
@@ -26,14 +29,16 @@ export function GuestHeader({
     onFindMe,
     activeTab,
     onTabChange,
-    hasMatches
+    hasMatches,
+    onUpload,
+    connectionStatus
 }: GuestHeaderProps) {
     if (!eventDetails) return null;
 
     return (
         <header
             data-gallery-section
-            className="sticky top-0 left-0 right-0 z-50 transition-colors duration-300 shadow-sm"
+            className="sticky top-0 left-0 right-0 z-[999] transition-colors duration-300 shadow-sm backdrop-blur-md bg-opacity-90"
             style={{
                 backgroundColor: themeColors.custom_secondary || themeColors.secondary || '#ffffff',
                 color: themeColors.text || '#000000'
@@ -84,23 +89,31 @@ export function GuestHeader({
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="opacity-40 cursor-not-allowed hidden sm:flex"
-                            disabled
+                            onClick={() => onTabChange('highlights')}
+                            className={cn(
+                                "font-medium transition-all flex items-center gap-1.5",
+                                activeTab === 'highlights'
+                                    ? "bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50 opacity-100"
+                                    : "opacity-60 hover:opacity-100 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                            )}
                         >
+                            <Sparkles className="h-3.5 w-3.5" />
                             Highlights
                         </Button>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-2 pl-2">
+                    {/* Connection Status (Desktop) */}
+                    <div className="hidden md:block">
+                        {connectionStatus}
+                    </div>
+
                     <span className="text-xs opacity-60 hidden sm:inline-block mr-2">
                         {totalPhotos} Photos
                     </span>
 
-                    {/* Only show explicit 'Find Me' button if not in 'My Photos' tab or no matches? 
-                        User kept asking for "Find Me" button, but "My Photos" text might replace it.
-                        Let's keep a simplified version or hide it if 'My Photos' tab is active and populated.
-                    */}
+                    {/* Find Me Button - Only if not on My Photos tab and no matches */}
                     {!hasMatches && activeTab !== 'my_photos' && (
                         <Button
                             onClick={onFindMe}
@@ -110,6 +123,17 @@ export function GuestHeader({
                         >
                             <UserSearch className="h-4 w-4 mr-2" />
                             Find Me
+                        </Button>
+                    )}
+
+                    {onUpload && (
+                        <Button
+                            onClick={onUpload}
+                            size="sm"
+                            className="hidden md:flex items-center gap-1.5 bg-[var(--primary-color)] text-[var(--primary-foreground)] hover:brightness-110 mr-1"
+                        >
+                            <Upload className="w-4 h-4" />
+                            Add
                         </Button>
                     )}
 

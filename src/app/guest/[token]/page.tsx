@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useCallback, use, useEffect, memo, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useCallback, use, useEffect, memo, useMemo, lazy, Suspense, useTransition } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   Camera,
@@ -20,7 +21,7 @@ import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
 import { RowsPhotoGallery } from '@/components/photo/layout/RowsPhotoGallery';
 import { Photo } from '@/types/PhotoGallery.types';
 
-import { notFound, useRouter } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { toast } from 'sonner';
 import { getTokenInfo } from '@/services/apis/sharing.api';
 import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
@@ -37,6 +38,8 @@ import { useGuestWebSocketHandlers } from '@/hooks/useGuestWebSocketHandlers';
 import { MyPhotosHeader } from '@/components/guest/MyPhotosHeader';
 import { loadGuestToken, saveGuestToken } from '@/utils/guestTokenStorage';
 import { FullPageLoading, LoadingSpinner } from '@/components/ui/loading';
+import { FindMePromptBanner } from '@/components/guest/FindMePromptBanner';
+import { MyPhotosEmptyState } from '@/components/guest/MyPhotosEmptyState';
 
 // Dynamic imports for heavy components (Vercel best practice: bundle-dynamic-imports)
 const FullscreenPhotoViewer = lazy(() =>
@@ -79,6 +82,9 @@ interface EventState {
 
 function GuestPageContent({ shareToken }: GuestPageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const [isPending, startTransition] = useTransition();
 
   // Consolidated state management
   const [eventState, setEventState] = useState<EventState>({
@@ -108,8 +114,13 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [showUploadDialog, setShowUploadDialog] = useState<boolean>(false);
   const [showNotificationBanner, setShowNotificationBanner] = useState<boolean>(false);
   const [showFindMeModal, setShowFindMeModal] = useState(false);
+  const [showFindMePrompt, setShowFindMePrompt] = useState(false);
   // Tab state
-  const [activeTab, setActiveTab] = useState<'all' | 'my_photos' | 'highlights'>('all');
+  // Tab state derived from URL
+  const activeTab = useMemo(() => {
+    const tab = searchParams.get('tab');
+    return (tab === 'my_photos' || tab === 'highlights') ? tab : 'all';
+  }, [searchParams]);
   const [matchedPhotos, setMatchedPhotos] = useState<TransformedPhoto[] | null>(null);
 
   // Download manager hook (extracted for better performance)
@@ -219,11 +230,35 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
   // Filtering logic
   const displayedPhotos = useMemo(() => {
-    if (activeTab === 'my_photos' && matchedPhotos) {
-      return matchedPhotos;
+    if (activeTab === 'my_photos') {
+      // Return matchedPhotos if available, otherwise empty array (don't fall through to all photos)
+      return matchedPhotos || [];
+    }
+    if (activeTab === 'highlights') {
+      // Show approved/highlighted photos
+      return photos.filter(photo =>
+        photo.approval?.status === 'approved' ||
+        photo.approval?.status === 'auto_approved'
+      );
     }
     return photos;
   }, [photos, matchedPhotos, activeTab]);
+
+  // Auto-prompt \"Find Me\" on first visit (after photos are loaded)
+  useEffect(() => {
+    if (!eventState.details?._id || guestToken || isInitialLoading) return;
+
+    const hasSeenPrompt = localStorage.getItem(`find_me_prompt_seen_${eventState.details._id}`);
+
+    // Show prompt if: haven't seen it before, have enough photos, and no token yet
+    if (!hasSeenPrompt && photos.length >= 20) {
+      const timer = setTimeout(() => {
+        setShowFindMePrompt(true);
+      }, 2000); // Show after 2 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [eventState.details?._id, guestToken, photos.length, isInitialLoading]);
 
   const handleSearchResults = useCallback((results: any[]) => {
     // In Phase 2, 'results' contains [{ token, isNewIdentity }] from the Login Modal
@@ -236,25 +271,49 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         saveGuestToken(eventState.details._id, token);
       }
 
-      // Switch tab (Effect will fetch photos)
-      setActiveTab('my_photos');
+      // Switch tab via URL
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('tab', 'my_photos');
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
     }
   }, [eventState.details?._id]);
 
   const handleTabChange = useCallback((tab: 'all' | 'my_photos' | 'highlights') => {
-    if (tab === 'my_photos') {
-      // If we have a token, we switch and let the effect fetch/show photos.
-      // If NO token, we open the modal to "Login".
-      if (guestToken) {
-        setActiveTab('my_photos');
-      } else {
-        setShowFindMeModal(true);
-        return;
-      }
+    // Prevent redundant navigation
+    const currentTab = searchParams.get('tab') || 'all';
+    if (tab === currentTab) return;
+
+    // URL-based navigation with transition to prevent flicker
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (tab === 'all') {
+      params.delete('tab');
     } else {
-      setActiveTab(tab);
+      params.set('tab', tab);
     }
-  }, [guestToken]);
+
+    startTransition(() => {
+      const queryString = params.toString();
+      const target = queryString ? `${pathname}?${queryString}` : pathname;
+      router.push(target, { scroll: false });
+    });
+  }, [searchParams, router, pathname]);
+
+  // Handle Find Me Prompt actions
+  const handleFindMePromptClick = useCallback(() => {
+    setShowFindMePrompt(false);
+    setShowFindMeModal(true);
+    if (eventState.details?._id) {
+      localStorage.setItem(`find_me_prompt_seen_${eventState.details._id}`, 'true');
+    }
+  }, [eventState.details?._id]);
+
+  const handleDismissPrompt = useCallback(() => {
+    setShowFindMePrompt(false);
+    if (eventState.details?._id) {
+      localStorage.setItem(`find_me_prompt_seen_${eventState.details._id}`, 'true');
+    }
+  }, [eventState.details?._id]);
 
   // Refresh photos after successful claim
   useEffect(() => {
@@ -428,7 +487,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const navigatePhoto = useCallback(
     (direction: 'next' | 'prev') => {
       let newIndex: number;
-      if (direction === 'next' && selectedPhotoIndex < photos.length - 1) {
+      if (direction === 'next' && selectedPhotoIndex < displayedPhotos.length - 1) {
         newIndex = selectedPhotoIndex + 1;
       } else if (direction === 'prev' && selectedPhotoIndex > 0) {
         newIndex = selectedPhotoIndex - 1;
@@ -436,9 +495,9 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         return;
       }
       setSelectedPhotoIndex(newIndex);
-      setSelectedPhoto(photos[newIndex]);
+      setSelectedPhoto(displayedPhotos[newIndex]);
     },
-    [selectedPhotoIndex, photos],
+    [selectedPhotoIndex, displayedPhotos],
   );
 
   const RoomStatsDisplay = memo(({ roomStats }: { roomStats: EventState['roomStats'] }) => {
@@ -565,83 +624,193 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               </Button>
             </div>
           </div>
-        )}
-        {(() => {
-          // Simplify Component Selection
-          const styling = (eventState.details as any)?.styling_config;
-          const layoutId = styling?.gallery?.layout_id ?? 1;
+        )}\n        {/* Keep-Alive Strategy for All Photos / Highlights - Always mounted, toggled visibility */}
+        <div style={{ display: (activeTab === 'all' || activeTab === 'highlights') ? 'block' : 'none' }}>
+          {(() => {
+            // Derive data for this view (independent of My Photos)
+            const gridData = activeTab === 'highlights'
+              ? photos.filter(p => p.approval?.status === 'approved' || p.approval?.status === 'auto_approved')
+              : photos;
 
-          if (layoutId === 2) {
-            // Map TransformedPhoto to Photo for RowsPhotoGallery
-            const galleryPhotos = displayedPhotos.map(p => ({
-              id: p.id,
-              eventId: p.eventId || '',
-              albumId: p.albumId,
-              type: 'image',
-              imageUrl: p.src,
-              responsive_urls: p.responsive_urls,
-              width: p.width,
-              height: p.height,
-              metadata: { width: p.width, height: p.height },
-              approval: p.approval,
-              uploadedBy: p.uploaded_by,
-              createdAt: p.createdAt
-            } as unknown as Photo));
+            // Logic to render grid
+            const styling = (eventState.details as any)?.styling_config;
+            const layoutId = styling?.gallery?.layout_id ?? 1;
 
-            const spacingId = styling?.gallery?.grid_spacing ?? 1;
-            const spacingMap: Record<number, number> = { 0: 4, 1: 8, 2: 12, 3: 16 };
-            const spacing = spacingMap[spacingId] || 8;
+            if (layoutId === 2) {
+              const galleryPhotos = gridData.map(p => ({
+                id: p.id,
+                eventId: p.eventId || '',
+                albumId: p.albumId,
+                type: 'image',
+                imageUrl: p.src,
+                responsive_urls: p.responsive_urls,
+                width: p.width,
+                height: p.height,
+                metadata: { width: p.width, height: p.height },
+                approval: p.approval,
+                uploadedBy: p.uploaded_by,
+                createdAt: p.createdAt
+              } as unknown as Photo));
+
+              const spacingId = styling?.gallery?.grid_spacing ?? 1;
+              const spacingMap: Record<number, number> = { 0: 4, 1: 8, 2: 12, 3: 16 };
+              const spacing = spacingMap[spacingId] || 8;
+
+              return (
+                <RowsPhotoGallery
+                  photos={galleryPhotos}
+                  onPhotoClick={(photo, index) => {
+                    const original = gridData.find(p => p.id === photo.id);
+                    if (original) handlePhotoClick(original, index);
+                  }}
+                  userPermissions={{
+                    upload: eventState.details?.default_guest_permissions?.upload ?? true,
+                    download: eventState.details?.default_guest_permissions?.download ?? true,
+                    moderate: false,
+                    delete: false
+                  }}
+                  currentTab="approved"
+                  onStatusUpdate={() => { }}
+                  onDownload={(photo) => {
+                    const original = gridData.find(p => p.id === photo.id);
+                    if (original) {
+                      const link = document.createElement('a');
+                      link.href = original.responsive_urls?.original || original.src;
+                      link.download = `photo-${original.id}`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }
+                  }}
+                  selectionMode={false}
+                  spacing={spacing}
+                  targetRowHeight={styling?.gallery?.thumbnail_size === 0 ? 180 : styling?.gallery?.thumbnail_size === 2 ? 350 : 250}
+                  onNearEnd={loadMore}
+                />
+              );
+            }
 
             return (
-              <RowsPhotoGallery
-                photos={galleryPhotos}
-                onPhotoClick={(photo, index) => {
-                  // Map back to TransformedPhoto for handler
-                  const original = displayedPhotos.find(p => p.id === photo.id);
-                  if (original) handlePhotoClick(original, index);
-                }}
-                userPermissions={{
-                  upload: eventState.details?.default_guest_permissions?.upload ?? true, // Fallback to safe default or actual permission
-                  download: eventState.details?.default_guest_permissions?.download ?? true,
-                  moderate: false,
-                  delete: false
-                }}
-                currentTab="approved"
-                onStatusUpdate={() => { }}
-                onDownload={(photo) => {
-                  const original = displayedPhotos.find(p => p.id === photo.id);
-                  if (original) {
-                    // Trigger download logic
-                    const link = document.createElement('a');
-                    link.href = original.responsive_urls?.original || original.src;
-                    link.download = `photo-${original.id}`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                  }
-                }}
-                selectionMode={false}
-                spacing={spacing}
-                targetRowHeight={styling?.gallery?.thumbnail_size === 0 ? 180 : styling?.gallery?.thumbnail_size === 2 ? 350 : 250}
+              <PinterestPhotoGrid
+                photos={gridData}
+                onPhotoClick={handlePhotoClick}
+                hasNextPage={hasNextPage}
+                isLoadingMore={isLoadingMore}
+                onLoadMore={loadMore}
+                onViewportChange={() => { }}
+                eventStyling={(eventState.details as any)?.styling_config}
+                layout="masonry"
               />
             );
-          }
+          })()}
+        </div>
 
+        {/* My Photos - Conditional Mount */}
+        {activeTab === 'my_photos' && (
+          <div className="animate-in fade-in duration-300">
+            {(() => {
+              if (!guestToken) {
+                return <MyPhotosEmptyState onFindMe={() => setShowFindMeModal(true)} />;
+              }
+              if (!matchedPhotos) {
+                return (
+                  <div className="flex justify-center py-20">
+                    <LoadingSpinner className="text-[var(--primary-color)]" />
+                  </div>
+                );
+              }
+              if (matchedPhotos.length === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+                    <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+                      <Camera className="w-10 h-10 text-gray-400" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                      No Photos Found
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 mb-4 max-w-sm">
+                      We couldn't find any photos of you yet. Try uploading a different selfie or check back as more photos are added.
+                    </p>
+                    <Button
+                      onClick={() => setShowFindMeModal(true)}
+                      variant="outline"
+                      className="mt-4"
+                    >
+                      Try Another Selfie
+                    </Button>
+                  </div>
+                );
+              }
 
+              // Render My Photos Grid
+              const gridData = matchedPhotos;
+              const styling = (eventState.details as any)?.styling_config;
+              const layoutId = styling?.gallery?.layout_id ?? 1;
 
-          return (
-            <PinterestPhotoGrid
-              photos={displayedPhotos}
-              onPhotoClick={handlePhotoClick}
-              hasNextPage={hasNextPage && !matchedPhotos}
-              isLoadingMore={isLoadingMore}
-              onLoadMore={loadMore}
-              onViewportChange={() => { }}
-              eventStyling={(eventState.details as any)?.styling_config}
-              layout="masonry"
-            />
-          );
-        })()}
+              if (layoutId === 2) {
+                const galleryPhotos = gridData.map(p => ({
+                  id: p.id,
+                  eventId: p.eventId || '',
+                  albumId: p.albumId,
+                  type: 'image',
+                  imageUrl: p.src,
+                  responsive_urls: p.responsive_urls,
+                  width: p.width,
+                  height: p.height,
+                  metadata: { width: p.width, height: p.height },
+                  approval: p.approval,
+                  uploadedBy: p.uploaded_by,
+                  createdAt: p.createdAt
+                } as unknown as Photo));
+                const spacingId = styling?.gallery?.grid_spacing ?? 1;
+                const spacingMap: Record<number, number> = { 0: 4, 1: 8, 2: 12, 3: 16 };
+                const spacing = spacingMap[spacingId] || 8;
+
+                return (
+                  <RowsPhotoGallery
+                    photos={galleryPhotos}
+                    onPhotoClick={(photo, index) => {
+                      const original = gridData.find(p => p.id === photo.id);
+                      if (original) handlePhotoClick(original, index);
+                    }}
+                    userPermissions={{
+                      upload: true, download: true, moderate: false, delete: false
+                    }}
+                    currentTab="approved"
+                    onStatusUpdate={() => { }}
+                    onDownload={(photo) => {
+                      const original = gridData.find(p => p.id === photo.id);
+                      if (original) {
+                        const link = document.createElement('a');
+                        link.href = original.responsive_urls?.original || original.src;
+                        link.download = `photo-${original.id}`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      }
+                    }}
+                    selectionMode={false}
+                    spacing={spacing}
+                    targetRowHeight={styling?.gallery?.thumbnail_size === 0 ? 180 : styling?.gallery?.thumbnail_size === 2 ? 350 : 250}
+                  />
+                );
+              }
+
+              return (
+                <PinterestPhotoGrid
+                  photos={gridData}
+                  onPhotoClick={handlePhotoClick}
+                  hasNextPage={false}
+                  isLoadingMore={false}
+                  onLoadMore={() => { }}
+                  onViewportChange={() => { }}
+                  eventStyling={(eventState.details as any)?.styling_config}
+                  layout="masonry"
+                />
+              );
+            })()}
+          </div>
+        )}
 
 
 
@@ -681,6 +850,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         onAction={handleApplyBufferedChanges}
         onDismiss={handleDismissNotification}
         actionLabel="View Now"
+      />
+
+      {/* Find Me Auto-Prompt Banner */}
+      < FindMePromptBanner
+        isVisible={showFindMePrompt}
+        totalPhotos={totalPhotos}
+        onFindMe={handleFindMePromptClick}
+        onDismiss={handleDismissPrompt}
       />
 
       {/* Claiming Status Banner - Shows when claiming is in progress */}
@@ -727,11 +904,31 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         themeColors={themeColors}
         onDownload={startDownload}
         isDownloading={isDownloading}
-        totalPhotos={totalPhotos}
+        totalPhotos={displayedPhotos.length}
         onFindMe={() => setShowFindMeModal(true)}
         activeTab={activeTab}
         onTabChange={handleTabChange}
         hasMatches={!!matchedPhotos && matchedPhotos.length > 0}
+        onUpload={() => setShowUploadDialog(true)}
+        connectionStatus={
+          // Inline Connection Status for simplicity
+          !webSocket.isConnected ? (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <WifiOffIcon className="h-3 w-3" />
+              Offline
+            </Badge>
+          ) : !webSocket.isAuthenticated ? (
+            <Badge variant="secondary" className="flex items-center gap-1">
+              <WifiIcon className="h-3 w-3" />
+              Connecting...
+            </Badge>
+          ) : (
+            <Badge variant="default" className="flex items-center gap-1 bg-green-500">
+              <WifiIcon className="h-3 w-3" />
+              Live
+            </Badge>
+          )
+        }
       />
 
       <SelfieUploadModal
@@ -804,6 +1001,15 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         />
       </Suspense>
 
+      {/* Find Me Modal */}
+      <SelfieUploadModal
+        isOpen={showFindMeModal}
+        onClose={() => setShowFindMeModal(false)}
+        eventId={eventState.details?._id || ''}
+        onSearchResults={handleSearchResults}
+        socket={webSocket.socket}
+      />
+
       {/* Floating Upload Button */}
       {
         eventState.details?.default_guest_permissions?.upload && (
@@ -842,7 +1048,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               }
             }}
             selectedPhotoIndex={selectedPhotoIndex}
-            photos={photos.map(photo => ({
+            photos={displayedPhotos.map(photo => ({
               ...photo,
               type: 'image' as const,
               takenBy: 'Guest',
