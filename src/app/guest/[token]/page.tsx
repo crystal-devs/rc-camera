@@ -1,22 +1,20 @@
 'use client';
 
-import React, { useState, useCallback, use, useEffect, memo, useMemo } from 'react';
+import React, { useState, useCallback, use, useEffect, memo, useMemo, lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   Camera,
   Upload,
   CheckCircle2,
-  Loader2,
   X,
   Plus,
-  WifiOffIcon,
-  WifiIcon
+  WifiOff as WifiOffIcon,
+  Wifi as WifiIcon,
+  Loader2
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BulkDownloadButton } from './BulkDownloadButton';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TransformedPhoto, transformApiPhoto } from '@/types/events';
 import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
 import { RowsPhotoGallery } from '@/components/photo/layout/RowsPhotoGallery';
@@ -24,9 +22,7 @@ import { Photo } from '@/types/PhotoGallery.types';
 
 import { notFound, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { getTokenInfo } from '@/services/apis/sharing.api';
-import { FullscreenPhotoViewer } from '@/components/photo/FullscreenPhotoViewer';
 import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
 import { GuestHeader } from '@/components/guest/GuestHeader';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
@@ -34,9 +30,21 @@ import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
 import { NotificationBanner } from '@/components/guest/NotificationBanner';
 import { useGuestClaim } from '@/hooks/useGuestClaim';
 import { Event } from '@/types/events';
-import { createGuestBulkDownload, getDownloadStatus, downloadZipFile } from '@/services/apis/bulk-download.api';
 import { getStylingConfig, getThemeColors, generateEventCSS } from '@/constants/styling.constant';
 import { SelfieUploadModal } from '@/components/guest/SelfieUploadModal';
+import { useDownloadManager } from '@/hooks/useDownloadManager';
+import { useGuestWebSocketHandlers } from '@/hooks/useGuestWebSocketHandlers';
+import { MyPhotosHeader } from '@/components/guest/MyPhotosHeader';
+import { loadGuestToken, saveGuestToken } from '@/utils/guestTokenStorage';
+import { FullPageLoading, LoadingSpinner } from '@/components/ui/loading';
+
+// Dynamic imports for heavy components (Vercel best practice: bundle-dynamic-imports)
+const FullscreenPhotoViewer = lazy(() =>
+  import('@/components/photo/FullscreenPhotoViewer').then(m => ({ default: m.FullscreenPhotoViewer }))
+);
+const GuestUploadDialog = lazy(() =>
+  import('@/components/guest/GuestUploadDialog').then(m => ({ default: m.GuestUploadDialog }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -104,29 +112,27 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'my_photos' | 'highlights'>('all');
   const [matchedPhotos, setMatchedPhotos] = useState<TransformedPhoto[] | null>(null);
 
-  // Bulk download states
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadJobId, setDownloadJobId] = useState<string | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState<{
-    status: string;
-    progress: number;
-    totalFiles: number;
-  } | null>(null);
-
-  // Upload states
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState<boolean>(false);
-  const [guestInfo, setGuestInfo] = useState({ name: '', email: '' });
+  // Download manager hook (extracted for better performance)
+  const {
+    isDownloading,
+    downloadProgress,
+    downloadJobId,
+    startDownload
+  } = useDownloadManager({
+    shareToken,
+    eventId: eventState.details?._id || '',
+    eventTitle: eventState.details?.title
+  });
 
   // Guest Token State (Phase 2 Persistence)
   const [guestToken, setGuestToken] = useState<string | null>(null);
 
-  // Initialize Guest Token from LocalStorage
+  // Initialize Guest Token from LocalStorage with versioning
   useEffect(() => {
     if (typeof window !== 'undefined' && eventState.details?._id) {
-      const storedToken = localStorage.getItem(`guest_token_${eventState.details._id}`);
-      if (storedToken) {
-        setGuestToken(storedToken);
+      const token = loadGuestToken(eventState.details._id);
+      if (token) {
+        setGuestToken(token);
       }
     }
   }, [eventState.details?._id]);
@@ -224,10 +230,10 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     if (results && results.length > 0 && results[0].token) {
       const { token, isNewIdentity } = results[0];
 
-      // Save token
+      // Save token with versioning
       setGuestToken(token);
       if (eventState.details?._id) {
-        localStorage.setItem(`guest_token_${eventState.details._id}`, token);
+        saveGuestToken(eventState.details._id, token);
       }
 
       // Switch tab (Effect will fetch photos)
@@ -279,7 +285,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         toast.error('Authentication required. Please sign in to access this event.');
 
         if (typeof window !== 'undefined') {
-          localStorage.setItem('redirectAfterLogin', `/guest/${shareToken}`);
+          try {
+            localStorage.setItem('redirectAfterLogin', `/guest/${shareToken}`);
+          } catch (e) {
+            console.warn('Failed to save redirect URL:', e);
+          }
         }
 
         router.push('/login');
@@ -303,34 +313,18 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     enabled: !!eventState.details?._id && !!shareToken
   });
 
-  // Simplified deduplication using a simple set with auto-cleanup
-  const processedEvents = useMemo(() => new Set<string>(), []);
-  const eventTimeouts = useMemo(() => new Map<string, NodeJS.Timeout>(), []);
+  // WebSocket handlers - use extracted hook with proper ref usage
+  useGuestWebSocketHandlers({
+    socket: webSocket.socket,
+    webSocketHandlers
+  });
 
-  const shouldProcessEvent = useCallback((eventType: string, payload: any): boolean => {
-    const mediaId = payload.mediaId || payload._id || payload.id || 'unknown';
-    const signature = `${eventType}:${mediaId}`;
 
-    if (processedEvents.has(signature)) {
-      return false;
-    }
-
-    processedEvents.add(signature);
-
-    const timeoutId = setTimeout(() => {
-      processedEvents.delete(signature);
-      eventTimeouts.delete(signature);
-    }, 10000);
-
-    eventTimeouts.set(signature, timeoutId);
-    return true;
-  }, [processedEvents, eventTimeouts]);
 
   // Show/hide notification banner based on buffered changes
   useEffect(() => {
     setShowNotificationBanner(bufferedCount > 0);
   }, [bufferedCount]);
-
 
   const handleApplyBufferedChanges = useCallback(() => {
     applyBufferedChanges();
@@ -348,93 +342,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       position: 'bottom-center'
     });
   }, [clearBufferedChanges]);
-
-  // Optimized WebSocket event handlers with simplified deduplication
-  useEffect(() => {
-    if (!webSocket.socket) return;
-
-    const handleMediaApproved = (payload: any) => {
-      if (!shouldProcessEvent('media_approved', payload)) return;
-      webSocketHandlers.handleMediaApproved(payload);
-      if (!bufferedChanges.some((change: any) => change.photo.id === payload.mediaId)) {
-        toast.success('New photos approved!', {
-          duration: 3000,
-          position: 'bottom-center'
-        });
-      }
-    };
-
-    const handleMediaStatusUpdated = (payload: any) => {
-      if (!shouldProcessEvent('media_status_updated', payload)) return;
-      webSocketHandlers.handleMediaStatusUpdated(payload);
-      const items = Array.isArray(payload) ? payload : [payload];
-      items.forEach(item => {
-        if (item.newStatus === 'approved' && item.previousStatus !== 'approved') {
-          const approvalSignature = `media_approved:${item.mediaId} `;
-          if (!processedEvents.has(approvalSignature) &&
-            !bufferedChanges.some((change: any) => change.photo.id === item.mediaId)) {
-            toast.success('Photo approved!', {
-              duration: 2000,
-              position: 'bottom-center'
-            });
-          }
-        } else if (item.newStatus === 'hidden' || item.newStatus === 'rejected') {
-          toast.info('Photo was removed', {
-            duration: 3000,
-            position: 'bottom-center'
-          });
-        }
-      });
-    };
-
-    const handleNewMediaUploaded = (payload: any) => {
-      if (!shouldProcessEvent('new_media_uploaded', payload)) return;
-      webSocketHandlers.handleNewMediaUploaded(payload);
-      if (!bufferedChanges.some((change: any) => change.reason.includes('upload'))) {
-        toast.success('New photos added!', {
-          duration: 3000,
-          position: 'bottom-center'
-        });
-      }
-    };
-
-    const handleMediaRemoved = (payload: any) => {
-      if (!shouldProcessEvent('media_removed', payload)) return;
-      webSocketHandlers.handleMediaRemoved(payload);
-      const count = payload.mediaIds?.length || 1;
-      toast.info(`${count} photo${count > 1 ? 's' : ''} removed`, {
-        duration: 3000,
-        position: 'bottom-center'
-      });
-    };
-
-    const handleMediaProcessingComplete = (payload: any) => {
-      if (!shouldProcessEvent('media_processing_complete', payload)) return;
-      webSocketHandlers.handleMediaProcessingComplete(payload);
-      toast.success('High-quality version ready!', {
-        duration: 2000,
-        position: 'bottom-center'
-      });
-    };
-
-    webSocket.socket.on('media_approved', handleMediaApproved);
-    webSocket.socket.on('media_status_updated', handleMediaStatusUpdated);
-    webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
-    webSocket.socket.on('media_removed', handleMediaRemoved);
-    webSocket.socket.on('guest_media_removed', handleMediaRemoved);
-    webSocket.socket.on('media_processing_complete', handleMediaProcessingComplete);
-
-    return () => {
-      if (webSocket.socket) {
-        webSocket.socket.off('media_approved', handleMediaApproved);
-        webSocket.socket.off('media_status_updated', handleMediaStatusUpdated);
-        webSocket.socket.off('new_media_uploaded', handleNewMediaUploaded);
-        webSocket.socket.off('media_removed', handleMediaRemoved);
-        webSocket.socket.off('guest_media_removed', handleMediaRemoved);
-        webSocket.socket.off('media_processing_complete', handleMediaProcessingComplete);
-      }
-    };
-  }, [webSocket.socket, webSocketHandlers, shouldProcessEvent, processedEvents, bufferedChanges]);
 
   // Room stats handler
   const handleRoomStats = useCallback((payload: any) => {
@@ -457,284 +364,32 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      eventTimeouts.forEach(timeout => clearTimeout(timeout));
-      eventTimeouts.clear();
-      processedEvents.clear();
       cleanup();
     };
-  }, [cleanup, eventTimeouts, processedEvents]);
+  }, [cleanup]);
 
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (downloadJobId && isDownloading) {
-        // console.log('Cleaning up download polling on unmount');
-        setIsDownloading(false);
-        setDownloadJobId(null);
-        setDownloadProgress(null);
-      }
-    };
-  }, [downloadJobId, isDownloading]);
+  // Upload complete handler for extracted component
+  const handleUploadComplete = useCallback((newPhotos: TransformedPhoto[]) => {
+    // Optimistically update the query cache
+    queryClient.setQueryData(['guest-media', shareToken], (oldData: any) => {
+      if (!oldData) return oldData;
+      const pages = oldData.pages || [];
+      if (pages.length === 0) return oldData;
+      const firstPage = pages[0];
 
-  // Upload functionality
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    if (files.length > 0) {
-      setSelectedFiles(files as File[]);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (selectedFiles.length === 0) {
-      toast.error('Please select at least one photo');
-      return;
-    }
-
-    try {
-      setUploading(true);
-      const result = await uploadGuestPhotos(
-        shareToken,
-        selectedFiles,
-        guestInfo,
-        auth || undefined
-      );
-
-      if (result.status) {
-        // Optimistically update the cache with the new photos
-        if (result.data.uploads && Array.isArray(result.data.uploads)) {
-          const newPhotos = result.data.uploads.map((upload: any) => ({
-            id: upload.mediaId,
-            src: upload.originalUrl,
-            width: upload.width || 800,
-            height: upload.height || 600,
-            uploaded_by: guestInfo.name || 'Guest',
-            approval: upload.approval || { status: 'approved' },
-            createdAt: new Date().toISOString(),
-            albumId: eventState.details?._id,
-            eventId: eventState.details?._id,
-            type: 'image',
-            imageUrl: upload.originalUrl,
-            responsive_urls: {
-              thumbnail: upload.originalUrl,
-              display: upload.originalUrl,
-              full: upload.originalUrl,
-              original: upload.originalUrl
-            },
-            processing: { status: 'processing' } // Mark as processing but show image
-          } as TransformedPhoto));
-
-          queryClient.setQueryData(['guest-media', shareToken], (oldData: any) => {
-            if (!oldData) return oldData;
-            const pages = oldData.pages || [];
-            if (pages.length === 0) return oldData;
-            const firstPage = pages[0];
-
-            // Prepend new photos
-            return {
-              ...oldData,
-              pages: [
-                {
-                  ...firstPage,
-                  photos: [...newPhotos, ...firstPage.photos],
-                  total: (firstPage.total || 0) + newPhotos.length
-                },
-                ...pages.slice(1)
-              ]
-            };
-          });
-        }
-
-        const { summary } = result.data;
-        if (summary && summary.success > 0) {
-          toast.success(
-            summary.failed === 0
-              ? `All ${summary.success} photo(s) uploaded successfully!`
-              : `${summary.success} photo(s) uploaded, ${summary.failed} failed`
-          );
-
-          setSelectedFiles([]);
-          setGuestInfo({ name: '', email: '' });
-          setShowUploadDialog(false);
-        } else if (result.data.uploads?.length > 0) {
-          // Fallback if summary is missing but uploads exist
-          toast.success('Photos uploaded successfully!');
-          setSelectedFiles([]);
-          setGuestInfo({ name: '', email: '' });
-          setShowUploadDialog(false);
-        } else {
-          toast.error('All uploads failed. Please try again.');
-        }
-      } else {
-        toast.error(result.message || 'Upload failed');
-      }
-    } catch (error: any) {
-      // console.error('Upload error:', error);
-      toast.error(error.message || 'Upload failed. Please try again.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setSelectedFiles(files => files.filter((_, i) => i !== index));
-  };
-
-  // Poll download status - Defined BEFORE handleBulkDownload
-  const pollDownloadStatus = useCallback((jobId: string) => {
-    let pollInterval: NodeJS.Timeout;
-    let timeoutId: NodeJS.Timeout;
-    let pollCount = 0;
-
-    // console.log('🔄 [DEBUG] Starting download polling for job:', jobId);
-
-    const poll = async () => {
-      pollCount++;
-      // console.log(`🔄[DEBUG] Poll attempt #${ pollCount } for job: `, jobId);
-
-      try {
-        // console.log('📡 [DEBUG] Calling getDownloadStatus API...');
-        const response = await getDownloadStatus(jobId);
-        // console.log('📡 [DEBUG] API Response received:', { ... });
-
-        if (response.data) {
-          const { status, progress, totalFiles, downloadUrl, currentStage } = response.data;
-          const currentStatus = status || (response.data as any).jobStatus || 'processing';
-
-          // console.log('📊 [DEBUG] Parsed status data:', { ... });
-
-          setDownloadProgress({
-            status: currentStatus,
-            progress: progress || 0,
-            totalFiles: totalFiles || 0
-          });
-
-          if (currentStatus === 'completed' && downloadUrl) {
-            // console.log('✅ [DEBUG] Download completed! Starting download process...');
-
-            clearInterval(pollInterval);
-            clearTimeout(timeoutId);
-            setIsDownloading(false);
-            setDownloadJobId(null);
-            setDownloadProgress(null);
-
-            toast.success('Download ready! Starting download...', { duration: 2000 });
-
-            setTimeout(async () => {
-              // console.log('🚀 [DEBUG] Executing downloadZipFile...');
-              try {
-                await downloadZipFile(downloadUrl, `${eventState.details?.title || 'event'}_photos.zip`);
-                // console.log('✅ [DEBUG] downloadZipFile completed successfully');
-                toast.success('Download completed!', { duration: 3000 });
-              } catch (downloadError) {
-                // console.error('❌ [DEBUG] downloadZipFile failed:', downloadError);
-                toast.error('Download failed. Please try again.');
-              }
-            }, 100);
-
-            return;
-          } else if (currentStatus === 'failed') {
-            // console.log('❌ [DEBUG] Download failed according to API');
-            clearInterval(pollInterval);
-            clearTimeout(timeoutId);
-            setIsDownloading(false);
-            setDownloadJobId(null);
-            setDownloadProgress(null);
-            toast.error('Download failed. Please try again.');
-            return;
-          } else {
-            // console.log(`⏳[DEBUG] Download still processing: ${ currentStatus }, continuing to poll...`);
-          }
-        } else {
-          // console.log('❌ [DEBUG] Invalid API response, stopping polling:', response);
-          clearInterval(pollInterval);
-          clearTimeout(timeoutId);
-          setIsDownloading(false);
-          setDownloadJobId(null);
-          setDownloadProgress(null);
-          toast.error('Failed to check download status');
-        }
-      } catch (error) {
-        // console.error('❌ [DEBUG] Status check error:', error);
-        clearInterval(pollInterval);
-        clearTimeout(timeoutId);
-        setIsDownloading(false);
-        setDownloadJobId(null);
-        setDownloadProgress(null);
-        toast.error('Failed to check download status');
-      }
-    };
-
-    // Start polling immediately
-    poll();
-
-    // Set up interval for subsequent polls
-    pollInterval = setInterval(poll, 2000); // Poll every 2 seconds
-
-    // Cleanup after 10 minutes (timeout)
-    timeoutId = setTimeout(() => {
-      // console.log('⏰ [DEBUG] Download timeout reached after 10 minutes');
-      clearInterval(pollInterval);
-      if (isDownloading) {
-        setIsDownloading(false);
-        setDownloadJobId(null);
-        setDownloadProgress(null);
-        toast.error('Download timed out. Please try again.');
-      }
-    }, 600000); // 10 minutes
-
-    // Return cleanup function
-    return () => {
-      // console.log('🧹 [DEBUG] Cleaning up polling intervals');
-      clearInterval(pollInterval);
-      clearTimeout(timeoutId);
-    };
-  }, [eventState.details?.title, isDownloading]);
-
-  // Bulk download functionality
-  const handleBulkDownload = useCallback(async () => {
-    // console.log('🎯 [DOWNLOAD] handleBulkDownload called');
-
-    if (!eventState.details?._id) {
-      toast.error('Event not loaded yet');
-      return;
-    }
-
-    if (photos.length === 0) {
-      toast.error('No photos available to download');
-      return;
-    }
-
-    try {
-      setIsDownloading(true);
-      toast.info('Starting bulk download...', { duration: 2000 });
-
-      const response = await createGuestBulkDownload(
-        shareToken,
-        eventState.details._id,
-        'original'
-      );
-
-      if (response.status && response.data?.jobId) {
-        const jobId = response.data.jobId;
-        // console.log('✅ [DOWNLOAD] Job created successfully:', jobId);
-
-        setDownloadJobId(jobId);
-        toast.success('Download started! Processing photos...', { duration: 3000 });
-
-        // Start polling for status
-        const cleanup = pollDownloadStatus(jobId);
-
-        // Store cleanup function for component unmount
-        return () => cleanup();
-      } else {
-        throw new Error(response.message || 'Failed to start download');
-      }
-    } catch (error: any) {
-      // console.error('❌ [DOWNLOAD] Bulk download error:', error);
-      toast.error(error.message || 'Failed to start download');
-      setIsDownloading(false);
-    }
-  }, [shareToken, eventState.details?._id, photos.length, pollDownloadStatus]);
+      return {
+        ...oldData,
+        pages: [
+          {
+            ...firstPage,
+            photos: [...newPhotos, ...firstPage.photos],
+            total: (firstPage.total || 0) + newPhotos.length
+          },
+          ...pages.slice(1)
+        ]
+      };
+    });
+  }, [shareToken]);
 
   // Connection Status Component
   const ConnectionStatus = memo(() => {
@@ -815,20 +470,16 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const renderContent = useCallback(() => {
     if (isInitialLoading) {
       return (
-        <div className="text-center py-16">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading photos...</p>
-          {webSocket.isAuthenticated && (
-            <p className="text-sm text-green-600 mt-2">
-              ✓ Real-time updates enabled
-            </p>
-          )}
-          {isCheckingClaim && auth && (
-            <p className="text-sm text-blue-600 mt-2">
-              Checking for previous uploads...
-            </p>
-          )}
-        </div>
+        <FullPageLoading
+          message="Loading photos…"
+          submessage={
+            webSocket.isAuthenticated
+              ? '✓ Real-time updates enabled'
+              : isCheckingClaim && auth
+                ? 'Checking for previous uploads…'
+                : undefined
+          }
+        />
       );
     }
 
@@ -1074,7 +725,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       <GuestHeader
         eventDetails={eventState.details}
         themeColors={themeColors}
-        onDownload={handleBulkDownload}
+        onDownload={startDownload}
         isDownloading={isDownloading}
         totalPhotos={totalPhotos}
         onFindMe={() => setShowFindMeModal(true)}
@@ -1103,9 +754,9 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         downloadProgress && (
           <div className="fixed top-16 right-4 z-40 bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-80">
             <div className="flex items-center gap-2 mb-2">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              <LoadingSpinner size="sm" className="inline-flex" />
               <span className="text-sm font-medium text-gray-900">
-                Preparing Download...
+                Preparing Download…
               </span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
@@ -1118,8 +769,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               <div>Status: <span className="font-mono">{downloadProgress.status}</span></div>
               <div>Progress: <span className="font-mono">{downloadProgress.progress}%</span></div>
               <div>Files: <span className="font-mono">{downloadProgress.totalFiles}</span></div>
-              {downloadProgress.status === 'processing' && `Processing ${downloadProgress.totalFiles} files...`}
-              {downloadProgress.status === 'completed' && 'Download ready!'}
+              {downloadProgress.status === 'processing' ? `Processing ${downloadProgress.totalFiles} files…` : null}
+              {downloadProgress.status === 'completed' ? 'Download Ready' : null}
             </div>
             {/* Debug Info */}
             <div className="mt-2 pt-2 border-t border-gray-200">
@@ -1141,119 +792,17 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         {renderContent()}
       </div>
 
-      {/* Upload Dialog */}
-      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5 text-blue-500" />
-              Share Your Photos
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4 p-4">
-            {!auth && (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600 mb-3">Tell us who you are (optional)</p>
-                <div className="space-y-2">
-                  <Input
-                    placeholder="Your name"
-                    value={guestInfo.name}
-                    onChange={(e) => setGuestInfo({ ...guestInfo, name: e.target.value })}
-                    className="text-sm"
-                  />
-                  <Input
-                    type="email"
-                    placeholder="Your email"
-                    value={guestInfo.email}
-                    onChange={(e) => setGuestInfo({ ...guestInfo, email: e.target.value })}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*,video/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  id="file-upload"
-                />
-                <label htmlFor="file-upload" className="cursor-pointer">
-                  <Camera className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-600">Click to select photos or videos</p>
-                  <p className="text-xs text-gray-500 mt-1">Max 10 files, 50MB each</p>
-                </label>
-              </div>
-
-              {selectedFiles.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">{selectedFiles.length} file(s) selected:</p>
-                  <div className="max-h-32 overflow-y-auto space-y-1">
-                    {selectedFiles.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded text-sm">
-                        <span className="truncate flex-1">{file.name}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeFile(index)}
-                          className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-blue-50 p-3 rounded-lg">
-              <div className="text-xs text-blue-700 space-y-1">
-                <p>• Photos will be {eventState.details?.privacy?.content_controls?.content_moderation === 'manual' ? 'reviewed before appearing' : 'visible immediately'}</p>
-                <p>• Supported formats: JPG, PNG, HEIC, MP4, MOV</p>
-                <p>• Please only upload appropriate content</p>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowUploadDialog(false);
-                  setSelectedFiles([]);
-                  setGuestInfo({ name: '', email: '' });
-                }}
-                className="flex-1"
-                disabled={uploading}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleUpload}
-                disabled={selectedFiles.length === 0 || uploading}
-                className="flex-1"
-              >
-                {uploading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload {selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Upload Dialog - Lazy Loaded */}
+      <Suspense fallback={<div />}>
+        <GuestUploadDialog
+          isOpen={showUploadDialog}
+          onClose={() => setShowUploadDialog(false)}
+          shareToken={shareToken}
+          eventDetails={eventState.details}
+          auth={auth}
+          onUploadComplete={handleUploadComplete}
+        />
+      </Suspense>
 
       {/* Floating Upload Button */}
       {
@@ -1264,6 +813,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               className="text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
               style={{ backgroundColor: 'var(--color-accent, #007bff)' }}
               title="Upload Photos"
+              aria-label="Upload Photos"
             >
               <Plus className="w-6 h-6" />
             </Button>
@@ -1271,14 +821,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         )
       }
 
-      {/* Photo Viewer */}
-      {
-        photoViewerOpen && selectedPhoto && (
+      {/* Photo Viewer - Lazy Loaded */}
+      {photoViewerOpen && selectedPhoto && (
+        <Suspense fallback={<div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center"><LoadingSpinner size="lg" className="text-white" /></div>}>
           <FullscreenPhotoViewer
             selectedPhoto={{
               ...selectedPhoto,
-              type: 'image' as const, // Fix lint error
-              takenBy: 'Guest', // Guest user ID
+              type: 'image' as const,
+              takenBy: 'Guest',
               imageUrl: selectedPhoto.src,
               createdAt: new Date(selectedPhoto.createdAt),
               metadata: {
@@ -1294,8 +844,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             selectedPhotoIndex={selectedPhotoIndex}
             photos={photos.map(photo => ({
               ...photo,
-              type: 'image' as const, // Fix lint error
-              takenBy: 'Guest', // Guest user ID
+              type: 'image' as const,
+              takenBy: 'Guest',
               imageUrl: photo.src,
               createdAt: new Date(photo.createdAt),
               metadata: {
@@ -1315,8 +865,8 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               // console.log('Downloading photo:', selectedPhoto);
             }}
           />
-        )
-      }
+        </Suspense>
+      )}
     </div >
   );
 }

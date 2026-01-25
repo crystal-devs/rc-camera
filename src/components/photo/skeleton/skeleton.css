@@ -83,24 +83,3 @@
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
 }
-
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .skeleton-pinterest {
-    background: linear-gradient(
-      90deg,
-      #2d3748 25%,
-      #4a5568 50%,
-      #2d3748 75%
-    );
-    background-size: 1000px 100%;
-  }
-  
-  .skeleton-pinterest::before {
-    background: rgba(255, 255, 255, 0.1);
-  }
-  
-  .skeleton-pinterest::after {
-    background: rgba(255, 255, 255, 0.05);
-  }
-}

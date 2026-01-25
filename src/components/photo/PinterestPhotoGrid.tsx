@@ -61,7 +61,6 @@ export const PinterestPhotoGrid: React.FC<{
     const [containerWidth, setContainerWidth] = useState(0);
     const [columnHeights, setColumnHeights] = useState<number[]>([]);
     const [itemPositions, setItemPositions] = useState<Map<string, Position>>(new Map());
-    const [imageHeights, setImageHeights] = useState<Map<string, number>>(new Map());
     // Unified container height state
     const [filesContainerHeight, setFilesContainerHeight] = useState<number>(300);
 
@@ -147,19 +146,20 @@ export const PinterestPhotoGrid: React.FC<{
       const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
       const columnWidth = Math.floor(availableWidth / config.columns);
 
-      return photos.map((photo) => {
+      return photos.map((photo, index) => {
         let aspectRatio = 1.0;
 
         if (photo.width && photo.height && photo.width > 0 && photo.height > 0) {
           aspectRatio = photo.height / photo.width;
         } else {
-          // Random varied aspect ratios if no dimensions available
-          const ratios = [0.6, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0];
-          aspectRatio = ratios[Math.floor(Math.random() * ratios.length)];
+          // Pinterest-style: tight range for even distribution
+          // Most items near 1.0 (square-ish) to minimize column height differences
+          const ratios = [1.0, 1.1, 0.95, 1.2, 1.0, 1.15, 0.9, 1.25, 1.0, 1.3];
+          aspectRatio = ratios[index % ratios.length];
         }
 
-        // Allow more variety in Pinterest style
-        aspectRatio = Math.max(0.5, Math.min(aspectRatio, 3.0));
+        // Tighter bounds for more consistent grid (Pinterest actual behavior)
+        aspectRatio = Math.max(0.75, Math.min(aspectRatio, 1.5));
         const calculatedHeight = Math.round(columnWidth * aspectRatio);
 
         return {
@@ -249,10 +249,7 @@ export const PinterestPhotoGrid: React.FC<{
       updateViewportInfo();
     }, [updateViewportInfo]);
 
-    // Handle actual image load and get real dimensions
-    const handleImageLoad = useCallback((photoId: string, actualHeight: number) => {
-      setImageHeights(prev => new Map(prev).set(photoId, actualHeight));
-    }, []);
+
 
     // Calculate positions - let images determine their own height
     useEffect(() => {
@@ -324,8 +321,9 @@ export const PinterestPhotoGrid: React.FC<{
             width: columnWidth
           });
 
-          // Use actual loaded height if available, otherwise use calculated
-          const itemHeight = imageHeights.get(item.id) || item.calculatedHeight;
+          // IMPORTANT: Always use calculatedHeight, never actual loaded height
+          // This prevents images from rearranging after they load
+          const itemHeight = item.calculatedHeight;
           heights[shortestColumnIndex] += itemHeight + config.gap;
         });
 
@@ -334,7 +332,7 @@ export const PinterestPhotoGrid: React.FC<{
       }
 
       setItemPositions(positions);
-    }, [gridItems, containerWidth, getGridConfig, imageHeights, layout, photos]);
+    }, [gridItems, containerWidth, getGridConfig, layout, photos]);
 
     // Container resize handler
     useEffect(() => {
@@ -442,7 +440,6 @@ export const PinterestPhotoGrid: React.FC<{
                   isLiked={likedPhotos.has(photo.id)}
                   onLike={() => handleLike(photo.id)}
                   onClick={() => onPhotoClick(photo, index)}
-                  onImageLoad={handleImageLoad}
                 />
               </div>
             );
