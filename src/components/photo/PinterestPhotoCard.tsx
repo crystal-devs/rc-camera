@@ -72,13 +72,26 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
     onLike();
   }, [onLike]);
 
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (isLoaded && !hasError) {
+        onClick();
+      }
+    }
+  }, [isLoaded, hasError, onClick]);
+
   return (
     <div
-      className={`group relative w-full rounded-2xl overflow-hidden transition-all duration-300 ${isLoaded ? 'cursor-pointer hover:shadow-xl' : ''}`}
+      className={`group relative w-full rounded-2xl overflow-hidden transition-[opacity,shadow] duration-300 ${isLoaded ? 'cursor-pointer hover:shadow-xl' : ''} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2`}
       onClick={isLoaded && !hasError ? onClick : undefined}
+      onKeyDown={handleKeyDown}
+      tabIndex={isLoaded && !hasError ? 0 : -1}
+      role="button"
+      aria-label={`Photo ${index + 1}`}
       style={{
-        backgroundColor: isLoaded ? '#ffffff' : '#f0f0f0',
-        minHeight: expectedHeight
+        backgroundColor: isLoaded ? 'transparent' : '#f0f0f0',
+        height: expectedHeight
       }}
     >
       {!hasError ? (
@@ -97,6 +110,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
           {/* Actual Image */}
           <img
             ref={imageRef}
+            width={baseWidth}
             srcSet={
               photo.responsive_urls
                 ? [
@@ -112,7 +126,7 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
             src={photo.responsive_urls?.display || photo.src}
             alt={`Photo ${photo.id}`}
             className={`
-              w-full h-auto object-cover rounded-2xl transition-opacity duration-300
+              w-full h-full object-cover rounded-2xl transition-opacity duration-300
               ${isLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}
             `}
             onLoad={handleImageLoad}
@@ -131,32 +145,33 @@ export const PinterestPhotoCard: React.FC<PinterestPhotoCardProps> = ({
       )}
 
       {/* Hover overlay - ONLY show when loaded */}
-      {isLoaded && !hasError && (
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-transparent group-hover:to-black/40 transition-all duration-300 rounded-2xl">
-          <div className="absolute bottom-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
-            <button
-              onClick={handleLikeClick}
-              aria-label={isLiked ? "Unlike photo" : "Like photo"}
-              className={`
-                p-3 rounded-full backdrop-blur-md transition-all duration-200 shadow-lg
-                ${isLiked
-                  ? 'bg-red-500 text-white scale-110'
-                  : 'bg-white/90 text-gray-700 hover:bg-white hover:scale-105'
-                }
-              `}
-            >
-              <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
-            </button>
+      {isLoaded && !hasError && (<></>
+        // <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl pointer-events-none">
+        //   {/* Button container with fixed positioning */}
+        //   <div className="absolute bottom-0 left-0 right-0 p-4 flex justify-end gap-2 pointer-events-auto">
+        //     <button
+        //       onClick={handleLikeClick}
+        //       aria-label={isLiked ? "Unlike photo" : "Like photo"}
+        //       className={`
+        //         p-3 rounded-full backdrop-blur-md transition-all duration-200 shadow-lg
+        //         ${isLiked
+        //           ? 'bg-red-500 text-white scale-110'
+        //           : 'bg-white/90 text-gray-700 hover:bg-white hover:scale-105'
+        //         }
+        //       `}
+        //     >
+        //       <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
+        //     </button>
 
-            <button
-              onClick={handleDownload}
-              aria-label="Download photo"
-              className="p-3 rounded-full bg-white/90 text-gray-700 hover:bg-white hover:scale-105 transition-all duration-200 backdrop-blur-md shadow-lg"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+        //     <button
+        //       onClick={handleDownload}
+        //       aria-label="Download photo"
+        //       className="p-3 rounded-full bg-white/90 text-gray-700 hover:bg-white hover:scale-105 transition-all duration-200 backdrop-blur-md shadow-lg"
+        //     >
+        //       <Download className="w-4 h-4" />
+        //     </button>
+        //   </div>
+        // </div>
       )}
     </div>
   );

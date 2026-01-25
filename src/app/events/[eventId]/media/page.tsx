@@ -1,9 +1,9 @@
-// app/events/[eventId]/media/page.tsx - IMPROVED VERSION
+// app/events/[eventId]/media/page.tsx - OPTIMIZED VERSION
 'use client';
 
 import { Download, Share2, AlertCircle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { use, useEffect, useState, useCallback, memo } from 'react';
+import { use, useEffect, useState, useCallback, memo, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -16,6 +16,17 @@ import PhotoGallery from '@/components/photo/PhotoGallery';
 import { useEventData } from '@/hooks/useEventData';
 import useEventStore from '@/stores/useEventStore';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
+
+// ✅ Import bulk download services at top level
+import {
+    createEventBulkDownload,
+    getEventDownloadStatus,
+    downloadZipFile
+} from '@/services/apis/bulk-download.api';
+
+// ✅ Optimize skeleton rendering - extract constant
+const SKELETON_COUNT = 8;
+const SKELETON_ITEMS = Array.from({ length: SKELETON_COUNT }, (_, i) => i);
 
 const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ params }: { params: Promise<{ eventId: string }> }) {
     const { eventId } = use(params);
@@ -34,63 +45,141 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
 
     const { user, isAuthenticated, isLoading: isAuthLoading } = useSecureAuth();
     const { invalidateAlbumsCache } = useEventStore();
-    const currentUserId = user?.id; // Derive ID from user object
+
+    // ✅ Extract primitive values from user object
+    const currentUserId = user?.id;
 
     // Download state
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
 
+    // ✅ Add loading state for quick share
+    const [isCopying, setIsCopying] = useState(false);
+
+    // ✅ Store interval ref for cleanup
+    const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
     // Share access validation
     const isSharedAccess = searchParams.get('via') === 'share';
     const shareToken = searchParams.get('token');
+
+    // ✅ Extract primitive values for stable dependencies
+    const eventTitle = event?.title || 'event';
+    const eventShareToken = event?.share_token;
 
     // Handle authentication and access control
     useEffect(() => {
         // If it's a shared link, we don't need to force login
         if (isSharedAccess && shareToken) {
-            console.log('Share access validated for token:', shareToken);
+            if (process.env.NODE_ENV === 'development') {
+                console.log('Share access validated for token:', shareToken);
+            }
             return;
         }
 
         // Wait for auth initialization
         if (isAuthLoading) return;
 
-        // Only redirect if:
-        // 1. Not loading auth
-        // 2. Not authenticated
-        // 3. Not a shared access link
+        // Only redirect if not authenticated and not shared access
         if (!isAuthenticated) {
-            console.log('Redirecting to login from media page');
-            const returnUrl = encodeURIComponent(window.location.pathname);
+            if (process.env.NODE_ENV === 'development') {
+                console.log('Redirecting to login from media page');
+            }
+            const returnUrl = typeof window !== 'undefined'
+                ? encodeURIComponent(window.location.pathname)
+                : '';
             router.push(`/login?returnUrl=${returnUrl}`);
         }
     }, [isSharedAccess, shareToken, isAuthenticated, router, isAuthLoading]);
 
+    // ✅ Cleanup interval on unmount
+    useEffect(() => {
+        return () => {
+            if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+            }
+        };
+    }, []);
+
     // Optimized album update
-    const updateAlbumsList = useCallback((newAlbum: any) => {
+    const updateAlbumsList = useCallback(() => {
         invalidateAlbumsCache(eventId);
         refreshAlbums();
     }, [eventId, invalidateAlbumsCache, refreshAlbums]);
 
-    // Quick share with better feedback
+    // ✅ Quick share with loading state and primitive dependencies
     const quickShare = useCallback(async () => {
-        if (!event || !authToken) {
+        if (!eventShareToken || !authToken) {
             toast.error('Event not available');
             return;
         }
 
+        setIsCopying(true);
         try {
-            const shareUrl = `${window.location.origin}/join/${event.share_token}`;
+            const shareUrl = typeof window !== 'undefined'
+                ? `${window.location.origin}/join/${eventShareToken}`
+                : '';
+
             await navigator.clipboard.writeText(shareUrl);
             toast.success('Share link copied!', {
                 description: 'Anyone with this link can view the event'
             });
         } catch (error) {
             toast.error('Failed to copy link');
+        } finally {
+            setIsCopying(false);
         }
-    }, [event, authToken]);
+    }, [eventShareToken, authToken]);
 
-    // Improved bulk download with progress
+    // ✅ Polling with proper cleanup
+    const pollDownloadStatus = useCallback((jobId: string) => {
+        // Clear any existing interval
+        if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+        }
+
+        pollIntervalRef.current = setInterval(async () => {
+            try {
+                const response = await getEventDownloadStatus(jobId, authToken || undefined);
+
+                if (response.success && response.data) {
+                    setDownloadProgress(response.data.progress || 0);
+
+                    if (response.data.status === "completed" && response.data.downloadUrl) {
+                        if (pollIntervalRef.current) {
+                            clearInterval(pollIntervalRef.current);
+                            pollIntervalRef.current = null;
+                        }
+                        await downloadZipFile(response.data.downloadUrl, `${eventTitle}_photos.zip`);
+                        toast.success('Download completed!');
+                        setIsDownloading(false);
+                        setDownloadProgress(null);
+                    } else if (response.data.status === "failed") {
+                        if (pollIntervalRef.current) {
+                            clearInterval(pollIntervalRef.current);
+                            pollIntervalRef.current = null;
+                        }
+                        toast.error("Download failed. Please try again.");
+                        setIsDownloading(false);
+                        setDownloadProgress(null);
+                    }
+                }
+            } catch (error) {
+                if (pollIntervalRef.current) {
+                    clearInterval(pollIntervalRef.current);
+                    pollIntervalRef.current = null;
+                }
+                if (process.env.NODE_ENV === 'development') {
+                    console.error('Polling error:', error);
+                }
+                setIsDownloading(false);
+                setDownloadProgress(null);
+            }
+        }, 2000); // Poll every 2 seconds
+    }, [authToken, eventTitle]);
+
+    // ✅ Improved bulk download with primitive dependencies
     const handleBulkDownload = useCallback(async () => {
         if (!currentUserId) {
             toast.error('Login required', {
@@ -103,9 +192,6 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
         setDownloadProgress(0);
 
         try {
-            const { createEventBulkDownload, getEventDownloadStatus, downloadZipFile } =
-                await import('@/services/apis/bulk-download.api');
-
             const response = await createEventBulkDownload(
                 eventId,
                 currentUserId,
@@ -117,59 +203,28 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
             if (response.status && response.data) {
                 if (response.data.downloadUrl) {
                     // Immediate download available
-                    await downloadZipFile(response.data.downloadUrl, `${event?.title || 'event'}_photos.zip`);
+                    await downloadZipFile(response.data.downloadUrl, `${eventTitle}_photos.zip`);
                     toast.success('Download started!');
                     setIsDownloading(false);
                     setDownloadProgress(null);
                 } else if (response.data.jobId) {
                     // Start polling with progress
-                    pollDownloadStatus(response.data.jobId, getEventDownloadStatus, downloadZipFile);
+                    pollDownloadStatus(response.data.jobId);
                 }
             } else {
                 throw new Error(response.message || 'Failed to start download');
             }
         } catch (error) {
-            console.error('Download error:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Download error:', error);
+            }
             toast.error(error instanceof Error ? error.message : 'Download failed');
             setIsDownloading(false);
             setDownloadProgress(null);
         }
-    }, [currentUserId, authToken, eventId, event?.title]);
+    }, [currentUserId, authToken, eventId, eventTitle, pollDownloadStatus]);
 
-    // Polling with progress updates
-    const pollDownloadStatus = useCallback((jobId: string, getStatusFn: any, downloadFn: any) => {
-        const interval = setInterval(async () => {
-            try {
-                const response = await getStatusFn(jobId, authToken || undefined);
-
-                if (response.success && response.data) {
-                    setDownloadProgress(response.data.progress || 0);
-
-                    if (response.data.jobStatus === "completed" && response.data.downloadUrl) {
-                        clearInterval(interval);
-                        await downloadFn(response.data.downloadUrl, `${event?.title || 'event'}_photos.zip`);
-                        toast.success('Download completed!');
-                        setIsDownloading(false);
-                        setDownloadProgress(null);
-                    } else if (response.data.jobStatus === "failed") {
-                        clearInterval(interval);
-                        toast.error("Download failed. Please try again.");
-                        setIsDownloading(false);
-                        setDownloadProgress(null);
-                    }
-                }
-            } catch (error) {
-                clearInterval(interval);
-                console.error('Polling error:', error);
-                setIsDownloading(false);
-                setDownloadProgress(null);
-            }
-        }, 2000); // Poll every 2 seconds
-
-        return () => clearInterval(interval);
-    }, [authToken, event?.title]);
-
-    // Loading state with better skeleton
+    // Loading state with optimized skeleton
     if (isLoading) {
         return (
             <div className="container mx-auto px-4 py-8">
@@ -180,7 +235,7 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
                     </div>
                     <Skeleton className="h-4 w-full max-w-md" />
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[...Array(8)].map((_, i) => (
+                        {SKELETON_ITEMS.map((i) => (
                             <Skeleton key={i} className="aspect-square rounded-lg" />
                         ))}
                     </div>
@@ -223,22 +278,28 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
                 </div>
 
                 <div className="flex gap-2 w-full sm:w-auto">
+                    {/* ✅ Added aria-label and loading state */}
                     <Button
                         onClick={quickShare}
                         variant="outline"
                         className="flex-1 sm:flex-none"
+                        disabled={isCopying}
+                        aria-label="Share event link"
                     >
                         <Share2 className="w-4 h-4 mr-2" />
-                        Share
+                        {isCopying ? 'Copying…' : 'Share'}
                     </Button>
+                    {/* ✅ Added aria-label and aria-busy */}
                     <Button
                         onClick={handleBulkDownload}
                         disabled={isDownloading}
                         variant="default"
                         className="flex-1 sm:flex-none"
+                        aria-label="Download all event photos"
+                        aria-busy={isDownloading}
                     >
                         <Download className="w-4 h-4 mr-2" />
-                        {isDownloading ? 'Preparing...' : 'Download All'}
+                        {isDownloading ? 'Preparing…' : 'Download All'}
                     </Button>
                 </div>
             </div>
@@ -264,7 +325,7 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
                 albumId={null}
                 canUpload={true}
                 displayConfig={{
-                    targetRowHeight: 170 // Adjust request density
+                    targetRowHeight: 170
                 }}
             />
         </div>

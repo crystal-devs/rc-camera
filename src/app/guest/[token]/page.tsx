@@ -688,7 +688,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
           <div className="bg-blue-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="font-medium">Claiming your previous uploads...</span>
+            <span className="font-medium">Claiming your previous uploads…</span>
           </div>
         </div>
       )}

@@ -375,27 +375,27 @@ export const STYLING_CONSTANTS: StylingConstants = {
   gridSpacing: {
     0: {
       name: "Tight",
-      description: "Minimal spacing (4px)",
-      value: "4px",
-      css: { "--grid-spacing": "4px" }
-    },
-    1: {
-      name: "Normal",
-      description: "Standard spacing (8px)",
+      description: "Minimal spacing (8px)",
       value: "8px",
       css: { "--grid-spacing": "8px" }
     },
+    1: {
+      name: "Normal",
+      description: "Standard spacing (12px)",
+      value: "12px",
+      css: { "--grid-spacing": "12px" }
+    },
     2: {
       name: "Loose",
-      description: "Generous spacing (16px)",
-      value: "16px",
-      css: { "--grid-spacing": "16px" }
+      description: "Generous spacing (20px)",
+      value: "20px",
+      css: { "--grid-spacing": "20px" }
     },
     3: {
       name: "Extra Loose",
-      description: "Maximum spacing (24px)",
-      value: "24px",
-      css: { "--grid-spacing": "24px" }
+      description: "Maximum spacing (28px)",
+      value: "28px",
+      css: { "--grid-spacing": "28px" }
     }
   },
 
