@@ -10,6 +10,7 @@ import { Photo } from "@/types/PhotoGallery.types"; // Import generic Photo type
 interface GridItem extends TransformedPhoto {
   calculatedHeight: number;
   aspectRatio: number;
+  originalIndex: number;
 }
 
 interface Position {
@@ -69,10 +70,9 @@ export const PinterestPhotoGrid: React.FC<{
     const loadingTriggerRef = useRef<HTMLDivElement | null>(null);
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-    // NEW: Viewport tracking refs
-    const viewportObserverRef = useRef<IntersectionObserver | null>(null);
-    const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-    const [visibleIndices, setVisibleIndices] = useState<Set<number>>(new Set());
+    // Virtualization State
+    const [scrollTop, setScrollTop] = useState(0);
+    const [viewportHeight, setViewportHeight] = useState(1200); // Default estimate
 
     // Get styling configuration from constants
     const stylingConfig = useMemo(() => {
@@ -165,89 +165,59 @@ export const PinterestPhotoGrid: React.FC<{
         return {
           ...photo,
           calculatedHeight,
-          aspectRatio
+          aspectRatio,
+          originalIndex: index
         };
       });
     }, [photos, containerWidth, getGridConfig]);
 
-    // NEW: Register item reference for viewport tracking
-    const registerItemRef = useCallback((index: number, element: HTMLDivElement | null) => {
-      if (element) {
-        itemRefs.current.set(index, element);
-      } else {
-        itemRefs.current.delete(index);
-      }
-    }, []);
+    // Scroll Listener for Virtualization
+    useEffect(() => {
+      if (typeof window === 'undefined') return;
 
-    // NEW: Calculate and report viewport info
-    const updateViewportInfo = useCallback(() => {
-      if (visibleIndices.size === 0 || !onViewportChange) return;
-
-      const sortedIndices = Array.from(visibleIndices).sort((a, b) => a - b);
-      const visibleStartIndex = sortedIndices[0];
-      const visibleEndIndex = sortedIndices[sortedIndices.length - 1];
-      const bufferSize = 20;
-
-      const viewportInfo: ViewportInfo = {
-        visibleStartIndex,
-        visibleEndIndex,
-        bufferStartIndex: Math.max(0, visibleStartIndex - bufferSize),
-        bufferEndIndex: Math.min(photos.length - 1, visibleEndIndex + bufferSize)
+      const updateViewport = () => {
+        setViewportHeight(window.innerHeight);
+        setScrollTop(window.scrollY);
       };
 
-      onViewportChange(viewportInfo);
-    }, [visibleIndices, onViewportChange, photos.length]);
+      // Initial set
+      updateViewport();
 
-    // NEW: Set up viewport tracking observer
-    useEffect(() => {
-      if (!onViewportChange) return;
-
-      if (viewportObserverRef.current) {
-        viewportObserverRef.current.disconnect();
-      }
-
-      viewportObserverRef.current = new IntersectionObserver(
-        (entries) => {
-          setVisibleIndices(prev => {
-            const newVisible = new Set(prev);
-
-            entries.forEach(entry => {
-              // Find index for this element
-              for (const [index, element] of itemRefs.current.entries()) {
-                if (element === entry.target) {
-                  if (entry.isIntersecting) {
-                    newVisible.add(index);
-                  } else {
-                    newVisible.delete(index);
-                  }
-                  break;
-                }
-              }
-            });
-
-            return newVisible;
+      let ticking = false;
+      const onScroll = () => {
+        if (!ticking) {
+          window.requestAnimationFrame(() => {
+            setScrollTop(window.scrollY);
+            ticking = false;
           });
-        },
-        {
-          threshold: 0.1,
-          rootMargin: '100px 0px' // Track items slightly before they become visible
+          ticking = true;
         }
-      );
+      };
 
-      // Observe all current items
-      itemRefs.current.forEach(element => {
-        viewportObserverRef.current?.observe(element);
-      });
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', updateViewport, { passive: true });
 
       return () => {
-        viewportObserverRef.current?.disconnect();
+        window.removeEventListener('scroll', onScroll);
+        window.removeEventListener('resize', updateViewport);
       };
-    }, [photos.length, onViewportChange]);
+    }, []);
 
-    // NEW: Update viewport info when visible indices change
-    useEffect(() => {
-      updateViewportInfo();
-    }, [updateViewportInfo]);
+    // Derived Visible Items
+    const visiblePhotos = useMemo(() => {
+      if (!itemPositions.size || gridItems.length === 0) return [];
+
+      const buffer = viewportHeight * 1.5; // 1.5 screens buffer for smooth scrolling
+      const min = scrollTop - buffer;
+      const max = scrollTop + viewportHeight + buffer;
+
+      // Filter gridItems (which have originalIndex)
+      return gridItems.filter(photo => {
+        const pos = itemPositions.get(photo.id);
+        if (!pos) return false;
+        return (pos.y + (pos.height || 0)) > min && pos.y < max;
+      });
+    }, [gridItems, itemPositions, scrollTop, viewportHeight]);
 
 
 
@@ -409,7 +379,8 @@ export const PinterestPhotoGrid: React.FC<{
     }, [stylingConfig]);
 
     if (photos.length === 0 && (isLoadingMore || hasNextPage)) {
-      return <PhotoGridSkeleton />;
+      const columns = containerWidth > 0 ? getGridConfig(containerWidth).columns : undefined;
+      return <PhotoGridSkeleton numColumns={columns} />;
     }
 
     return (
@@ -419,9 +390,10 @@ export const PinterestPhotoGrid: React.FC<{
           className="relative w-full"
           style={{ minHeight: filesContainerHeight }}
         >
-          {photos.map((photo, index) => {
+          {visiblePhotos.map((photo) => {
             const position = itemPositions.get(photo.id);
             if (!position) return null;
+            const index = photo.originalIndex;
 
             return (
               <div
@@ -431,10 +403,10 @@ export const PinterestPhotoGrid: React.FC<{
                   left: position.x,
                   top: position.y,
                   width: position.width,
-                  height: position.height
+                  height: position.height,
+                  contain: 'paint' // Optimization hint
                 }}
                 className="transition-[left,top,width,height] duration-300 ease-out"
-                ref={(el) => registerItemRef(index, el)}
               >
                 <PinterestPhotoCard
                   photo={photo}
@@ -451,7 +423,7 @@ export const PinterestPhotoGrid: React.FC<{
 
           {isLoadingMore && (
             <div className="mt-8">
-              <PhotoGridSkeleton />
+              <PhotoGridSkeleton numColumns={getGridConfig(containerWidth).columns} />
             </div>
           )}
         </div>
