@@ -2,18 +2,22 @@
 import { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { PinterestPhotoCard } from "./PinterestPhotoCard";
 import { TransformedPhoto } from "@/types/events";
-import Skeleton from "./skeleton/skeleton";
+import { PhotoGridSkeleton } from "./skeleton/PhotoGridSkeleton";
 import { STYLING_CONSTANTS, getStylingConfig } from '@/constants/styling.constant';
+import computeRowsLayout, { LayoutModel } from "./layout/rows-layout";
+import { Photo } from "@/types/PhotoGallery.types"; // Import generic Photo type for compatibility
 
 interface GridItem extends TransformedPhoto {
   calculatedHeight: number;
   aspectRatio: number;
+  originalIndex: number;
 }
 
 interface Position {
   x: number;
   y: number;
   width: number;
+  height?: number; // Added height for rows layout
 }
 
 interface ViewportInfo {
@@ -43,6 +47,7 @@ export const PinterestPhotoGrid: React.FC<{
       fontset_id: number;
     };
   };
+  layout?: 'masonry' | 'rows'; // New prop to control layout mode
 }> = ({
   photos,
   onPhotoClick,
@@ -50,23 +55,24 @@ export const PinterestPhotoGrid: React.FC<{
   isLoadingMore = false,
   onLoadMore,
   onViewportChange, // NEW
-  eventStyling
+  eventStyling,
+  layout = 'masonry' // Default to masonry
 }) => {
     const [likedPhotos, setLikedPhotos] = useState<Set<string>>(new Set());
     const [containerWidth, setContainerWidth] = useState(0);
     const [columnHeights, setColumnHeights] = useState<number[]>([]);
     const [itemPositions, setItemPositions] = useState<Map<string, Position>>(new Map());
-    const [imageHeights, setImageHeights] = useState<Map<string, number>>(new Map());
+    // Unified container height state
+    const [filesContainerHeight, setFilesContainerHeight] = useState<number>(300);
 
     const containerRef = useRef<HTMLDivElement | null>(null);
     const observerRef = useRef<IntersectionObserver | null>(null);
     const loadingTriggerRef = useRef<HTMLDivElement | null>(null);
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-    // NEW: Viewport tracking refs
-    const viewportObserverRef = useRef<IntersectionObserver | null>(null);
-    const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-    const [visibleIndices, setVisibleIndices] = useState<Set<number>>(new Set());
+    // Virtualization State
+    const [scrollTop, setScrollTop] = useState(0);
+    const [viewportHeight, setViewportHeight] = useState(1200); // Default estimate
 
     // Get styling configuration from constants
     const stylingConfig = useMemo(() => {
@@ -82,53 +88,49 @@ export const PinterestPhotoGrid: React.FC<{
       const grid_spacing = eventStyling?.gallery?.grid_spacing ?? 1; // 0: xs, 1: sm, 2: md, 3: lg
 
       let columns: number;
+      let targetRowHeight: number;
 
+      // Determine columns and row height based on thumbnail size
       switch (thumbnail_size) {
-        case 0: // small
-          if (width < 640) columns = 3;
-          else if (width < 768) columns = 4;
-          else if (width < 1024) columns = 5;
-          else columns = 6;
+        case 0: // small / tight
+          if (width < 640) { columns = 3; targetRowHeight = 150; }
+          else if (width < 768) { columns = 4; targetRowHeight = 180; }
+          else if (width < 1024) { columns = 5; targetRowHeight = 200; }
+          else { columns = 6; targetRowHeight = 220; }
           break;
-        case 1: // medium
-          if (width < 640) columns = 2;
-          else if (width < 768) columns = 3;
-          else columns = 4;
+        case 1: // medium / standard
+          if (width < 640) { columns = 2; targetRowHeight = 200; }
+          else if (width < 768) { columns = 3; targetRowHeight = 250; }
+          else { columns = 5; targetRowHeight = 300; }
           break;
         case 2: // large
-          if (width < 640) columns = 1;
-          else if (width < 768) columns = 2;
-          else columns = 3;
+          if (width < 640) { columns = 1; targetRowHeight = 250; }
+          else if (width < 768) { columns = 2; targetRowHeight = 350; }
+          else { columns = 3; targetRowHeight = 400; }
           break;
         default:
           columns = 3;
+          targetRowHeight = 300;
       }
 
       let gap: number, padding: number;
-
-      switch (grid_spacing) {
-        case 0: // xs
-          gap = 4;
-          padding = 4;
-          break;
-        case 1: // sm
-          gap = 8;
-          padding = 8;
-          break;
-        case 2: // md
-          gap = 12;
-          padding = 12;
-          break;
-        case 3: // lg
-          gap = 16;
-          padding = 16;
-          break;
-        default:
-          gap = 8;
-          padding = 8;
+      const spacingValue = STYLING_CONSTANTS.gridSpacing[grid_spacing as keyof typeof STYLING_CONSTANTS.gridSpacing]?.value || '8px';
+      const parsedSpacing = parseInt(spacingValue);
+      // Use parsed value if available, otherwise fallback to switch
+      if (!isNaN(parsedSpacing)) {
+        gap = parsedSpacing;
+        padding = parsedSpacing;
+      } else {
+        switch (grid_spacing) {
+          case 0: gap = 4; padding = 4; break;
+          case 1: gap = 8; padding = 8; break;
+          case 2: gap = 12; padding = 12; break;
+          case 3: gap = 16; padding = 16; break;
+          default: gap = 8; padding = 8;
+        }
       }
 
-      return { columns, gap, padding };
+      return { columns, gap, padding, targetRowHeight };
     }, [eventStyling]);
 
     // Main grid configuration selector
@@ -144,145 +146,166 @@ export const PinterestPhotoGrid: React.FC<{
       const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
       const columnWidth = Math.floor(availableWidth / config.columns);
 
-      return photos.map((photo) => {
+      return photos.map((photo, index) => {
         let aspectRatio = 1.0;
 
         if (photo.width && photo.height && photo.width > 0 && photo.height > 0) {
           aspectRatio = photo.height / photo.width;
         } else {
-          // Random varied aspect ratios if no dimensions available
-          const ratios = [0.6, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0];
-          aspectRatio = ratios[Math.floor(Math.random() * ratios.length)];
+          // Pinterest-style: tight range for even distribution
+          // Most items near 1.0 (square-ish) to minimize column height differences
+          const ratios = [1.0, 1.1, 0.95, 1.2, 1.0, 1.15, 0.9, 1.25, 1.0, 1.3];
+          aspectRatio = ratios[index % ratios.length];
         }
 
-        // Allow more variety in Pinterest style
-        aspectRatio = Math.max(0.5, Math.min(aspectRatio, 3.0));
+        // Tighter bounds for more consistent grid (Pinterest actual behavior)
+        aspectRatio = Math.max(0.75, Math.min(aspectRatio, 1.5));
         const calculatedHeight = Math.round(columnWidth * aspectRatio);
 
         return {
           ...photo,
           calculatedHeight,
-          aspectRatio
+          aspectRatio,
+          originalIndex: index
         };
       });
     }, [photos, containerWidth, getGridConfig]);
 
-    // NEW: Register item reference for viewport tracking
-    const registerItemRef = useCallback((index: number, element: HTMLDivElement | null) => {
-      if (element) {
-        itemRefs.current.set(index, element);
-      } else {
-        itemRefs.current.delete(index);
-      }
-    }, []);
+    // Scroll Listener for Virtualization
+    useEffect(() => {
+      if (typeof window === 'undefined') return;
 
-    // NEW: Calculate and report viewport info
-    const updateViewportInfo = useCallback(() => {
-      if (visibleIndices.size === 0 || !onViewportChange) return;
-
-      const sortedIndices = Array.from(visibleIndices).sort((a, b) => a - b);
-      const visibleStartIndex = sortedIndices[0];
-      const visibleEndIndex = sortedIndices[sortedIndices.length - 1];
-      const bufferSize = 20;
-
-      const viewportInfo: ViewportInfo = {
-        visibleStartIndex,
-        visibleEndIndex,
-        bufferStartIndex: Math.max(0, visibleStartIndex - bufferSize),
-        bufferEndIndex: Math.min(photos.length - 1, visibleEndIndex + bufferSize)
+      const updateViewport = () => {
+        setViewportHeight(window.innerHeight);
+        setScrollTop(window.scrollY);
       };
 
-      onViewportChange(viewportInfo);
-    }, [visibleIndices, onViewportChange, photos.length]);
+      // Initial set
+      updateViewport();
 
-    // NEW: Set up viewport tracking observer
-    useEffect(() => {
-      if (!onViewportChange) return;
-
-      if (viewportObserverRef.current) {
-        viewportObserverRef.current.disconnect();
-      }
-
-      viewportObserverRef.current = new IntersectionObserver(
-        (entries) => {
-          setVisibleIndices(prev => {
-            const newVisible = new Set(prev);
-
-            entries.forEach(entry => {
-              // Find index for this element
-              for (const [index, element] of itemRefs.current.entries()) {
-                if (element === entry.target) {
-                  if (entry.isIntersecting) {
-                    newVisible.add(index);
-                  } else {
-                    newVisible.delete(index);
-                  }
-                  break;
-                }
-              }
-            });
-
-            return newVisible;
+      let ticking = false;
+      const onScroll = () => {
+        if (!ticking) {
+          window.requestAnimationFrame(() => {
+            setScrollTop(window.scrollY);
+            ticking = false;
           });
-        },
-        {
-          threshold: 0.1,
-          rootMargin: '100px 0px' // Track items slightly before they become visible
+          ticking = true;
         }
-      );
+      };
 
-      // Observe all current items
-      itemRefs.current.forEach(element => {
-        viewportObserverRef.current?.observe(element);
-      });
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', updateViewport, { passive: true });
 
       return () => {
-        viewportObserverRef.current?.disconnect();
+        window.removeEventListener('scroll', onScroll);
+        window.removeEventListener('resize', updateViewport);
       };
-    }, [photos.length, onViewportChange]);
-
-    // NEW: Update viewport info when visible indices change
-    useEffect(() => {
-      updateViewportInfo();
-    }, [updateViewportInfo]);
-
-    // Handle actual image load and get real dimensions
-    const handleImageLoad = useCallback((photoId: string, actualHeight: number) => {
-      setImageHeights(prev => new Map(prev).set(photoId, actualHeight));
     }, []);
+
+    // Derived Visible Items
+    const visiblePhotos = useMemo(() => {
+      if (!itemPositions.size || gridItems.length === 0) return [];
+
+      const buffer = viewportHeight * 1.5; // 1.5 screens buffer for smooth scrolling
+      const min = scrollTop - buffer;
+      const max = scrollTop + viewportHeight + buffer;
+
+      // Filter gridItems (which have originalIndex)
+      return gridItems.filter(photo => {
+        const pos = itemPositions.get(photo.id);
+        if (!pos) return false;
+        return (pos.y + (pos.height || 0)) > min && pos.y < max;
+      });
+    }, [gridItems, itemPositions, scrollTop, viewportHeight]);
+
+
 
     // Calculate positions - let images determine their own height
     useEffect(() => {
-      if (!containerWidth || gridItems.length === 0) return;
+      if (!containerWidth || photos.length === 0) return;
 
       const config = getGridConfig(containerWidth);
-      const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
-      const columnWidth = Math.floor(availableWidth / config.columns);
-
-      const heights = Array(config.columns).fill(0);
       const positions = new Map<string, Position>();
 
-      gridItems.forEach((item) => {
-        // Find shortest column
-        const shortestColumnIndex = heights.indexOf(Math.min(...heights));
-        const x = config.padding + shortestColumnIndex * (columnWidth + config.gap);
-        const y = heights[shortestColumnIndex];
+      if (layout === 'rows') {
+        // --- ROWS LAYOUT ---
+        // Map TransformedPhoto to a structure compatible with computeRowsLayout's Photo type
+        // computeRowsLayout needs: id, width, height. We can cast safely for internal use.
+        const layoutPhotos = (photos as unknown as any[]).map(p => ({
+          id: p.id,
+          width: p.width || 100,
+          height: p.height || 100,
+          src: p.src || '',
+          aspectRatio: (p.width && p.height) ? p.width / p.height : 1,
+          // Add required Photo properties for type compatibility
+          eventId: p.eventId || '',
+          type: p.type || 'photo',
+          imageUrl: p.imageUrl || p.src || ''
+        }));
 
-        // Store position (no fixed height!)
-        positions.set(item.id, {
-          x,
-          y,
-          width: columnWidth
+        const rowsLayout = computeRowsLayout(
+          layoutPhotos,
+          config.gap, // Spacing
+          config.padding, // Padding
+          containerWidth,
+          config.targetRowHeight
+        );
+
+        if (rowsLayout) {
+          let currentY = config.padding;
+
+          rowsLayout.tracks.forEach((track) => {
+            let currentX = config.padding;
+            // Assuming all photos in a track have the same height
+            const rowHeight = track.photos[0]?.height || config.targetRowHeight;
+
+            track.photos.forEach((photoItem) => {
+              positions.set(photoItem.photo.id, {
+                x: currentX,
+                y: currentY,
+                width: photoItem.width,
+                height: photoItem.height
+              });
+              currentX += photoItem.width + config.gap;
+            });
+
+            currentY += rowHeight + config.gap;
+          });
+
+          setFilesContainerHeight(currentY);
+        }
+
+      } else {
+        // --- MASONRY LAYOUT ---
+        const availableWidth = containerWidth - (config.padding * 2) - (config.gap * (config.columns - 1));
+        const columnWidth = Math.floor(availableWidth / config.columns);
+        const heights = Array(config.columns).fill(config.padding);
+
+        gridItems.forEach((item, index) => {
+          // Find shortest column
+          const shortestColumnIndex = heights.indexOf(Math.min(...heights));
+          const x = config.padding + shortestColumnIndex * (columnWidth + config.gap);
+          const y = heights[shortestColumnIndex];
+
+          // Store position with calculated height
+          positions.set(item.id, {
+            x,
+            y,
+            width: columnWidth,
+            height: item.calculatedHeight
+          });
+
+          // Update column height: add this item's height + gap for next item
+          heights[shortestColumnIndex] += item.calculatedHeight + config.gap;
         });
 
-        // Use actual loaded height if available, otherwise use calculated
-        const itemHeight = imageHeights.get(item.id) || item.calculatedHeight;
-        heights[shortestColumnIndex] += itemHeight + config.gap;
-      });
+        setColumnHeights([...heights]);
+        setFilesContainerHeight(Math.max(...heights) + config.padding);
+      }
 
-      setColumnHeights([...heights]);
       setItemPositions(positions);
-    }, [gridItems, containerWidth, getGridConfig, imageHeights]);
+    }, [gridItems, containerWidth, getGridConfig, layout, photos]);
 
     // Container resize handler
     useEffect(() => {
@@ -355,43 +378,44 @@ export const PinterestPhotoGrid: React.FC<{
       return {};
     }, [stylingConfig]);
 
-    const containerHeight = Math.max(...columnHeights, 300);
-
     if (photos.length === 0 && (isLoadingMore || hasNextPage)) {
-      return <Skeleton />;
+      const columns = containerWidth > 0 ? getGridConfig(containerWidth).columns : undefined;
+      return <PhotoGridSkeleton numColumns={columns} />;
     }
 
     return (
-      <div className="space-y-4 pt-10" style={getContainerStyles}>
+      <div className="space-y-4 pt-2" style={getContainerStyles}>
         <div
           ref={containerRef}
           className="relative w-full"
-          style={{ minHeight: containerHeight }}
+          style={{ minHeight: filesContainerHeight }}
         >
-          {gridItems.map((photo, index) => {
+          {visiblePhotos.map((photo) => {
             const position = itemPositions.get(photo.id);
             if (!position) return null;
+            const index = photo.originalIndex;
 
             return (
               <div
                 key={photo.id}
-                ref={(el) => registerItemRef(index, el)} // NEW: Register for viewport tracking
-                className="absolute"
                 style={{
+                  position: 'absolute',
                   left: position.x,
                   top: position.y,
                   width: position.width,
+                  height: position.height,
+                  contain: 'paint' // Optimization hint
                 }}
+                className="transition-[left,top,width,height] duration-300 ease-out"
               >
                 <PinterestPhotoCard
                   photo={photo}
                   index={index}
                   baseWidth={position.width}
-                  expectedHeight={photo.calculatedHeight}
+                  expectedHeight={position.height || (photo as any).calculatedHeight || 300}
                   isLiked={likedPhotos.has(photo.id)}
                   onLike={() => handleLike(photo.id)}
                   onClick={() => onPhotoClick(photo, index)}
-                  onImageLoad={handleImageLoad}
                 />
               </div>
             );
@@ -399,7 +423,7 @@ export const PinterestPhotoGrid: React.FC<{
 
           {isLoadingMore && (
             <div className="mt-8">
-              <Skeleton count={12} />
+              <PhotoGridSkeleton numColumns={getGridConfig(containerWidth).columns} />
             </div>
           )}
         </div>

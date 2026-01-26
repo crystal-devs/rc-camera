@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useEventWebSocket } from './useEventWebSocket';
+import { queryKeys } from '@/lib/queryKeys';
 
 interface ProgressUpdate {
   mediaId: string;
@@ -106,40 +107,45 @@ export function useWebSocketUploadProgress(
 
   const updatePhotoInCache = useCallback((mediaId: string, updates: Partial<any>) => {
     const statuses = ['approved', 'pending', 'rejected', 'hidden', 'auto_approved'];
+    const qualities = ['small', 'medium', 'large', 'original'];
 
     statuses.forEach(status => {
-      queryClient.setQueryData(
-        ['eventPhotos', eventId, status],
-        (oldData: any) => {
-          if (!oldData) return oldData;
-          return oldData.map((photo: any) =>
-            photo.id === mediaId ? { ...photo, ...updates } : photo
-          );
-        }
-      );
+      // Update regular queries
+      qualities.forEach(quality => {
+        queryClient.setQueryData(
+          [...queryKeys.eventPhotos(eventId, status), quality],
+          (oldData: any) => {
+            if (!oldData) return oldData;
+            return oldData.map((photo: any) =>
+              photo.id === mediaId ? { ...photo, ...updates } : photo
+            );
+          }
+        );
 
-      queryClient.setQueryData(
-        ['eventPhotos', eventId, status, 'infinite'],
-        (oldData: any) => {
-          if (!oldData?.pages) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page: any) => ({
-              ...page,
-              data: page.data?.map((photo: any) =>
-                photo.id === mediaId ? { ...photo, ...updates } : photo
-              )
-            }))
-          };
-        }
-      );
+        // Update infinite queries
+        queryClient.setQueryData(
+          [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
+          (oldData: any) => {
+            if (!oldData?.pages) return oldData;
+            return {
+              ...oldData,
+              pages: oldData.pages.map((page: any) => ({
+                ...page,
+                photos: page.photos?.map((photo: any) =>
+                  photo.id === mediaId ? { ...photo, ...updates } : photo
+                )
+              }))
+            };
+          }
+        );
+      });
     });
   }, [queryClient, eventId]);
 
   // FIXED: Handle new_media_uploaded event (optimistic preview)
   const handleNewMediaUploaded = useCallback((data: NewMediaUploadedEvent) => {
     console.log('📸 New media uploaded (optimistic):', data.mediaId.substring(0, 8));
-    
+
     // Initialize progress tracking with optimistic state
     setUploadProgress(prev => ({
       ...prev,
@@ -181,7 +187,7 @@ export function useWebSocketUploadProgress(
 
     setUploadProgress(prev => {
       const existing = prev[data.mediaId];
-      
+
       // Skip if same data
       if (existing &&
         existing.percentage === data.progressPercentage &&
@@ -329,6 +335,17 @@ export function useWebSocketUploadProgress(
     });
   }, [uploadProgress, updatePhotoInCache, showToasts]);
 
+  // NEW: Handle batch_media_uploaded event
+  const handleBatchMediaUploaded = useCallback((data: { eventId: string; items: NewMediaUploadedEvent[] }) => {
+    console.log('📦 Batch media uploaded event:', data.items?.length);
+
+    if (data.items && Array.isArray(data.items)) {
+      data.items.forEach(item => {
+        handleNewMediaUploaded(item);
+      });
+    }
+  }, [handleNewMediaUploaded]);
+
   // Set up WebSocket listeners ONLY ONCE with CORRECT event names
   useEffect(() => {
     if (!webSocket.socket || listenersSetup.current) return;
@@ -338,6 +355,7 @@ export function useWebSocketUploadProgress(
 
     // FIXED: Listen to the ACTUAL events your backend emits
     webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
+    webSocket.socket.on('batch_media_uploaded', handleBatchMediaUploaded);
     webSocket.socket.on('media_processing_progress', handleMediaProcessingProgress);
     webSocket.socket.on('media_processing_complete', handleMediaProcessingComplete);
     webSocket.socket.on('media_upload_failed', handleMediaUploadFailed);
@@ -346,13 +364,14 @@ export function useWebSocketUploadProgress(
       if (webSocket.socket) {
         console.log('🔌 Cleaning up WebSocket upload progress listeners');
         webSocket.socket.off('new_media_uploaded', handleNewMediaUploaded);
+        webSocket.socket.off('batch_media_uploaded', handleBatchMediaUploaded);
         webSocket.socket.off('media_processing_progress', handleMediaProcessingProgress);
         webSocket.socket.off('media_processing_complete', handleMediaProcessingComplete);
         webSocket.socket.off('media_upload_failed', handleMediaUploadFailed);
       }
       listenersSetup.current = false;
     };
-  }, [webSocket.socket, handleNewMediaUploaded, handleMediaProcessingProgress, handleMediaProcessingComplete, handleMediaUploadFailed]);
+  }, [webSocket.socket, handleNewMediaUploaded, handleBatchMediaUploaded, handleMediaProcessingProgress, handleMediaProcessingComplete, handleMediaUploadFailed]);
 
   useEffect(() => {
     const hasActiveUploads = Object.values(uploadProgress).some(

@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 interface EventActionsProps {
     eventId: string;
@@ -45,6 +46,7 @@ const EventActions: React.FC<EventActionsProps> = ({
 }) => {
     const router = useRouter();
     const { fetchUsage } = useStore();
+    const { getAccessToken } = useSecureAuth();
 
     return (
         <div className="flex flex-wrap gap-2">
@@ -113,7 +115,7 @@ const EventActions: React.FC<EventActionsProps> = ({
                         onClick={async () => {
                             if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
                                 try {
-                                    const authToken = localStorage.getItem('rc-token');
+                                    const authToken = getAccessToken();
                                     if (!authToken) {
                                         toast.error("You need to be logged in to delete this event");
                                         return;

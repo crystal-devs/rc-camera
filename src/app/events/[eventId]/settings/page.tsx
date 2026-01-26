@@ -1,7 +1,7 @@
 // app/events/[eventId]/settings/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Save } from 'lucide-react';
 
@@ -19,11 +19,23 @@ import { PermissionsTab } from '@/components/event-settings/PermissionsTab';
 import { useEventSettings } from '@/hooks/useEventSettings';
 import { PhotoWallTab } from '@/components/event-settings/PhotoWallTab';
 import { DesignTab } from '@/components/event-settings/DesignTab';
+import useEventStore from '@/stores/useEventStore';
+import { toast } from 'sonner';
 
 const EventSettingsPage = () => {
   const params = useParams();
   const { eventId } = params;
   const router = useRouter();
+  const { userRole } = useEventStore();
+
+  useEffect(() => {
+    // Only creators and co-hosts can access settings
+    const allowedRoles = ['creator', 'co_host'];
+    if (!allowedRoles.includes(userRole || '')) {
+      toast.error("Access denied. Only event creators and co-hosts can access settings.");
+      router.push(`/events/${eventId}`);
+    }
+  }, [userRole, eventId, router]);
 
   // Local state
   const [activeTab, setActiveTab] = useState('basics');
@@ -131,32 +143,32 @@ const EventSettingsPage = () => {
           <TabsList className="grid w-full grid-cols-5 mb-8 bg-muted border h-12">
             <TabsTrigger
               value="basics"
-              className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"
+              className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-rose-50 data-[state=active]:text-rose-700 data-[state=active]:border-rose-200"
             >
               <span className="text-base">📝</span>
               <span className="hidden sm:inline font-medium text-xs lg:text-sm truncate">General</span>
             </TabsTrigger>
             <TabsTrigger
               value="sharing"
-              className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"
+              className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-rose-50 data-[state=active]:text-rose-700 data-[state=active]:border-rose-200"
             >
               <span className="text-base">🔗</span>
               <span className="hidden sm:inline font-medium text-xs lg:text-sm truncate">Sharing</span>
             </TabsTrigger>
             <TabsTrigger
               value="permissions"
-              className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"
+              className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-neutral-50 data-[state=active]:text-neutral-700 data-[state=active]:border-neutral-200"
             >
               <span className="text-base">🔒</span>
               <span className="hidden sm:inline font-medium text-xs lg:text-sm truncate">Permissions</span>
             </TabsTrigger>
-            <TabsTrigger
+            {/* <TabsTrigger
               value="team"
               className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"
             >
               <span className="text-base">👥</span>
               <span className="hidden sm:inline font-medium text-xs lg:text-sm truncate">Team</span>
-            </TabsTrigger>
+            </TabsTrigger> */}
             <TabsTrigger
               value="design"
               className="flex items-center justify-center gap-1 px-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:border-blue-200"
@@ -188,6 +200,7 @@ const EventSettingsPage = () => {
             <SharingTab
               formData={formData}
               onInputChange={handleInputChange}
+              eventId={eventId as string}
             />
           </TabsContent>
 
@@ -198,7 +211,7 @@ const EventSettingsPage = () => {
             />
           </TabsContent>
 
-          <TabsContent value="team" className="mt-0">
+          {/* <TabsContent value="team" className="mt-0">
             {eventId && authToken && (
               <TeamTab
                 eventId={eventId as string}
@@ -206,7 +219,7 @@ const EventSettingsPage = () => {
                 isEventCreator={isEventCreator as boolean}
               />
             )}
-          </TabsContent>
+          </TabsContent> */}
           <TabsContent value="design" className="mt-0">
             {eventId && authToken && (
               <DesignTab

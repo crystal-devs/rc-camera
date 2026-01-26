@@ -17,7 +17,7 @@ export interface ApiEventResponse {
 }
 
 // Map API response to frontend Event format
-const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
+const mapApiEventToEvent = (apiEvent: any): Event => {
   const startDate = new Date(apiEvent.start_date);
   // Check if end_date is in the future
   const isActive = apiEvent.end_date
@@ -26,23 +26,72 @@ const mapApiEventToEvent = (apiEvent: ApiEvent): Event => {
 
   return {
     ...apiEvent,
+    // Ensure all required fields are present with defaults
+    share_settings: apiEvent.share_settings || {
+      is_active: true,
+      password: null,
+      expires_at: null
+    },
+    permissions: apiEvent.permissions || {
+      can_view: true,
+      can_upload: false,
+      can_download: false,
+      allowed_media_types: { images: true, videos: true },
+      require_approval: true
+    },
+    co_host_invite_token: apiEvent.co_host_invite_token || {
+      token: '',
+      expires_at: '',
+      is_active: true
+    },
+    co_hosts: apiEvent.co_hosts || [],
+    participants: apiEvent.participants || [],
+    stats: apiEvent.stats || {
+      total_participants: 0,
+      creators_count: 0,
+      co_hosts_count: 0,
+      guests_count: 0,
+      photos: 0,
+      videos: 0,
+      total_size_mb: 0,
+      pending_approval: 0,
+      pending_invitations: 0
+    }
   };
 };
 
 // Fetch all events for the authenticated user
-export const fetchEvents = async (): Promise<Event[]> => {
+export const fetchEvents = async (token?: string, signal?: AbortSignal): Promise<Event[]> => {
   try {
+
     const response = await axios.get(`${API_BASE_URL}/event`, {
-      headers: setHeader(),
+      headers: setHeader(token),
+      signal, // Add cancellation support
     });
 
-    if (response.data && response.data.data) {
-      console.log(response.data.data, 'apiEventsapiEvents')
-      const apiEvents: ApiEvent[] = response.data.data.events; // Adjusted to match the API response structure
-      // return apiEvents.map(mapApiEventToEvent);
-      return response.data.data.events ?? [];
+    console.log('Full events API response:', response.data);
+
+    // Handle the response structure you provided: {status: true, data: {events: [...], ...}}
+    if (response.data && response.data.data && response.data.data.events) {
+      console.log('Found events in response.data.data.events:', response.data.data.events.length);
+      return response.data.data.events.map(mapApiEventToEvent) ?? [];
     }
 
+    // Fallback for direct events in data
+    if (response.data && response.data.events) {
+      console.log('Found events in response.data.events:', response.data.events.length);
+      return response.data.events.map(mapApiEventToEvent) ?? [];
+    }
+
+    // Last resort - check if response.data.data itself is an events array
+    if (response.data && response.data.data && Array.isArray(response.data.data)) {
+      console.log('Response.data.data is an array, treating as events:', response.data.data.length);
+      return response.data.data.map(mapApiEventToEvent) ?? [];
+    }
+
+    console.log('No events found in any expected location, returning empty array');
+
+    console.log('No events found in response');
     return [];
   } catch (error) {
     console.error('Error fetching events:', error);
@@ -88,8 +137,14 @@ export const getEventById = async (eventId: string, authToken: string): Promise<
         console.error('API error status:', error.response.status);
         console.error('API error data:', error.response.data);
 
-        if (error.response.status === 401 || error.response.status === 403) {
-          throw new Error('Authentication error. Please log in again.');
+        if (error.response.status === 401) {
+          throw new Error('Authentication required. Please log in to access this event.');
+        } else if (error.response.status === 403) {
+          // Handle invited_only access denied
+          const errorMessage = error.response.data?.error?.message ||
+            error.response.data?.message ||
+            'You are not invited to this event';
+          throw new Error(errorMessage);
         } else if (error.response.status === 404) {
           throw new Error('Event not found. It may have been deleted or is not accessible.');
         } else if (error.response.status >= 500) {
@@ -730,6 +785,60 @@ export const manageEventGuests = async (
   }
 };
 
+// guest session types
+export interface GuestSession {
+  _id: string;
+  session_id: string;
+  aws_face_id?: string;
+  access_method: 'face_login' | 'qr_code' | 'share_link' | 'invitation_link';
+  status: 'active' | 'claimed' | 'expired' | 'blocked';
+  last_activity_at: string;
+  guest_info?: {
+    name?: string;
+    email?: string;
+  };
+  device_fingerprint?: {
+    platform?: string;
+    user_agent?: string;
+  };
+}
+
+export const getEventGuestSessions = async (
+  eventId: string,
+  token: string,
+  params: { page?: number; limit?: number; status?: string; access_method?: string } = {}
+): Promise<{ data: GuestSession[]; pagination: any }> => {
+  try {
+    // Build query string manually or use axios params
+    const response = await axios.get(`${API_BASE_URL}/event/${eventId}/guest-sessions`, {
+      headers: { Authorization: `Bearer ${token}` },
+      params
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching guest sessions', error);
+    throw error;
+  }
+};
+
+export const revokeGuestSession = async (
+  eventId: string,
+  sessionId: string,
+  token: string
+): Promise<any> => {
+  try {
+    const response = await axios.patch(
+      `${API_BASE_URL}/event/${eventId}/guest-sessions/${sessionId}/revoke`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error revoking session', error);
+    throw error;
+  }
+};
+
 /**
  * Add guests to an event
  * This function adds guests to an event and updates the share token
@@ -745,37 +854,111 @@ export const addGuests = async (
   authToken: string
 ): Promise<any> => {
   if (!guestEmails || guestEmails.length === 0) {
-    console.log('No guests to add');
     return null;
   }
 
+  return manageEventGuests(eventId, guestEmails, 'add', undefined, authToken);
+};
+
+/**
+ * Remove guests from an event
+ * This function removes guests from an event and updates the share token
+ * 
+ * @param eventId Event ID
+ * @param guestEmails List of guest emails to remove
+ * @param authToken Authentication token
+ * @returns Updated share token data
+ */
+export const removeGuests = async (
+  eventId: string,
+  guestEmails: string[],
+  authToken: string
+): Promise<any> => {
+  if (!guestEmails || guestEmails.length === 0) {
+    return null;
+  }
+
+  return manageEventGuests(eventId, guestEmails, 'remove', undefined, authToken);
+};
+export interface InvitationResponse {
+  status: boolean;
+  message?: string;
+  data?: {
+    invitations: any[];
+    [key: string]: any;
+  };
+}
+
+/**
+ * Send invitations to guests
+ * @param eventId Event ID
+ * @param data Invitation data (emails, role, message)
+ * @param authToken Authentication token
+ * @returns API response
+ */
+export const sendInvitations = async (
+  eventId: string,
+  data: { emails: string[]; role: 'guest' | 'co-host'; message?: string },
+  authToken: string
+): Promise<InvitationResponse> => {
   try {
-    console.log(`Adding guests to event ${eventId}:`, guestEmails);
+    console.log(`Sending invitations for event ${eventId}:`, data);
+    const url = `${API_BASE_URL}/event/${eventId}/invitations`;
 
-    // Deduplicate emails and normalize them (trim whitespace, convert to lowercase)
-    const normalizedEmails = guestEmails
-      .map(email => email.trim().toLowerCase())
-      .filter(email => email.length > 0); // Filter out empty strings
-
-    if (normalizedEmails.length === 0) {
-      console.log('No valid emails to add after normalization');
-      return null;
-    }
-
-    // Use the existing manageEventGuests function with 'add' action
-    return await manageEventGuests(
-      eventId,
-      normalizedEmails,
-      'add',
-      {
-        canView: true,
-        canUpload: true,
-        canDownload: true
+    const response = await axios.post(url, data, {
+      headers: {
+        Authorization: `Bearer ${authToken}`,
       },
-      authToken
-    );
+      timeout: 15000
+    });
+
+    console.log('Send invitations response:', response.data);
+    return response.data;
   } catch (error) {
-    console.error(`Error adding guests to event ${eventId}:`, error);
+    console.error(`Error sending invitations for event ${eventId}:`, error);
+    if (axios.isAxiosError(error) && error.response) {
+      return {
+        status: false,
+        message: error.response.data.message || (error as Error).message,
+        data: error.response.data
+      };
+    }
+    throw error;
+  }
+};
+
+/**
+ * Get invitations for an event
+ * @param eventId Event ID
+ * @param authToken Authentication token
+ * @returns API response with invitations list
+ */
+export const getInvitations = async (
+  eventId: string,
+  authToken: string
+): Promise<InvitationResponse> => {
+  try {
+    console.log(`Fetching invitations for event ${eventId}`);
+    const url = `${API_BASE_URL}/event/${eventId}/invitations`;
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+      timeout: 10000
+    });
+
+    console.log('Get invitations response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching invitations for event ${eventId}:`, error);
+    if (axios.isAxiosError(error) && error.response) {
+      return {
+        status: false,
+        message: error.response.data.message || (error as Error).message,
+        data: undefined
+      };
+    }
     throw error;
   }
 };

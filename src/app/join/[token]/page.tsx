@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter
-} from '@/components/ui/card';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import {
-  Loader2, CheckCircle, AlertTriangle, Lock, ArrowRight, LogIn,
-  Calendar, Users
+  Loader2, CheckCircle, AlertTriangle, ArrowRight, LogIn,
+  Calendar, MapPin, Users, Sparkles
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { getTokenInfo } from '@/services/apis/sharing.api';
+import { useToken } from '@/hooks/useToken';
+import { getSignedUrlForKey } from '@/services/apis/media.api';
+
+// In-memory cache for cover signed URLs
+const joinCoverUrlCache = new Map<string, string>();
 
 /* ------------------------------------------------------------------ */
 /* ---------- TYPES ------------------------------------------------- */
@@ -27,7 +29,7 @@ interface EventData {
   description: string;
   start_date: string;
   visibility: 'anyone_with_link' | 'invited_only' | 'private';
-  cover_image?: { url: string };
+  cover_image?: { public_id: string };
   location?: { name: string };
   permissions?: {
     can_upload: boolean;
@@ -45,112 +47,131 @@ interface TokenResponse {
 export default function JoinPage() {
   const router = useRouter();
   const { token } = useParams<{ token: string }>();
+  const authToken = useToken();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
-  // Get auth token with better debugging
-  const [auth] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('authToken');
-      console.log('🔍 Auth token from localStorage:', {
-        exists: !!token,
-        length: token?.length || 0,
-        preview: token ? token.substring(0, 20) + '...' : 'none'
-      });
-      return token;
+  // Extract S3 key from cover data
+  const getS3Key = (cover: any): string | null => {
+    if (cover?.public_id && cover.public_id.includes('events/')) {
+      return cover.public_id;
+    }
+    if (cover?.url) {
+      try {
+        const url = new URL(cover.url);
+        const pathParts = url.pathname.split('/');
+        if (pathParts[1] === 'events') {
+          return pathParts.slice(1).join('/');
+        }
+      } catch (error) {
+        console.error('Failed to parse URL for S3 key:', error);
+      }
     }
     return null;
-  });
+  };
 
-  /* ---------------------------------------------------------------- */
-  /* ---------- CORE VALIDATION ------------------------------------- */
-  const validateToken = async () => {
+  const validateToken = useCallback(async () => {
+    if (!token) return;
+
     try {
       setLoading(true);
       setError('');
 
-      console.log('🔍 Starting token validation');
-      console.log('🔑 Auth token available:', {
-        exists: !!auth,
-        length: auth?.length || 0,
-        preview: auth ? auth.substring(0, 20) + '...' : 'none'
-      });
-
-      // Pass auth token if available (null/undefined if not authenticated)
-      const response = await getTokenInfo(token, auth);
-
-      console.log('📋 Token validation response:', {
-        hasResponse: !!response,
-        hasData: !!response?.data,
-        dataKeys: response?.data ? Object.keys(response.data) : []
-      });
+      const response = await getTokenInfo(token, authToken);
 
       if (!response.data?.event) {
         throw new Error('Invalid response format');
       }
 
       const { event, access } = response.data;
-      setTokenData({ event, access });
 
-      console.log('📋 Token validation result:', {
-        canJoin: access.canJoin,
-        requiresAuth: access.requiresAuth,
-        role: access.role,
-        visibility: event.visibility,
-        eventTitle: event.title
-      });
-
-      // Only redirect for public events that can be joined immediately
-      if (access.canJoin && event.visibility === 'anyone_with_link') {
-        // Public events: direct redirect to guest page
-        console.log('🟢 Public event - direct redirect');
+      // Check if user has already joined this event
+      const joinedKey = `joined_${token}`;
+      if (typeof window !== 'undefined' && localStorage.getItem(joinedKey) === 'true' && access.canJoin) {
+        console.debug('🚀 User has already joined, redirecting to event...');
+        setIsRedirecting(true);
         router.push(`/guest/${token}`);
         return;
       }
 
-      // For all other cases, show the event preview or error on this page
+      // --- AUTO-REDIRECTION LOGIC ---
+      // If user is already authenticated and has access, redirect immediately
+      if (authToken && access.canJoin && !access.requiresAuth) {
+        console.debug('🚀 User already has access, redirecting to event...');
+        setIsRedirecting(true);
+        router.push(`/guest/${token}`);
+        return;
+      }
+
+      setTokenData({ event, access });
       setLoading(false);
 
       if (access.requiresAuth) {
-        console.log('🔐 Authentication required - showing login prompt');
         setError('This event requires you to sign in first.');
         return;
       }
 
       if (!access.canJoin) {
-        console.log('❌ Cannot join event - showing error');
         setError(getAccessDeniedMessage(event.visibility, access.role));
         return;
       }
-
-      // Show preview for events where user has access
-      console.log('📄 Showing event preview');
 
     } catch (e: any) {
       console.error('❌ Token validation error:', e);
       setLoading(false);
 
-      // Always show error on this page, don't redirect
       if (e.status === 401) {
-        console.log('🔐 401 error - showing auth required message');
         setError('This event requires you to sign in first.');
       } else if (e.status === 403) {
-        console.log('🔒 403 error - showing access denied message');
         setError(e.message || 'You don\'t have permission to access this event.');
       } else if (e.status === 404) {
-        console.log('🔍 404 error - showing not found message');
         setError('Event not found. The link may be invalid or expired.');
       } else {
-        console.log('❌ Other error - showing generic message');
         setError(e.message || 'Unable to access this event. Please try again.');
       }
     }
-  };
+  }, [token, authToken, router]);
 
-  /* ---------------------------------------------------------------- */
-  /* ---------- HELPER FUNCTIONS ------------------------------------ */
+  useEffect(() => {
+    validateToken();
+  }, [validateToken]);
+
+  // Generate cover image URL
+  useEffect(() => {
+    const generateCoverImageUrl = async () => {
+      if (!tokenData?.event?.cover_image) {
+        setCoverImageUrl(null);
+        return;
+      }
+
+      const s3Key = getS3Key(tokenData.event.cover_image);
+      if (!s3Key) return;
+
+      const cachedUrl = joinCoverUrlCache.get(s3Key);
+      if (cachedUrl) {
+        setCoverImageUrl(cachedUrl);
+        return;
+      }
+
+      try {
+        const url = await getSignedUrlForKey(s3Key, authToken || undefined);
+        joinCoverUrlCache.set(s3Key, url);
+        setCoverImageUrl(url);
+      } catch (error) {
+        console.error('❌ Failed to generate cover image URL:', error);
+        setCoverImageUrl(null);
+      }
+    };
+
+    if (tokenData) {
+      generateCoverImageUrl();
+    }
+  }, [tokenData, authToken]);
+
   const handleLoginRedirect = () => {
     const redirectUrl = `/guest/${token}`;
     if (typeof window !== 'undefined') {
@@ -160,13 +181,17 @@ export default function JoinPage() {
   };
 
   const handleJoinEvent = () => {
+    const joinedKey = `joined_${token}`;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(joinedKey, 'true');
+    }
     router.push(`/guest/${token}`);
   };
 
   const getAccessDeniedMessage = (visibility: string, role: string): string => {
     switch (visibility) {
       case 'private':
-        return 'This event is private and only accessible to the event creator and co-hosts.';
+        return 'This event is private and only accessible to authorized members.';
       case 'invited_only':
         return 'This event requires you to sign in first.';
       default:
@@ -178,229 +203,174 @@ export default function JoinPage() {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
-      year: 'numeric',
       month: 'long',
       day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
     });
   };
 
-  const getVisibilityLabel = (visibility: string) => {
-    switch (visibility) {
-      case 'anyone_with_link': return 'Public Event';
-      case 'invited_only': return 'Invited Event';
-      case 'private': return 'Private Event';
-      default: return 'Event';
-    }
-  };
+  // --- RENDER HELPERS ---
 
-  /* ---------------------------------------------------------------- */
-  /* ---------- EFFECTS --------------------------------------------- */
-  useEffect(() => {
-    if (token) {
-      // Debug auth token storage
-      if (typeof window !== 'undefined') {
-        console.log('🔍 Debugging auth token storage:');
-        const authToken = localStorage.getItem('rc-token');
-        const accessToken = localStorage.getItem('accessToken');
-        const user = localStorage.getItem('user');
-
-        console.log('📦 Storage check:', {
-          authToken: authToken ? `exists (${authToken.length} chars)` : 'missing',
-          accessToken: accessToken ? `exists (${accessToken.length} chars)` : 'missing',
-          user: user ? 'exists' : 'missing',
-          allKeys: Object.keys(localStorage)
-        });
-      }
-
-      validateToken();
-    }
-  }, [token]);
-
-  /* ---------------------------------------------------------------- */
-  /* ---------- RENDER STATES --------------------------------------- */
-
-  // Loading State
-  if (loading) {
+  if (loading || isRedirecting) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 flex items-center justify-center px-4">
-        <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm border-0 shadow-xl">
-          <CardContent className="flex flex-col items-center py-12">
-            <div className="mb-6 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 p-4">
-              <Loader2 className="h-8 w-8 animate-spin text-amber-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">
-              Checking your invitation
-            </h3>
-            <p className="text-sm text-gray-600 text-center">
-              Validating access to this event...
-            </p>
-            <div className="mt-4 text-xs text-gray-500 text-center">
-              Token: {token?.substring(0, 8)}...
-            </div>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center space-y-4">
+        <Loader2 className="h-10 w-10 animate-spin text-white/50" />
+        <p className="text-white/60 font-light tracking-widest text-sm uppercase">Preparing your invitation</p>
       </div>
     );
   }
 
-  // Error State
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-orange-50 to-amber-50 flex items-center justify-center px-4">
-        <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm shadow-xl border-0">
-          <CardHeader className="text-center pt-8">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
-              <AlertTriangle className="h-8 w-8 text-red-600" />
+  const bgStyle = coverImageUrl
+    ? { backgroundImage: `url(${coverImageUrl})` }
+    : { background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%)' };
+
+  return (
+    <div className="relative min-h-screen w-full overflow-hidden flex items-center justify-center px-6">
+      {/* Full Background */}
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-1000 scale-105"
+        style={bgStyle}
+      />
+      {/* Overlay - Gradient for depth */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
+
+      {/* Content */}
+      <AnimatePresence mode="wait">
+        {error ? (
+          <motion.div
+            key="error"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="relative z-10 w-full max-w-lg text-center p-8 rounded-3xl bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl"
+          >
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/20 border border-red-500/30">
+              <AlertTriangle className="h-8 w-8 text-red-400" />
             </div>
-            <CardTitle className="text-xl font-bold text-red-800 mb-2">
-              Unable to Join Event
-            </CardTitle>
-            <CardDescription className="text-red-700 text-base">
+            <h2 className="text-2xl font-semibold text-white mb-4">Access Restricted</h2>
+            <p className="text-white/70 mb-8 leading-relaxed">
               {error}
-            </CardDescription>
-          </CardHeader>
+            </p>
 
-          <CardFooter className="flex flex-col gap-3 pt-6 pb-8">
-            {error.includes('sign in') ? (
-              <Button
-                onClick={handleLoginRedirect}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
-                size="lg"
-              >
-                <LogIn className="mr-2 h-4 w-4" />
-                Sign In to Continue
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => router.push('/')}
-                className="w-full border-gray-300"
-                size="lg"
-              >
-                Return Home
-              </Button>
-            )}
-          </CardFooter>
-        </Card>
-      </div>
-    );
-  }
-
-  // Success State - Event Preview
-  if (tokenData) {
-    const { event, access } = tokenData;
-
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50">
-        <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-screen">
-          <div className="w-full max-w-2xl">
-            {/* Success indicator */}
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-4">
-                <CheckCircle className="w-8 h-8 text-emerald-600" />
+            <div className="flex flex-col gap-3">
+              {error.includes('sign in') ? (
+                <Button
+                  onClick={handleLoginRedirect}
+                  className="w-full h-14 bg-white text-black hover:bg-white/90 rounded-2xl text-lg font-medium transition-all"
+                >
+                  <LogIn className="mr-2 h-5 w-5" />
+                  Sign In to View
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  onClick={() => router.push('/')}
+                  className="w-full h-14 text-white hover:bg-white/10 rounded-2xl text-lg font-medium transition-all"
+                >
+                  Return Home
+                </Button>
+              )}
+            </div>
+          </motion.div>
+        ) : tokenData ? (
+          <motion.div
+            key="success"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="relative z-10 w-full max-w-2xl text-center"
+          >
+            {/* Minimal Header */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="mb-8"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white/90 text-xs font-medium uppercase tracking-[0.2em] mb-6">
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                Special Invitation
               </div>
-              <h1 className="text-2xl font-bold text-gray-800 mb-2">
-                You're invited!
+              <h1 className="text-5xl md:text-7xl font-bold text-white tracking-tight mb-6 drop-shadow-lg">
+                {tokenData.event.title}
               </h1>
-              <p className="text-gray-600">
-                {access.role === 'owner'
-                  ? 'Welcome back! This is your event.'
-                  : access.role === 'co_host'
-                    ? 'Welcome back! You\'re a co-host of this event.'
-                    : 'You have access to this event.'
-                }
-              </p>
-            </div>
+              {tokenData.event.description && (
+                <p className="text-lg md:text-xl text-white/80 max-w-xl mx-auto font-light leading-relaxed mb-12">
+                  {tokenData.event.description}
+                </p>
+              )}
+            </motion.div>
 
-            {/* Event Card */}
-            <Card className="bg-white/95 backdrop-blur-sm shadow-2xl border-0 overflow-hidden">
-              {/* Cover Image */}
-              <div className="relative h-48 bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400">
-                {event.cover_image?.url ? (
-                  <img
-                    src={event.cover_image.url}
-                    alt={event.title}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 to-cyan-500 opacity-90" />
-                )}
-                <div className="absolute inset-0 bg-black/20" />
-
-                {/* Event Type Badge */}
-                <div className="absolute top-4 right-4">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/90 text-gray-700 backdrop-blur-sm">
-                    <Users className="w-3 h-3 mr-1" />
-                    {getVisibilityLabel(event.visibility)}
-                  </span>
-                </div>
+            {/* Event Details Grid - Minimalist */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className={`grid gap-6 mb-12 ${tokenData.event.location?.name ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}
+            >
+              <div className="flex flex-col items-center p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                <Calendar className="w-6 h-6 text-white/40 mb-3" />
+                <div className="text-white font-medium">{formatDate(tokenData.event.start_date)}</div>
+                <div className="text-white/50 text-sm mt-1">{formatTime(tokenData.event.start_date)}</div>
               </div>
 
-              <CardContent className="p-8">
-                {/* Event Details */}
-                <div className="text-center mb-8">
-                  <h2 className="text-3xl font-bold text-gray-800 mb-3">
-                    {event.title}
-                  </h2>
-                  {event.description && (
-                    <p className="text-gray-600 text-lg leading-relaxed mb-4">
-                      {event.description}
-                    </p>
-                  )}
+              {tokenData.event.location?.name && (
+                <div className="flex flex-col items-center p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                  <MapPin className="w-6 h-6 text-white/40 mb-3" />
+                  <div className="text-white font-medium truncate max-w-[200px]">{tokenData.event.location.name}</div>
+                  <div className="text-white/50 text-sm mt-1">Location</div>
                 </div>
+              )}
+            </motion.div>
 
-                {/* Event Info */}
-                <div className="grid gap-4 mb-8">
-                  <div className="flex items-center justify-center gap-3 p-4 bg-gray-50 rounded-xl">
-                    <Calendar className="h-5 w-5 text-emerald-600 flex-shrink-0" />
-                    <div className="text-center">
-                      <p className="font-semibold text-gray-800">
-                        {formatDate(event.start_date)}
-                      </p>
+            {/* Action */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+              className="flex flex-col items-center gap-6"
+            >
+              <Button
+                onClick={handleJoinEvent}
+                className="group relative h-16 px-12 bg-white text-black hover:bg-white/90 rounded-full text-xl font-semibold shadow-[0_0_30px_rgba(255,255,255,0.2)] transition-all duration-300 hover:scale-105 active:scale-95 overflow-hidden"
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  View Invitation
+                  <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                </span>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+              </Button>
+
+              {/* <div className="flex items-center gap-4 text-white/40 text-sm font-light">
+                <div className="flex -space-x-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="w-6 h-6 rounded-full border border-white/20 bg-white/5 flex items-center justify-center">
+                      <Users className="w-3 h-3" />
                     </div>
-                  </div>
-
-                  {event.location?.name && (
-                    <div className="text-center text-gray-600">
-                      📍 {event.location.name}
-                    </div>
-                  )}
+                  ))}
                 </div>
+                <span>Join others at the event</span>
+              </div> */}
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
-                {/* Join Button */}
-                <div className="text-center">
-                  <Button
-                    onClick={handleJoinEvent}
-                    size="lg"
-                    className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white px-8 py-3 text-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-                  >
-                    <ArrowRight className="mr-2 h-5 w-5" />
-                    {access.role === 'owner' ? 'Manage Event' : 'Join the Event'}
-                  </Button>
-
-                  <p className="text-sm text-gray-500 mt-4">
-                    You'll be taken to the event gallery where you can view and share memories
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Footer */}
-            <div className="text-center mt-8">
-              <p className="text-sm text-gray-500">
-                {access.role === 'guest'
-                  ? "Can't join right now? Your invitation will be waiting for you."
-                  : "Thanks for being part of this event!"
-                }
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* Subtle bottom footer */}
+      <div className="absolute bottom-8 left-0 right-0 text-center">
+        <p className="text-white/20 text-[10px] uppercase tracking-[0.3em] font-medium">
+          Powered by Crystal Events
+        </p>
       </div>
-    );
-  }
-
-  return null;
+    </div>
+  );
 }

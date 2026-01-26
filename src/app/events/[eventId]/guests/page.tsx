@@ -26,7 +26,7 @@ import {
   EyeIcon,
 } from 'lucide-react';
 import { getEventById } from '@/services/apis/events.api';
-import { useAuthToken } from '@/hooks/use-auth';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 // Participant hooks
 import {
@@ -39,6 +39,7 @@ import {
   useFilteredParticipants,
 } from '@/hooks/participants.hooks';
 import type { InviteParticipantRequest, ParticipantFilters } from '@/services/apis/participants.api';
+import { getEventGuestSessions, revokeGuestSession, GuestSession } from '@/services/apis/events.api';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -85,9 +86,10 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from "sonner";
+import useEventStore from '@/stores/useEventStore';
 
 // Types
-import { Event } from '@/types/events';
+import { Event } from '@/types/backend-types/event.type';
 
 interface GuestInvite {
   email: string;
@@ -102,7 +104,17 @@ interface PageProps {
 export default function GuestManagementPage({ params }: PageProps) {
   const { eventId } = React.use(params);
   const router = useRouter();
-  const authToken = useAuthToken();
+  const { getAccessToken } = useSecureAuth();
+  const { userRole } = useEventStore();
+
+  // Access control - only creators and co-hosts can manage guests
+  React.useEffect(() => {
+    const allowedRoles = ['creator', 'co_host'];
+    if (!allowedRoles.includes(userRole || '')) {
+      toast.error("Access denied. Only event creators and co-hosts can manage participants.");
+      router.push(`/events/${eventId}`);
+    }
+  }, [userRole, eventId, router]);
 
   // Local state for UI
   const [event, setEvent] = useState<Event | null>(null);
@@ -124,12 +136,52 @@ export default function GuestManagementPage({ params }: PageProps) {
   // Client-side filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'all' | 'co_hosts' | 'viewers'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'co_hosts' | 'viewers' | 'sessions'>('all');
+
 
   // Invite form state
   const [newInvites, setNewInvites] = useState<GuestInvite[]>([
     { email: '', role: 'co_host' }
   ]);
+
+  // Guest Sessions State (Phase 3)
+  const [guestSessions, setGuestSessions] = useState<GuestSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+
+  // Fetch sessions when tab is active
+  useEffect(() => {
+    if (activeTab === 'sessions' && tokenChecked) {
+      const fetchSessions = async () => {
+        setSessionsLoading(true);
+        try {
+          const token = getAccessToken();
+          if (token) {
+            const response = await getEventGuestSessions(eventId, token);
+            setGuestSessions(response.data);
+          }
+        } catch (error) {
+          toast.error("Failed to load guest sessions");
+        } finally {
+          setSessionsLoading(false);
+        }
+      };
+      fetchSessions();
+    }
+  }, [activeTab, eventId, tokenChecked, getAccessToken]);
+
+  const handleRevokeSession = async (sessionId: string) => {
+    try {
+      const token = getAccessToken();
+      if (!token) return;
+      await revokeGuestSession(eventId, sessionId, token);
+      toast.success("Session revoked");
+      // Refresh list
+      const response = await getEventGuestSessions(eventId, token);
+      setGuestSessions(response.data);
+    } catch (error) {
+      toast.error("Failed to revoke session");
+    }
+  };
 
   // Add a delayed check to avoid premature redirects
   useEffect(() => {
@@ -167,24 +219,15 @@ export default function GuestManagementPage({ params }: PageProps) {
 
   // Load event data
   useEffect(() => {
-    // Only proceed if either we have an authToken or the token check timeout has elapsed
-    if (!authToken && !tokenChecked) {
-      console.log('Waiting for auth token to load or timeout...');
-      return;
-    }
-
     const loadEvent = async () => {
-      const token = authToken || localStorage.getItem('rc-token');
+      const token = getAccessToken();
 
-      // Only redirect if we've checked thoroughly for a token and still don't have one
-      if (!token && tokenChecked) {
-        console.log('No auth token found after timeout, redirecting to login...');
+      if (!token) {
+        console.log('No auth token found, redirecting to login...');
         toast.error("You need to be logged in to manage participants.");
         router.push('/login');
         return;
       }
-
-      if (!token) return; // Don't proceed without token
 
       try {
         const eventData = await getEventById(eventId, token);
@@ -203,7 +246,7 @@ export default function GuestManagementPage({ params }: PageProps) {
     };
 
     loadEvent();
-  }, [eventId, authToken, router, tokenChecked]);
+  }, [eventId, getAccessToken, router]);
 
   // Handlers
   const handleTabChange = (value: string) => {
@@ -346,7 +389,7 @@ export default function GuestManagementPage({ params }: PageProps) {
             <ArrowLeftIcon className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{event.name}</h1>
+            <h1 className="text-2xl font-bold">{event.title}</h1>
             <p className="text-gray-500">Participant Management</p>
           </div>
         </div>
@@ -447,6 +490,7 @@ export default function GuestManagementPage({ params }: PageProps) {
             <TabsTrigger value="all">All ({currentStats.totalParticipants})</TabsTrigger>
             <TabsTrigger value="co_hosts">Co-hosts ({currentStats.coHostCount})</TabsTrigger>
             <TabsTrigger value="viewers">Viewers ({currentStats.viewerCount})</TabsTrigger>
+            <TabsTrigger value="sessions">Active Sessions</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -469,23 +513,6 @@ export default function GuestManagementPage({ params }: PageProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuItem
-                  onClick={() => bulkUpdateRole.mutate({
-                    participantIds: selectedParticipants,
-                    role: 'co_host'
-                  })}
-                >
-                  Make Co-hosts
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => bulkUpdateRole.mutate({
-                    participantIds: selectedParticipants,
-                    role: 'viewer'
-                  })}
-                >
-                  Make Viewers
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-red-600"
                   onClick={handleBulkRemove}
@@ -656,11 +683,99 @@ export default function GuestManagementPage({ params }: PageProps) {
         </Table>
       </Card>
 
+      {/* Session List Tab Content */}
+      {activeTab === 'sessions' && (
+        <Card className="mt-6 border-t-0 rounded-t-none">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Identity</TableHead>
+                <TableHead>Access Method</TableHead>
+                <TableHead>Device</TableHead>
+                <TableHead>Last Active</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sessionsLoading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    <span className="animate-pulse">Loading sessions...</span>
+                  </TableCell>
+                </TableRow>
+              ) : guestSessions.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                    No active guest sessions found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                guestSessions.map((session) => (
+                  <TableRow key={session._id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                          {session.aws_face_id ? <EyeIcon size={16} /> : <UserIcon size={16} />}
+                        </div>
+                        <div>
+                          <div className="font-medium">
+                            {session.guest_info?.name || (session.aws_face_id ? 'Face User' : 'Anonymous Guest')}
+                          </div>
+                          <div className="text-xs text-gray-500 font-mono">
+                            {session.session_id.substring(0, 12)}...
+                          </div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="capitalize">
+                        {session.access_method.replace('_', ' ')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {session.device_fingerprint?.platform || 'Unknown'}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {session.device_fingerprint?.user_agent ? 'Browser' : ''}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {session.last_activity_at ? format(new Date(session.last_activity_at), 'PP p') : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {session.status === 'active' ? (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-none">Active</Badge>
+                      ) : (
+                        <Badge variant="secondary">{session.status}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {session.status === 'active' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() => handleRevokeSession(session._id)}
+                        >
+                          Revoke
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
       {/* Invite Dialog */}
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Invite Participants to {event.name}</DialogTitle>
+            <DialogTitle>Invite Participants to {event.title}</DialogTitle>
             <DialogDescription>
               Invite people to view or contribute photos to this event
             </DialogDescription>
@@ -770,9 +885,9 @@ export default function GuestManagementPage({ params }: PageProps) {
             </div>
 
             <div className="text-center pt-4">
-              <p className="text-sm font-medium mb-1">{event.name}</p>
+              <p className="text-sm font-medium mb-1">{event.title}</p>
               <p className="text-xs text-gray-500">
-                {event?.access?.level === 'invited_only'
+                {event.visibility === 'invited_only'
                   ? 'Invited participants only'
                   : 'Anyone with this link can join'}
               </p>

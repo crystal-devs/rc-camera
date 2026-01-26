@@ -7,13 +7,6 @@ export interface Photo {
   takenBy: number;
   imageUrl: string;
   thumbnail?: string;
-  compressedVersions?: Array<{
-    quality: string;
-    url: string;
-    size_mb: number;
-    width: number;
-    height: number;
-  }>;
   createdAt: Date;
   approval?: {
     status: 'pending' | 'approved' | 'rejected' | 'auto_approved';

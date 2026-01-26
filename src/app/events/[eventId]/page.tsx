@@ -25,13 +25,15 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import useEventStore from '@/stores/useEventStore';
 import { useStore } from '@/lib/store';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
+import EventCoverSelector from '@/components/event/EventCoverSelector';
 
 export default function EventDashboardPage() {
     const params = useParams();
     const router = useRouter();
     const eventId = params.eventId as string;
     const userData = useStore(state => state.userData);
-      
+
 
     const {
         selectedEvent,
@@ -40,14 +42,15 @@ export default function EventDashboardPage() {
         userRole
     } = useEventStore();
 
+    const { getAccessToken } = useSecureAuth();
     const [authToken, setAuthToken] = React.useState('');
     const [wallUrl, setWallUrl] = React.useState('');
 
     // Initialize auth token
     React.useEffect(() => {
-        const token = localStorage.getItem('authToken') || '';
+        const token = getAccessToken() || '';
         setAuthToken(token);
-    }, []);
+    }, [getAccessToken]);
 
     // Fetch event data
     React.useEffect(() => {
@@ -182,9 +185,15 @@ export default function EventDashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Main Content */}
                 <div className="lg:col-span-2 space-y-8">
+                    {/* Event Cover Selector */}
+                    <EventCoverSelector
+                        eventId={eventId}
+                        currentCover={selectedEvent?.cover_image}
+                    />
+
                     {/* Event Title */}
                     <div>
-                        <h2 className="text-xl font-semibold text-gray-900 mb-6">{selectedEvent.title}</h2>
+                        <h2 className="text-xl font-semibold text-gray-900 mb-6">{selectedEvent?.title || 'Event'}</h2>
                     </div>
 
                     {/* How it works section */}
@@ -357,7 +366,7 @@ export default function EventDashboardPage() {
                             <div className="text-sm">
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-gray-600">
-                                        {selectedEvent.stats.total_size_mb.toFixed(2)} GB of 0.0 GB used (0%)
+                                        {selectedEvent?.stats?.total_size_mb?.toFixed(2) || '0.00'} GB of 0.0 GB used (0%)
                                     </span>
                                     <Button variant="link" size="sm" className="h-auto p-0 text-xs">
                                         Upgrade
@@ -370,14 +379,14 @@ export default function EventDashboardPage() {
                                     <span className="text-sm text-gray-600 flex items-center gap-1">
                                         Published <ExternalLinkIcon className="h-3 w-3" />
                                     </span>
-                                    <span className="text-sm font-medium">{selectedEvent.stats.photos + selectedEvent.stats.videos}</span>
+                                    <span className="text-sm font-medium">{(selectedEvent?.stats?.photos || 0) + (selectedEvent?.stats?.videos || 0)}</span>
                                 </div>
 
                                 <div className="flex justify-between items-center">
                                     <span className="text-sm text-gray-600 flex items-center gap-1">
                                         Needs approval <ExternalLinkIcon className="h-3 w-3" />
                                     </span>
-                                    <span className="text-sm font-medium">{selectedEvent.stats.pending_approval}</span>
+                                    <span className="text-sm font-medium">{selectedEvent?.stats?.pending_approval || 0}</span>
                                 </div>
 
                                 <div className="flex justify-between items-center">
@@ -441,7 +450,7 @@ export default function EventDashboardPage() {
                                 <EyeIcon className="h-4 w-4 text-gray-400" />
                                 <span className="text-gray-600">Visibility:</span>
                                 <Badge variant="secondary" className="text-xs">
-                                    {selectedEvent.visibility}
+                                    {selectedEvent?.visibility || 'private'}
                                 </Badge>
                             </div>
 
@@ -449,14 +458,14 @@ export default function EventDashboardPage() {
                                 <ClockIcon className="h-4 w-4 text-gray-400" />
                                 <span className="text-gray-600">Created:</span>
                                 <span className="text-gray-900">
-                                    {new Date(selectedEvent.created_at).toLocaleDateString()}
+                                    {selectedEvent?.created_at ? new Date(selectedEvent.created_at).toLocaleDateString() : 'Unknown'}
                                 </span>
                             </div>
 
                             {selectedEvent.location?.name && (
                                 <div className="text-sm">
                                     <span className="text-gray-600">Location:</span>
-                                    <span className="text-gray-900 ml-1">{selectedEvent.location.name}</span>
+                                    <span className="text-gray-900 ml-1">{selectedEvent?.location?.name}</span>
                                 </div>
                             )}
                         </CardContent>

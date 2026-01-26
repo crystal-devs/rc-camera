@@ -17,6 +17,8 @@ import {
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useStore } from '@/lib/store';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
+import { useToken } from '@/hooks/useToken';
 
 interface EventHeaderProps {
     event: {
@@ -33,6 +35,7 @@ interface EventHeaderProps {
 export default function EventHeader({ event }: EventHeaderProps) {
     const router = useRouter();
     const { fetchUsage } = useStore();
+    const { getAccessToken } = useSecureAuth();
     const [isFavorite, setIsFavorite] = useState(event.isFavorite || false);
 
     const toggleFavorite = () => {
@@ -98,7 +101,7 @@ export default function EventHeader({ event }: EventHeaderProps) {
                                 onClick={async () => {
                                     if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
                                         try {
-                                            const authToken = localStorage.getItem('rc-token');
+                                            const authToken = getAccessToken();
                                             if (!authToken) {
                                                 toast.error("You need to be logged in to delete this event");
                                                 return;

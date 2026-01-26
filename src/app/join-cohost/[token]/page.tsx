@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useStore } from '@/lib/store';
 import { joinAsCoHost } from '@/services/apis/cohost.api';
 import { toast } from 'sonner';
+import { useToken } from '@/hooks/useToken';
 
 const JoinCoHostPage = () => {
   const params = useParams();
@@ -60,7 +61,7 @@ const JoinCoHostPage = () => {
 
     try {
       // Get auth token from localStorage
-      const authToken = localStorage.getItem('rc-token');
+      const authToken = useToken();
       
       if (!authToken) {
         // No auth token, redirect to login

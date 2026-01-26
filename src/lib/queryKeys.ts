@@ -2,12 +2,13 @@
 export const queryKeys = {
   // Base keys
   all: ['media'] as const,
-  
+
   // Events
   events: () => [...queryKeys.all, 'events'] as const,
+  eventsList: () => [...queryKeys.events(), 'list'] as const,
   event: (eventId: string) => [...queryKeys.events(), eventId] as const,
-  eventPhotos: (eventId: string, status?: string) => 
-    status 
+  eventPhotos: (eventId: string, status?: string) =>
+    status
       ? [...queryKeys.event(eventId), 'photos', status] as const
       : [...queryKeys.event(eventId), 'photos'] as const,
   eventCounts: (eventId: string) => [...queryKeys.event(eventId), 'counts'] as const,

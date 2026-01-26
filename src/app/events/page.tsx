@@ -12,9 +12,8 @@ import {
   PlusIcon,
   SearchIcon
 } from 'lucide-react';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState, useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -34,38 +33,88 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { fetchEvents } from '@/services/apis/events.api';
 import { Event } from '@/types/backend-types/event.type';
 import { toast } from "sonner";
 import EventCreateModal from '@/components/event/CreateEventModel';
+import { useEvents, useCreateEvent } from '@/hooks/useEvents';
+import { getSignedUrlForKey } from '@/services/apis/media.api';
+import { useToken } from '@/hooks/useToken';
+import { useEffect } from 'react';
 
 
 export default function EventsPage() {
   const router = useRouter();
-  const [events, setEvents] = useState<Event[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'date-desc' | 'date-asc' | 'name-asc' | 'name-desc'>('date-desc');
   const [filterType, setFilterType] = useState<'all' | 'active' | 'past'>('all');
   const [activeTab, setActiveTab] = useState<'grid' | 'list'>('grid');
   const [showCreateEventDialogue, setShowCreateEventDialogue] = useState(false);
+  const [coverUrls, setCoverUrls] = useState<Map<string, string>>(new Map());
+  const authToken = useToken();
 
-  useEffect(() => {
-    const loadEvents = async () => {
+  // Use React Query for events fetching with background refetching
+  const { data: events = [], isLoading, error, refetch } = useEvents({ enableBackgroundRefetch: true });
+  const createEventMutation = useCreateEvent();
+
+  // Extract S3 key from cover data
+  const getS3Key = (cover: any): string | null => {
+    // If public_id looks like a key path (contains 'events/'), use it
+    if (cover?.public_id && cover.public_id.includes('events/')) {
+      return cover.public_id;
+    }
+    // Otherwise, extract from the URL
+    if (cover?.url) {
       try {
-        let getAllEvents = await fetchEvents();
-        console.log("getAllEvents", getAllEvents);
-        setEvents(getAllEvents || []);
+        const url = new URL(cover.url);
+        const pathParts = url.pathname.split('/');
+        // Remove leading slash and 'events/' prefix to get the key
+        if (pathParts[1] === 'events') {
+          return pathParts.slice(1).join('/'); // events/.../original/file.jpg
+        }
       } catch (error) {
-        console.error('Error loading events:', error);
-        toast.error("Failed to load your events. Please try again.");
-      } finally {
-        setIsLoading(false);
+        console.error('Failed to parse URL for S3 key:', error);
       }
+    }
+    return null;
+  };
+
+  // Generate signed URLs for event covers
+  useEffect(() => {
+    const generateCoverUrls = async () => {
+      if (!events.length || !authToken) return;
+
+      const newUrls = new Map(coverUrls);
+
+      for (const event of events) {
+        if (event.cover_image && !newUrls.has(event._id)) {
+          const s3Key = getS3Key(event.cover_image);
+          if (s3Key) {
+            try {
+              const signedUrl = await getSignedUrlForKey(s3Key, authToken);
+              newUrls.set(event._id, signedUrl);
+            } catch (error) {
+              console.error('Failed to generate signed URL for event cover:', error);
+              // Fallback to existing URL
+              if (event.cover_image.url) {
+                newUrls.set(event._id, event.cover_image.url);
+              }
+            }
+          } else if (event.cover_image.url) {
+            newUrls.set(event._id, event.cover_image.url);
+          }
+        }
+      }
+
+      setCoverUrls(newUrls);
     };
 
-    loadEvents();
-  }, [toast]);
+    generateCoverUrls();
+  }, [events, authToken]);
+
+  // Handle errors
+  if (error) {
+    toast.error("Failed to load your events. Please try again.");
+  }
 
   // Filter and sort events
   const filteredAndSortedEvents = events
@@ -139,7 +188,8 @@ export default function EventsPage() {
             </Button>
           }
           onCreated={(created) => {
-            setEvents(prev => [created, ...prev]);
+            // The mutation will handle cache updates
+            setShowCreateEventDialogue(false);
           }}
         />
       </div>
@@ -266,15 +316,16 @@ export default function EventsPage() {
               >
                 {/* Card Background Image */}
                 <div className="absolute inset-0">
-                  {event?.cover_image?.url ? (
-                    <Image
-                      src={event?.cover_image?.url}
+                  {coverUrls.get(event._id) ? (
+                    <img
+                      src={coverUrls.get(event._id)!}
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = '/images/event-thumbnail-placeholder.jpg'
                       }}
-                      alt={'title'}
-                      fill
-                      className="object-cover"
+                      alt={event.title}
+                      className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+                      loading="lazy"
+                      decoding="async"
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">
@@ -355,12 +406,13 @@ export default function EventsPage() {
                 onClick={() => navigateToEvent(event._id)}
               >
                 <div className="relative h-24 w-24 sm:h-32 sm:w-32 flex-shrink-0">
-                  {event?.cover_image?.url ? (
-                    <Image
-                      src={event?.cover_image?.url}
+                  {coverUrls.get(event._id) ? (
+                    <img
+                      src={coverUrls.get(event._id)!}
                       alt={event.title}
-                      fill
-                      className="object-cover"
+                      className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+                      loading="lazy"
+                      decoding="async"
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-100">

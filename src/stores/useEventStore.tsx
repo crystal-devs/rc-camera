@@ -146,6 +146,9 @@ interface EventStore {
   setLoadingEvent: (loading: boolean) => void
   setLoadingAlbums: (loading: boolean) => void
   setError: (error: string | null) => void
+
+  // Reset
+  clearState: () => void
 }
 
 // Default PhotoWall settings factory
@@ -177,8 +180,11 @@ const ensurePhotowallSettings = (event: any): Event => {
   const mergedSettings = { ...defaults }
 
   Object.keys(defaults).forEach(key => {
-    if (currentSettings.hasOwnProperty(key)) {
-      mergedSettings[key] = currentSettings[key]
+    // Cast key to keyof typeof defaults to fix TS error
+    const k = key as keyof typeof defaults;
+    if (currentSettings.hasOwnProperty(k)) {
+      // @ts-ignore - Dynamic assignment is safe here due to defaults structure
+      mergedSettings[k] = currentSettings[k]
     } else {
       needsUpdate = true
     }
@@ -220,7 +226,7 @@ const useEventStore = create<EventStore>()(
       // Cache state (not persisted)
       eventsCache: new Map(),
       albumsCache: new Map(),
-      CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
+      CACHE_DURATION: 10 * 60 * 1000, // 10 minutes (User preference)
 
       // Transient state
       events: [],
@@ -556,7 +562,24 @@ const useEventStore = create<EventStore>()(
       // Loading state setters
       setLoadingEvent: (loading: boolean) => set({ isLoadingEvent: loading }),
       setLoadingAlbums: (loading: boolean) => set({ isLoadingAlbums: loading }),
-      setError: (error: string | null) => set({ error })
+      setError: (error: string | null) => set({ error }),
+
+      // NEW: Full state reset for logout
+      clearState: () => {
+        console.log('Resetting event store state');
+        set({
+          selectedEvent: null,
+          lastEventId: null,
+          userRole: null,
+          eventsCache: new Map(),
+          albumsCache: new Map(),
+          events: [],
+          currentEventAlbums: [],
+          isLoadingEvent: false,
+          isLoadingAlbums: false,
+          error: null
+        });
+      }
     }),
     {
       name: 'event-app-storage',

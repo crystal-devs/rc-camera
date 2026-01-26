@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { useStore } from '@/lib/store';
+import { useToken } from '@/hooks/useToken';
 
 interface EventHeaderProps {
     event: {
@@ -39,7 +40,7 @@ export default function EventDetailsHeader({ event }: EventHeaderProps) {
     const handleDeleteEvent = async () => {
         if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
             try {
-                const authToken = localStorage.getItem('rc-token');
+                const authToken = useToken();
                 if (!authToken) {
                     toast.error("You need to be logged in to delete this event");
                     return;

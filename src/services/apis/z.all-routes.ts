@@ -10,6 +10,11 @@ export const ALBUM_ROUTE = `${RC_API_BASE_URL}/album` // used for get user album
 
 export const UPLOAD_MEDIA_ROUTE = `${RC_API_BASE_URL}/media/upload`
 
-// auth 
+// auth
 export const LOGIN_ROUTE = `${RC_API_BASE_URL}/auth/login`
+export const REGISTER_ROUTE = `${RC_API_BASE_URL}/auth/register`
+export const REFRESH_TOKEN_ROUTE = `${RC_API_BASE_URL}/auth/refresh`
+export const LOGOUT_ROUTE = `${RC_API_BASE_URL}/auth/logout`
 export const VERIFY_USER_ROUTE = `${RC_API_BASE_URL}/auth/verify-clicky`
+export const CSRF_TOKEN_ROUTE = `${RC_API_BASE_URL}/auth/csrf-token`
+export const GOOGLE_OAUTH_ROUTE = `${RC_API_BASE_URL}/auth/google`

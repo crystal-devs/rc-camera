@@ -27,6 +27,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { EventSelector } from './EventSelector';
 import { useStore } from '@/lib/store';
 import { toast } from 'sonner';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
 interface TopNavbarProps {
     title?: string;
@@ -35,6 +36,7 @@ interface TopNavbarProps {
 
 export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarProps) {
     const router = useRouter();
+    const { logout: authLogout } = useSecureAuth();
 
     // Pull user data from global store (same source as Profile page)
     const userData = useStore(state => state.userData);
@@ -44,15 +46,19 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
 
     React.useEffect(() => {
         if (hydrated && isAuthenticated && !userData) {
-            fetchUserData().catch(() => {});
+            fetchUserData().catch(() => { });
         }
     }, [hydrated, isAuthenticated, userData, fetchUserData]);
 
-    const handleLogout = () => {
-        const { logout } = useStore.getState();
-        logout();
-        toast.success('Logged out successfully');
-        router.push('/login');
+    const handleLogout = async () => {
+        try {
+            await authLogout();
+            toast.success('Logged out successfully');
+            // SecureAuthContext handles the redirection after logout cleanup
+        } catch (error) {
+            console.error('Logout failed:', error);
+            toast.error('Logout failed. Please try again.');
+        }
     };
 
     const handleAccountSettings = () => {
@@ -129,6 +135,21 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
                                 <span>Settings</span>
                             </DropdownMenuItem>
 
+                            <DropdownMenuItem onClick={() => window.open('https://support.example.com', '_blank')}>
+                                <UserIcon className="mr-2 h-4 w-4" />
+                                <span>Help & Support</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem onClick={() => window.open('https://feedback.example.com', '_blank')}>
+                                <PlusIcon className="mr-2 h-4 w-4" />
+                                <span>Feature Request</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem onClick={() => window.open('https://issues.example.com', '_blank')}>
+                                <Settings2Icon className="mr-2 h-4 w-4" />
+                                <span>Report Issue</span>
+                            </DropdownMenuItem>
+
                             <DropdownMenuSeparator />
 
                             <DropdownMenuItem
@@ -192,6 +213,21 @@ export function TopNavbar({ title = 'Rose Click', onToggleSidebar }: TopNavbarPr
                             <DropdownMenuItem onClick={() => router.push('/settings')}>
                                 <Settings2Icon className="mr-2 h-4 w-4" />
                                 <span>Settings</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem onClick={() => window.open('https://support.example.com', '_blank')}>
+                                <UserIcon className="mr-2 h-4 w-4" />
+                                <span>Help & Support</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem onClick={() => window.open('https://feedback.example.com', '_blank')}>
+                                <PlusIcon className="mr-2 h-4 w-4" />
+                                <span>Feature Request</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem onClick={() => window.open('https://issues.example.com', '_blank')}>
+                                <Settings2Icon className="mr-2 h-4 w-4" />
+                                <span>Report Issue</span>
                             </DropdownMenuItem>
 
                             <DropdownMenuSeparator />

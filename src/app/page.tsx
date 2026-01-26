@@ -2,6 +2,7 @@
 'use client';
 
 import { AlbumCard } from '@/components/album/AlbumCard';
+import { AuthGuard } from '@/components/auth/AuthGuard';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -21,14 +22,8 @@ export default function HomePage() {
   const [accessibleEvents, setAccessibleEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      const ok = await verifyUser();
-      if (!ok) {
-        router.push('/login');
-      }
-    })();
-  }, []);
+  // AuthGuard in ConditionalNavigation handles authentication
+  // No need for manual verification here
 
 
 

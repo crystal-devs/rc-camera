@@ -1,7 +1,7 @@
-// components/OptimizedPhotoGrid.tsx - Updated PhotoGrid component
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Photo } from '@/types/PhotoGallery.types';
 import { OptimizedProgressiveImage } from '../album/ProgressiveImage';
+import { useImagePreloader } from '@/hooks/useImagePreloader';
 
 interface OptimizedPhotoGridProps {
   photos: Photo[];
@@ -16,6 +16,10 @@ interface OptimizedPhotoGridProps {
   onStatusUpdate: (photoId: string, status: string) => void;
   onDownload?: (photo: Photo) => void;
   onDelete?: (photoId: string) => void;
+  onSetCover?: (photo: Photo) => void;
+  selectionMode?: boolean;
+  selectedPhotos?: Set<string>;
+  onToggleSelection?: (photoId: string) => void;
   className?: string;
 }
 
@@ -27,31 +31,72 @@ export const OptimizedPhotoGrid = ({
   onStatusUpdate,
   onDownload,
   onDelete,
+  onSetCover,
+  selectionMode = false,
+  selectedPhotos = new Set(),
+  onToggleSelection,
   className = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1 sm:gap-1 md:gap-1"
 }: OptimizedPhotoGridProps) => {
-  console.log('📊 OptimizedPhotoGrid rendering with', photos.length, 'photos');
-  
-  // Debug: Check optimization savings
-  if (photos.length > 0 && process.env.NODE_ENV === 'development') {
-    const originalSize = photos.length * 1.8; // MB if using original
-    const optimizedSize = photos.length * 0.04; // MB using thumbnails
-    // console.log(`🚀 Optimization: ${originalSize.toFixed(1)}MB → ${optimizedSize.toFixed(1)}MB (${Math.round((1 - optimizedSize/originalSize) * 100)}% smaller)`);
-  }
+  // 🚀 PERFORMANCE: Preload logic
+  const { preloadBatch } = useImagePreloader(photos, 3); // Preload 3 items ahead (Industry standard)
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  useEffect(() => {
+    // Disconnect previous observer
+    if (observerRef.current) observerRef.current.disconnect();
+
+    // Create new observer
+    observerRef.current = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const index = parseInt(entry.target.getAttribute('data-index') || '0', 10);
+          // When item N is visible, preload appropriate batch ahead
+          // We trigger preloading slightly aggressively
+          preloadBatch(index + 1);
+        }
+      });
+    }, {
+      rootMargin: '200px', // Trigger well before they are fully in view
+      threshold: 0.1
+    });
+
+    // Observe specific elements to trigger preloading
+    // We don't need to observe every single one, observing every 4th or 5th is efficient enough
+    // to keep the pipeline full without overwhelming the observer.
+    const items = document.querySelectorAll('.photo-grid-item');
+    items.forEach((item, idx) => {
+      if (idx % 5 === 0) { // Attach listener to every 5th item
+        observerRef.current?.observe(item);
+      }
+    });
+
+    return () => observerRef.current?.disconnect();
+  }, [photos, preloadBatch]);
 
   return (
     <div className={className}>
       {photos.map((photo, index) => (
-        <OptimizedProgressiveImage
+        <div
           key={photo.id}
-          photo={photo}
-          index={index}
-          onPhotoClick={onPhotoClick}
-          userPermissions={userPermissions}
-          currentTab={currentTab}
-          onStatusUpdate={onStatusUpdate}
-          onDownload={onDownload}
-          onDelete={onDelete}
-        />
+          data-index={index}
+          className="photo-grid-item w-full h-full" // Wrapper for observation
+        >
+          <OptimizedProgressiveImage
+            photo={photo}
+            index={index}
+            onPhotoClick={onPhotoClick}
+            userPermissions={userPermissions}
+            currentTab={currentTab}
+            onStatusUpdate={onStatusUpdate}
+            onDownload={onDownload}
+            onDelete={onDelete}
+            onSetCover={onSetCover}
+            selectionMode={selectionMode}
+            isSelected={selectedPhotos.has(photo.id)}
+            onToggleSelection={onToggleSelection}
+            priority={index < 12} // 🚀 OPTIMIZATION: Load first 12 images (above-the-fold) immediately
+          />
+        </div>
       ))}
     </div>
   );

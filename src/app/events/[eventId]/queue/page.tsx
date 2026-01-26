@@ -3,8 +3,8 @@
 
 'use client';
 
-import { useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,17 +21,33 @@ import {
 import { toast } from 'sonner';
 
 // Import your components and hooks
-import { useSimpleWebSocket } from '@/hooks/useWebSocket';
+import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useQueueManagement } from '@/hooks/useQueueManagement';
-import UploadQueueVisualization from '@/components/album/UploadQueueVisualization';
+// import UploadQueueVisualization from '@/components/album/UploadQueueVisualization';
+import useEventStore from '@/stores/useEventStore';
 
 export default function AdminQueueManagement() {
   const params = useParams();
   const eventId = params?.eventId as string;
   const [selectedTab, setSelectedTab] = useState<'overview' | 'monitoring' | 'settings'>('overview');
+  const { userRole } = useEventStore();
+  const router = useRouter();
+
+  // Access control - only creators and co-hosts can access queue management
+  useEffect(() => {
+    const allowedRoles = ['creator', 'co_host'];
+    if (!allowedRoles.includes(userRole || '')) {
+      toast.error("Access denied. Only event creators and co-hosts can access queue management.");
+      router.push(`/events/${eventId}`);
+    }
+  }, [userRole, eventId, router]);
 
   // WebSocket connection for admin
-  const webSocket = useSimpleWebSocket(eventId, undefined, 'admin');
+  const webSocket = useEventWebSocket(eventId, {
+    userType: 'admin',
+    shareToken: undefined,
+    enabled: true
+  });
 
   // Queue management hook
   const queueManager = useQueueManagement(eventId, webSocket, {
@@ -234,13 +250,13 @@ export default function AdminQueueManagement() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <UploadQueueVisualization
+          {/* <UploadQueueVisualization
             eventId={eventId}
             webSocket={webSocket}
             autoRefresh={true}
             refreshInterval={5000}
             className="mt-6"
-          />
+          /> */}
         </TabsContent>
 
         <TabsContent value="monitoring" className="space-y-4">

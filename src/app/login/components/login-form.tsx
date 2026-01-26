@@ -1,18 +1,20 @@
 "use client";
 
 import { useGoogleLogin } from '@react-oauth/google';
-import { loginUser } from '@/services/apis/auth.api';
+import { loginUser, registerUser, initializeCsrf, initiateGoogleOAuth, handleGoogleOAuthCallback, LoginCredentials, RegisterCredentials } from '@/services/apis/auth.api';
 import { joinAsCoHost } from '@/services/apis/cohost.api';
+import { fetchEvents } from '@/services/apis/events.api';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UserPlus, Crown, Calendar } from 'lucide-react';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
+import { authManager } from '@/lib/auth-manager';
 
 interface InviteContext {
   token: string;
@@ -31,10 +33,17 @@ interface LoginFormProps {
 const isValidRedirectUrl = (url: string): boolean => {
   if (!url || typeof url !== 'string') return false;
   try {
+    // Only allow relative URLs starting with /
     if (!url.startsWith('/')) return false;
-    const guestPagePattern = /^\/guest\/[a-zA-Z0-9_-]+(\?.*)?$/;
-    const eventPagePattern = /^\/events\/[a-zA-Z0-9_-]+(\?.*)?$/;
-    return guestPagePattern.test(url) || eventPagePattern.test(url);
+    // Prevent protocol-relative URLs that could lead to external domains
+    if (url.startsWith('//')) return false;
+    // Only allow specific safe patterns without query parameters for security
+    const safePatterns = [
+      /^\/events\/[a-zA-Z0-9_-]+$/,
+      /^\/guest\/[a-zA-Z0-9_-]+$/,
+      /^\/events$/
+    ];
+    return safePatterns.some(pattern => pattern.test(url));
   } catch {
     return false;
   }
@@ -46,8 +55,17 @@ export function LoginForm({
   ...props
 }: LoginFormProps & React.ComponentProps<"form">) {
   const router = useRouter();
+  const { login: authLogin, register: authRegister, setAuthFromResult, isAuthenticated, isLoading: authLoading } = useSecureAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [lastAttemptTime, setLastAttemptTime] = useState(0);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: ''
+  });
   const login = useStore(state => state.login);
 
   useEffect(() => {
@@ -56,15 +74,76 @@ export function LoginForm({
     if (storedRedirectUrl && isValidRedirectUrl(storedRedirectUrl)) {
       setRedirectUrl(storedRedirectUrl);
     }
+
+    // Initialize CSRF token on component mount
+    initializeCsrf();
   }, []);
 
+  // Redirect authenticated users away from login form
+  // Redirect authenticated users with smart logic
+  useEffect(() => {
+    const checkRedirect = async () => {
+      if (!authLoading && isAuthenticated && !inviteContext) {
+        // Smart redirect logic for authenticated users
+        const storedRedirect = localStorage.getItem('redirectAfterLogin');
+        if (storedRedirect && isValidRedirectUrl(storedRedirect)) {
+          localStorage.removeItem('redirectAfterLogin');
+          router.push(storedRedirect);
+          return;
+        }
+
+        // Default to events page
+        router.push('/events');
+      }
+    };
+
+    checkRedirect();
+  }, [isAuthenticated, authLoading, inviteContext, router]);
+
   const handleSuccessfulLogin = async (profile: any, apiResult: any) => {
-    // Store auth token from API result
-    if (apiResult?.token) {
-      localStorage.setItem('authToken', apiResult.token);
+    const accessToken = apiResult?.tokens?.accessToken || apiResult?.token;
+    const refreshToken = apiResult?.tokens?.refreshToken || apiResult?.refreshToken || '';
+    const expiresAt = apiResult?.tokens?.expiresAt || apiResult?.expiresAt || Date.now() + 3600000;
+    const userId = apiResult?.user?.id || apiResult?.userId || 'unknown';
+
+    if (!accessToken) {
+      console.error('No access token!', apiResult);
+      toast.error('Authentication failed');
+      return;
     }
 
-    // Update store with login
+    // Prepare user data for SecureAuthContext
+    const userData = {
+      id: userId,
+      name: profile.name,
+      email: profile.email,
+      avatar: profile.picture,
+      provider: "google" as "google" | "email"
+    };
+
+    // Prepare tokens for SecureAuthContext
+    const tokens = {
+      accessToken,
+      refreshToken,
+      expiresAt: typeof expiresAt === 'string' ? new Date(expiresAt).getTime() : expiresAt
+    };
+
+    // Update SecureAuthContext (primary auth system)
+    setAuthFromResult(userData, tokens);
+
+    // Update authManager (for API client compatibility)
+    try {
+      await authManager.loginUser({
+        accessToken,
+        refreshToken,
+        expiresAt: tokens.expiresAt,
+        userId
+      });
+    } catch (error) {
+      console.error('Failed to update authManager:', error);
+    }
+
+    // Update old store with login (backward compatibility)
     login({
       name: profile.name,
       email: profile.email,
@@ -72,94 +151,147 @@ export function LoginForm({
       provider: "google"
     });
 
-    let finalRedirectUrl = '/'; // Default fallback
-    let shouldDelayRedirect = false;
+    // Determine redirect URL with simplified logic
+    let finalRedirectUrl = '/events';
+    let redirectDelay = 100;
 
-    // Handle invite context if present (HIGHEST PRIORITY)
+    // Handle invite context (highest priority)
     if (inviteContext) {
       if (inviteContext.type === 'cohost') {
+        // Handle co-host invitation
         try {
-          console.log('🔄 Attempting to join as co-host with token:', inviteContext.token);
-
-          // Auto-join as co-host
-          const cohostResponse = await joinAsCoHost(inviteContext.token, apiResult.token);
-
-          console.log('📊 Co-host API response:', cohostResponse);
-
-          if (cohostResponse.status) {
-            const eventId = cohostResponse.data?.event_id;
-            console.log('🎯 Got event ID from response:', eventId);
-
-            if (eventId) {
-              finalRedirectUrl = `/events/${eventId}`;
-              console.log('✅ Setting redirect URL to:', finalRedirectUrl);
-
-              if (cohostResponse.message.includes('already a co-host')) {
-                toast.info('You are already a co-host for this event');
-              } else {
-                toast.success(`Successfully joined as co-host!`);
-              }
-            } else {
-              console.log('⚠️ No event ID found, using fallback');
-              finalRedirectUrl = '/events';
-              toast.success('Successfully joined as co-host!');
-            }
-            shouldDelayRedirect = true;
+          const cohostResponse = await joinAsCoHost(inviteContext.token, accessToken);
+          if (cohostResponse.status && cohostResponse.data?.event_id) {
+            finalRedirectUrl = `/events/${cohostResponse.data.event_id}`;
+            toast.success('Successfully joined as co-host!');
+            redirectDelay = 1500;
           } else {
-            console.log('❌ Co-host join failed:', cohostResponse.message);
             toast.error(cohostResponse.message || 'Failed to join as co-host');
-            finalRedirectUrl = '/events';
           }
-        } catch (cohostError: any) {
-          console.error('💥 Auto co-host join error:', cohostError);
-          toast.error('Login successful, but there was an issue with the co-host invitation.');
-          finalRedirectUrl = '/events';
+        } catch (error) {
+          console.error('Co-host join error:', error);
+          toast.error('Login successful, but co-host invitation failed');
         }
       } else if (inviteContext.type === 'guest') {
-        // Guest invite - redirect to guest page (auto-claim will happen there)
         finalRedirectUrl = `/guest/${inviteContext.token}`;
-        console.log('👤 Guest invite - redirecting to:', finalRedirectUrl);
-        toast.success('Welcome! Your previous uploads will be claimed automatically.');
-        shouldDelayRedirect = true;
+        toast.success('Welcome! Your uploads will be claimed automatically.');
+        redirectDelay = 1500;
       }
     } else {
-      // No invite context - check for stored redirect (LOWER PRIORITY)
-      const currentRedirectUrl = localStorage.getItem('redirectAfterLogin');
-      if (currentRedirectUrl && isValidRedirectUrl(currentRedirectUrl)) {
-        finalRedirectUrl = currentRedirectUrl;
+      // Check for stored redirect URL
+      const storedRedirect = localStorage.getItem('redirectAfterLogin');
+      if (storedRedirect && isValidRedirectUrl(storedRedirect)) {
+        finalRedirectUrl = storedRedirect;
+        localStorage.removeItem('redirectAfterLogin');
       }
+      // Default to /events if no valid redirect
     }
 
-    toast.success("Welcome back, " + profile.name);
+    // Sanitize user input to prevent XSS
+    const sanitizedName = profile.name.replace(/[<>]/g, '').substring(0, 50);
+    toast.success(`Welcome back, ${sanitizedName}!`);
 
-    // Clean up all stored redirects and contexts
+    // Clean up stored data
     localStorage.removeItem('inviteContext');
     localStorage.removeItem('redirectAfterLogin');
 
-    // Redirect with appropriate delay
-    const redirectDelay = shouldDelayRedirect ? 1500 : 100;
+    // Use consistent navigation method
     setTimeout(() => {
-      console.log('🚀 Final redirect to:', finalRedirectUrl);
-
-      // Force navigation to ensure it works
-      if (finalRedirectUrl.startsWith('/events/') && finalRedirectUrl !== '/events') {
-        console.log('🎯 Using window.location.href for specific event page');
-        window.location.href = finalRedirectUrl;
-      } else if (finalRedirectUrl.startsWith('/guest/')) {
-        console.log('👤 Using window.location.href for guest page (for auto-claim)');
-        window.location.href = finalRedirectUrl;
-      } else {
-        console.log('📍 Using router.push for general navigation');
-        router.push(finalRedirectUrl);
-      }
+      router.push(finalRedirectUrl);
     }, redirectDelay);
+  };
+
+  // Client-side validation functions
+  const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const validatePassword = (password: string) => password.length >= 8;
+  const validateName = (name: string) => name.trim().length >= 2;
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Rate limiting: max 5 attempts per minute
+    const now = Date.now();
+    const timeSinceLastAttempt = now - lastAttemptTime;
+
+    if (loginAttempts >= 5 && timeSinceLastAttempt < 60000) { // 1 minute
+      const remainingTime = Math.ceil((60000 - timeSinceLastAttempt) / 1000);
+      toast.error(`Too many login attempts. Please wait ${remainingTime} seconds.`);
+      return;
+    }
+
+    // Reset attempts if more than 1 minute has passed
+    if (timeSinceLastAttempt > 60000) {
+      setLoginAttempts(0);
+    }
+
+    setIsLoading(true);
+    setLastAttemptTime(now);
+
+    try {
+      // Client-side validation
+      if (!validateEmail(formData.email)) {
+        toast.error("Please enter a valid email address");
+        setIsLoading(false);
+        return;
+      }
+
+      if (!isLoginMode && !validateName(formData.name)) {
+        toast.error("Name must be at least 2 characters long");
+        setIsLoading(false);
+        return;
+      }
+
+      if (!validatePassword(formData.password)) {
+        toast.error("Password must be at least 8 characters long");
+        setIsLoading(false);
+        return;
+      }
+
+      if (isLoginMode) {
+        await authLogin({
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password
+        });
+        toast.success("Login successful!");
+      } else {
+        await authRegister({
+          name: formData.name.trim(),
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password
+        });
+        toast.success("Registration successful! Please log in.");
+        setIsLoginMode(true); // Switch to login mode after successful registration
+      }
+
+      // Handle redirect logic here (similar to handleSuccessfulLogin)
+      let finalRedirectUrl = '/events';
+      if (inviteContext) {
+        if (inviteContext.type === 'cohost') {
+          // Handle cohost logic
+          finalRedirectUrl = `/events/${inviteContext.eventId}`;
+        } else if (inviteContext.type === 'guest') {
+          finalRedirectUrl = `/guest/${inviteContext.token}`;
+        }
+      }
+
+      setTimeout(() => {
+        router.push(finalRedirectUrl);
+      }, 1000);
+
+    } catch (err: any) {
+      // Increment failed attempts for rate limiting
+      setLoginAttempts(prev => prev + 1);
+      toast.error(err?.message ?? `Something went wrong with ${isLoginMode ? 'login' : 'registration'}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const googleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setIsLoading(true);
       try {
-        // Fetch user profile from Google using access token
+        // Get user profile from Google
         const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: {
             Authorization: `Bearer ${tokenResponse.access_token}`,
@@ -167,19 +299,18 @@ export function LoginForm({
         });
         const profile = await res.json();
 
+        // Backend handles both login and registration for Google OAuth
         const result = await loginUser({
-          name: profile.name,
           email: profile.email,
+          name: profile.name,
           provider: "google",
-          profile_pic: profile.picture
-        });
+          googleAccessToken: tokenResponse.access_token // Send token for backend verification
+        } as LoginCredentials);
 
-        if (result) {
-          await handleSuccessfulLogin(profile, result);
-        }
+        await handleSuccessfulLogin(profile, result);
       } catch (err: any) {
-        console.error(err);
-        toast.error(err?.message ?? "Something went wrong with login");
+        console.error('Google login error:', err);
+        toast.error(err?.message ?? "Failed to authenticate with Google");
       } finally {
         setIsLoading(false);
       }
@@ -193,15 +324,12 @@ export function LoginForm({
 
   return (
     <form
-      className={cn("flex flex-col gap-10", className)}
+      className={cn("flex flex-col gap-10 p-6", className)}
       {...props}
-      onSubmit={(e) => {
-        e.preventDefault();
-        toast("Email/password login not implemented");
-      }}
+      onSubmit={handleEmailAuth}
     >
       <div className="flex flex-col items-start gap-2 text-center">
-        <h1 className="text-2xl font-bold">
+        <h1 className="text-3xl font-bold text-neutral-900">
           {inviteContext ? 'Join Event' : 'Welcome Back'}
         </h1>
         {redirectUrl && !inviteContext && (
@@ -237,11 +365,11 @@ export function LoginForm({
         </Alert>
       )}
 
-      <div className="grid gap-6">
+      <div className="grid gap-4">
         <Button
           type="button"
           variant="outline"
-          className="w-full"
+          className="w-full h-12 py-4 px-3 md:text-md bg-white border border-neutral-200 text-neutral-900 !hover:bg-neutral-50"
           onClick={() => googleLogin()}
           disabled={isLoading}
         >
@@ -258,30 +386,49 @@ export function LoginForm({
           }
         </Button>
 
-        <div className="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
-          <span className="bg-background text-muted-foreground relative z-10 px-2">
-            Or continue with
+        <div className="after:border-neutral-200 relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
+          <span className="bg-neutral-50 text-neutral-500 relative z-10 px-2 font-semibold">
+            or
           </span>
         </div>
 
-        <div className="grid gap-3">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" placeholder="m@example.com" required />
-        </div>
-        <div className="grid gap-3">
-          <div className="flex items-center">
-            <Label htmlFor="password">Password</Label>
-            <a
-              href="#"
-              className="ml-auto text-[12px] underline-offset-4 hover:underline text-muted-foreground"
-            >
-              Forgot your password?
-            </a>
+        {!isLoginMode && (
+          <div className="grid gap-3">
+            <Input
+              id="name"
+              type="text"
+              placeholder="Full Name"
+              required={!isLoginMode}
+              className='h-12 py-4 px-3 md:text-md !bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400 focus-visible:border-neutral-400'
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+            />
           </div>
-          <Input id="password" type="password" required />
+        )}
+        <div className="grid gap-3">
+          <Input
+            id="email"
+            type="email"
+            placeholder="m@example.com"
+            required
+            className='h-12 py-4 px-3 md:text-md !bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400 focus-visible:border-neutral-400'
+            value={formData.email}
+            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+          />
         </div>
-        <Button type="submit" className="w-full">
-          Log in
+        <div className="grid gap-3">
+          <Input
+            id="password"
+            type="password"
+            placeholder='Enter Password'
+            required
+            className='h-12 py-4 px-3 md:text-md !bg-white border-neutral-200 text-neutral-900 placeholder:text-neutral-400 focus-visible:ring-neutral-400 focus-visible:border-neutral-400'
+            value={formData.password}
+            onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+          />
+        </div>
+        <Button type="submit" className="w-full h-12 py-4 px-3 md:text-md bg-neutral-900 text-white hover:bg-neutral-800" disabled={isLoading}>
+          {isLoading ? 'Please wait...' : (isLoginMode ? 'Continue' : 'Sign up')}
         </Button>
       </div>
 
@@ -297,11 +444,28 @@ export function LoginForm({
         </div>
       )}
 
-      <div className="text-center text-sm">
+      <div className="text-center text-sm text-neutral-600">
         Don&apos;t have an account?{" "}
-        <a href="#" className="underline underline-offset-4">
-          Sign up
-        </a>
+        {isLoginMode ? (
+          <button
+            type="button"
+            className="underline underline-offset-4 text-neutral-900 hover:text-neutral-700"
+            onClick={() => setIsLoginMode(false)}
+          >
+            Sign up
+          </button>
+        ) : (
+          <>
+            Already have an account?{" "}
+            <button
+              type="button"
+              className="underline underline-offset-4 text-neutral-900 hover:text-neutral-700"
+              onClick={() => setIsLoginMode(true)}
+            >
+              Log in
+            </button>
+          </>
+        )}
       </div>
     </form>
   );

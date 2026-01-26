@@ -2,9 +2,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { updateEvent, deleteEvent } from '@/services/apis/events.api'
+import { deleteEvent } from '@/services/apis/events.api'
 import { uploadCoverImage } from '@/services/apis/media.api'
 import useEventStore, { Event } from '@/stores/useEventStore'
+import { getAuthToken } from '@/lib/store'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/queryKeys'
+import { useUpdateEvent, useDeleteEvent } from '@/hooks/useEvents'
+import { useToken } from './useToken'
 
 // Form data interface
 interface EventFormData {
@@ -21,7 +26,7 @@ interface EventFormData {
     url: string
     public_id: string
   }
-  visibility: 'private' | 'anyone_with_link' | 'public'
+  visibility: 'private' | 'anyone_with_link' | 'invited_only'
   permissions: any
   share_settings: {
     is_active: boolean
@@ -78,7 +83,7 @@ const convertEventToFormData = (event: Event): EventFormData => {
       url: event.cover_image?.url || '',
       public_id: event.cover_image?.public_id || ''
     },
-    visibility: event.visibility || 'private',
+    visibility: (event.visibility === 'public' ? 'anyone_with_link' : event.visibility) || 'private',
     permissions: event.permissions || {},
     share_settings: {
       is_active: event.share_settings?.is_active ?? true,
@@ -125,14 +130,20 @@ const prepareSubmitData = (formData: EventFormData) => {
   return {
     title: formData.title,
     description: formData.description,
-    start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
-    end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
+    start_date: formData.start_date ? new Date(formData.start_date).toISOString() : undefined,
+    end_date: formData.end_date ? new Date(formData.end_date).toISOString() : undefined,
     location: {
       name: formData.location.name,
-      address: formData.location.address
+      address: formData.location.address,
+      coordinates: []
     },
-    template: formData.template,
-    cover_image: formData.cover_image,
+    template: formData.template as "custom" | "wedding" | "birthday" | "concert" | "corporate" | "vacation",
+    cover_image: {
+      url: formData.cover_image.url,
+      public_id: formData.cover_image.public_id,
+      uploaded_by: null,
+      thumbnail_url: formData.cover_image.url
+    },
     visibility: formData.visibility,
     permissions: formData.permissions,
     share_settings: formData.share_settings,
@@ -143,6 +154,12 @@ const prepareSubmitData = (formData: EventFormData) => {
 
 export const useEventSettings = (eventId: string) => {
   const router = useRouter()
+  const queryClient = useQueryClient()
+  const updateEventMutation = useUpdateEvent()
+  const deleteEventMutation = useDeleteEvent()
+
+  // Auth token
+  const token = useToken()
 
   // Store hooks
   const {
@@ -156,7 +173,6 @@ export const useEventSettings = (eventId: string) => {
   } = useEventStore()
 
   // Local state
-  const [authToken, setAuthToken] = useState<string>('')
   const [formData, setFormData] = useState<EventFormData | null>(null)
   const [originalData, setOriginalData] = useState<EventFormData | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -164,45 +180,45 @@ export const useEventSettings = (eventId: string) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
 
-  // Initialize auth token
-  useEffect(() => {
-    const token = localStorage.getItem('authToken') || ''
-    setAuthToken(token)
-  }, [])
-
   // Load event data and convert to form data
   useEffect(() => {
-    if (!authToken || !eventId) return
+    if (!eventId) {
+      console.log(`Missing eventId: ${eventId}`)
+      return
+    }
 
     const loadEventData = async () => {
-      console.log(`⚙️ Loading event settings for ${eventId}`)
+      try {
+        let event = selectedEvent
 
-      let event = selectedEvent
+        // If we don't have the event or it's different, fetch it
+        if (!event || event._id !== eventId) {
+          event = await getEventFromCacheOrFetch(eventId, token!)
+        }
 
-      // If we don't have the event or it's different, fetch it
-      if (!event || event._id !== eventId) {
-        event = await getEventFromCacheOrFetch(eventId, authToken)
-      }
+        if (!event) {
+          console.error(`Event ${eventId} not found`)
+          toast.error("Event not found")
+          router.push('/events')
+          return
+        }
 
-      if (!event) {
-        toast.error("Event not found")
+        // Convert to form data
+        const convertedData = convertEventToFormData(event)
+
+        setFormData(convertedData)
+        setOriginalData(convertedData)
+        setPreviewUrl(event.cover_image?.url || null)
+        setIsInitialized(true)
+      } catch (error) {
+        console.error('Error loading event settings:', error)
+        toast.error("Failed to load event settings")
         router.push('/events')
-        return
       }
-
-      // Convert to form data
-      const convertedData = convertEventToFormData(event)
-
-      setFormData(convertedData)
-      setOriginalData(convertedData)
-      setPreviewUrl(event.cover_image?.url || null)
-      setIsInitialized(true)
-
-      console.log(`✅ Event settings loaded for ${event.title}`)
     }
 
     loadEventData()
-  }, [eventId, authToken, selectedEvent, getEventFromCacheOrFetch, router])
+  }, [eventId, token, selectedEvent, getEventFromCacheOrFetch, router])
 
   // Memoized change detection
   const hasChanges = useMemo(() => {
@@ -281,12 +297,16 @@ export const useEventSettings = (eventId: string) => {
       return
     }
 
-    if (!authToken) {
+    if (!token) {
       toast.error("Authentication required")
       return
     }
 
     setIsSubmitting(true)
+
+    // Store original data for rollback
+    const originalFormData = { ...formData }
+    const originalPreviewUrl = previewUrl
 
     try {
       let updatedFormData = { ...formData }
@@ -298,7 +318,7 @@ export const useEventSettings = (eventId: string) => {
           const imageUrl = await uploadCoverImage(
             coverImageFile,
             'event-covers',
-            authToken,
+            token,
             {
               compressionQuality: 'high',
               maxWidth: 1920,
@@ -319,22 +339,24 @@ export const useEventSettings = (eventId: string) => {
         }
       }
 
-      // Prepare and submit data
-      const submitData = prepareSubmitData(updatedFormData)
-
-      await updateEvent(eventId, submitData, authToken)
-
-      // Update store cache
-      updateEventInStore(eventId, submitData as any)
-
-      // Update local state
+      // Optimistically update UI immediately
       setFormData(updatedFormData)
       setOriginalData(updatedFormData)
-      setCoverImageFile(null)
-
       if (updatedFormData.cover_image.url) {
         setPreviewUrl(updatedFormData.cover_image.url)
       }
+
+      // Prepare and submit data
+      const submitData = prepareSubmitData(updatedFormData)
+
+      // Use the mutation and get the verified response
+      const updatedEvent = await updateEventMutation.mutateAsync({ eventId, eventData: submitData })
+
+      // Update store cache with the ACTUAL server response
+      updateEventInStore(eventId, updatedEvent as any)
+
+      // Clear cover image file after successful upload
+      setCoverImageFile(null)
 
       toast.success("Event updated successfully!")
 
@@ -342,19 +364,24 @@ export const useEventSettings = (eventId: string) => {
       console.error('Error updating event:', error)
       toast.error(error.message || "Failed to update event")
 
+      // Rollback optimistic updates on error
+      setFormData(originalFormData)
+      setOriginalData(originalFormData)
+      setPreviewUrl(originalPreviewUrl)
+
       // Invalidate cache on error to ensure fresh data on next load
       invalidateEventCache(eventId)
     } finally {
       setIsSubmitting(false)
     }
-  }, [formData, authToken, eventId, coverImageFile, updateEventInStore, invalidateEventCache])
+  }, [formData, token, eventId, coverImageFile, updateEventInStore, invalidateEventCache, previewUrl, updateEventMutation])
 
   // Delete event
   const handleDeleteEvent = useCallback(async () => {
-    if (!authToken) return
+    if (!token) return
 
     try {
-      await deleteEvent(eventId, authToken)
+      await deleteEventMutation.mutateAsync(eventId)
 
       // Remove from store
       deleteEventFromStore(eventId)
@@ -365,7 +392,7 @@ export const useEventSettings = (eventId: string) => {
       console.error('Error deleting event:', error)
       toast.error("Failed to delete event")
     }
-  }, [eventId, authToken, deleteEventFromStore, router])
+  }, [eventId, token, deleteEventFromStore, router, deleteEventMutation])
 
   // Get user info
   const currentUserId = selectedEvent?.created_by
@@ -399,6 +426,6 @@ export const useEventSettings = (eventId: string) => {
     previewUrl,
 
     // Auth token for child components
-    authToken
+    authToken: token
   }
 }

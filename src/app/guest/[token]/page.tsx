@@ -1,26 +1,53 @@
-// app/guest/[token]/page.tsx - UPDATED with Guest Claiming
 'use client';
 
-import React, { useState, useCallback, use, useEffect, memo, useRef } from 'react';
+import React, { useState, useCallback, use, useEffect, memo, useMemo, lazy, Suspense, useTransition } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WifiIcon, WifiOffIcon, Camera, X, Loader2, Plus, Upload, CheckCircle2 } from 'lucide-react';
+import {
+  Camera,
+  Upload,
+  CheckCircle2,
+  X,
+  Plus,
+  WifiOff as WifiOffIcon,
+  Wifi as WifiIcon,
+  Loader2
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { TransformedPhoto } from '@/types/events';
-import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
-import { notFound, useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { uploadGuestPhotos } from '@/services/apis/guest.api';
-import { getTokenInfo } from '@/services/apis/sharing.api';
-import { FullscreenPhotoViewer } from '@/components/photo/FullscreenPhotoViewer';
 import { BulkDownloadButton } from './BulkDownloadButton';
+import { TransformedPhoto, transformApiPhoto } from '@/types/events';
+import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
+import { RowsPhotoGallery } from '@/components/photo/layout/RowsPhotoGallery';
+import { Photo } from '@/types/PhotoGallery.types';
+
+import { notFound } from 'next/navigation';
+import { toast } from 'sonner';
+import { getTokenInfo } from '@/services/apis/sharing.api';
 import { DynamicEventCover } from '@/components/guest/DynamicEventCover';
+import { GuestHeader } from '@/components/guest/GuestHeader';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useInfiniteMediaQuery } from '@/hooks/useInfiniteMediaQuery';
 import { NotificationBanner } from '@/components/guest/NotificationBanner';
 import { useGuestClaim } from '@/hooks/useGuestClaim';
+import { Event } from '@/types/events';
+import { getStylingConfig, getThemeColors, generateEventCSS } from '@/constants/styling.constant';
+import { SelfieUploadModal } from '@/components/guest/SelfieUploadModal';
+import { useDownloadManager } from '@/hooks/useDownloadManager';
+import { useGuestWebSocketHandlers } from '@/hooks/useGuestWebSocketHandlers';
+import { MyPhotosHeader } from '@/components/guest/MyPhotosHeader';
+import { loadGuestToken, saveGuestToken } from '@/utils/guestTokenStorage';
+import { FullPageLoading, LoadingSpinner } from '@/components/ui/loading';
+import { FindMePromptBanner } from '@/components/guest/FindMePromptBanner';
+import { MyPhotosEmptyState } from '@/components/guest/MyPhotosEmptyState';
+
+// Dynamic imports for heavy components (Vercel best practice: bundle-dynamic-imports)
+const FullscreenPhotoViewer = lazy(() =>
+  import('@/components/photo/FullscreenPhotoViewer').then(m => ({ default: m.FullscreenPhotoViewer }))
+);
+const GuestUploadDialog = lazy(() =>
+  import('@/components/guest/GuestUploadDialog').then(m => ({ default: m.GuestUploadDialog }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,48 +69,124 @@ interface GuestPageProps {
   shareToken: string;
 }
 
-function GuestPageContent({ shareToken }: GuestPageProps) {
-  const router = useRouter();
-
-
-  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<TransformedPhoto | null>(null);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
-  const [roomStats, setRoomStats] = useState<{
+interface EventState {
+  details: Event | null;
+  access: any;
+  roomStats: {
     eventId?: string;
     guestCount?: number;
     adminCount?: number;
     total?: number;
-  }>({});
+  };
+}
 
-  // Upload states
+function GuestPageContent({ shareToken }: GuestPageProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const [isPending, startTransition] = useTransition();
+
+  // Consolidated state management
+  const [eventState, setEventState] = useState<EventState>({
+    details: null,
+    access: null,
+    roomStats: {}
+  });
+
+  // Styling configuration
+  const stylingConfig = useMemo(() => {
+    if (!eventState.details) return null;
+    try {
+      return getStylingConfig(eventState.details);
+    } catch (error) {
+      console.warn('Error getting styling config:', error);
+      return null;
+    }
+  }, [eventState.details]);
+
+  // Extract theme colors from styling config
+  const themeColors = useMemo(() => getThemeColors(stylingConfig), [stylingConfig]);
+
+  // UI states
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<TransformedPhoto | null>(null);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [showUploadDialog, setShowUploadDialog] = useState<boolean>(false);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState<boolean>(false);
-  const [guestInfo, setGuestInfo] = useState({ name: '', email: '' });
-
-  // Event details state
-  const [eventDetails, setEventDetails] = useState<any>(null);
-  const [accessDetails, setAccessDetails] = useState<any>(null);
-
-  // Notification banner state
   const [showNotificationBanner, setShowNotificationBanner] = useState<boolean>(false);
+  const [showFindMeModal, setShowFindMeModal] = useState(false);
+  const [showFindMePrompt, setShowFindMePrompt] = useState(false);
+  // Tab state
+  // Tab state derived from URL
+  const activeTab = useMemo(() => {
+    const tab = searchParams.get('tab');
+    return (tab === 'my_photos' || tab === 'highlights') ? tab : 'all';
+  }, [searchParams]);
+  const [matchedPhotos, setMatchedPhotos] = useState<TransformedPhoto[] | null>(null);
+
+  // Download manager hook (extracted for better performance)
+  const {
+    isDownloading,
+    downloadProgress,
+    downloadJobId,
+    startDownload
+  } = useDownloadManager({
+    shareToken,
+    eventId: eventState.details?._id || '',
+    eventTitle: eventState.details?.title
+  });
+
+  // Guest Token State (Phase 2 Persistence)
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+
+  // Initialize Guest Token from LocalStorage with versioning
+  useEffect(() => {
+    if (typeof window !== 'undefined' && eventState.details?._id) {
+      const token = loadGuestToken(eventState.details._id);
+      if (token) {
+        setGuestToken(token);
+      }
+    }
+  }, [eventState.details?._id]);
+
+  // Fetch My Photos when tab changes or token is set
+  useEffect(() => {
+    const fetchPersonalPhotos = async () => {
+      if (activeTab === 'my_photos' && guestToken) {
+        try {
+          const { getMyPhotos } = await import('@/services/apis/guest.api');
+          const personalPhotos = await getMyPhotos(guestToken);
+
+          if (personalPhotos && personalPhotos.length > 0) {
+            const transformed = personalPhotos.map(p => transformApiPhoto(p));
+            setMatchedPhotos(transformed);
+          } else {
+            // Token valid but no photos yet? Or maybe token invalid.
+            setMatchedPhotos([]);
+          }
+        } catch (error) {
+          console.error("Failed to fetch personal photos", error);
+          // If 401, maybe clear token? 
+          // setGuestToken(null);
+          // localStorage.removeItem(`guest_token_${eventState.details?._id}`);
+        }
+      }
+    };
+
+    fetchPersonalPhotos();
+  }, [activeTab, guestToken, eventState.details?._id]);
+
+
 
   const [auth] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('authToken');
+      try {
+        return localStorage.getItem('authToken');
+      } catch (e) {
+        return null;
+      }
     }
     return null;
   });
-
-  // Event deduplication tracking
-  const processedEventsRef = useRef<Set<string>>(new Set());
-  const eventCleanupTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-
-  // FIXED: Stable callback for viewport state change
-  const handleViewportStateChange = useCallback((viewportInfo: any) => {
-    console.log('📐 Viewport changed:', viewportInfo);
-  }, []);
 
   // Use infinite media query with buffering
   const {
@@ -101,16 +204,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     bufferedChanges,
     bufferedCount,
     applyBufferedChanges,
-    clearBufferedChanges,
-    updateViewportInfo
+    clearBufferedChanges
   } = useInfiniteMediaQuery({
     shareToken,
     auth,
-    limit: 20,
-    onViewportStateChange: handleViewportStateChange
+    limit: 20
   });
 
-  // Guest claim hook - auto-claims on mount if authenticated
+  // Guest claim hook
   const {
     summary: claimSummary,
     isChecking: isCheckingClaim,
@@ -119,11 +220,100 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     claimResult,
     claimContent,
   } = useGuestClaim({
-    eventId: eventDetails?._id || '',
+    eventId: eventState.details?._id || '',
     authToken: auth,
-    enabled: !!eventDetails?._id && !!auth,
-    autoClaimOnMount: true, // Auto-claim on mount
+    enabled: !!eventState.details?._id && !!auth,
+    autoClaimOnMount: true,
   });
+
+
+
+  // Filtering logic
+  const displayedPhotos = useMemo(() => {
+    if (activeTab === 'my_photos') {
+      // Return matchedPhotos if available, otherwise empty array (don't fall through to all photos)
+      return matchedPhotos || [];
+    }
+    if (activeTab === 'highlights') {
+      // Show approved/highlighted photos
+      return photos.filter(photo =>
+        photo.approval?.status === 'approved' ||
+        photo.approval?.status === 'auto_approved'
+      );
+    }
+    return photos;
+  }, [photos, matchedPhotos, activeTab]);
+
+  // Auto-prompt \"Find Me\" on first visit (after photos are loaded)
+  useEffect(() => {
+    if (!eventState.details?._id || guestToken || isInitialLoading) return;
+
+    const hasSeenPrompt = localStorage.getItem(`find_me_prompt_seen_${eventState.details._id}`);
+
+    // Show prompt if: haven't seen it before, have enough photos, and no token yet
+    if (!hasSeenPrompt && photos.length >= 20) {
+      const timer = setTimeout(() => {
+        setShowFindMePrompt(true);
+      }, 2000); // Show after 2 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [eventState.details?._id, guestToken, photos.length, isInitialLoading]);
+
+  const handleSearchResults = useCallback((results: any[]) => {
+    // In Phase 2, 'results' contains [{ token, isNewIdentity }] from the Login Modal
+    if (results && results.length > 0 && results[0].token) {
+      const { token, isNewIdentity } = results[0];
+
+      // Save token with versioning
+      setGuestToken(token);
+      if (eventState.details?._id) {
+        saveGuestToken(eventState.details._id, token);
+      }
+
+      // Switch tab via URL
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('tab', 'my_photos');
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [eventState.details?._id]);
+
+  const handleTabChange = useCallback((tab: 'all' | 'my_photos' | 'highlights') => {
+    // Prevent redundant navigation
+    const currentTab = searchParams.get('tab') || 'all';
+    if (tab === currentTab) return;
+
+    // URL-based navigation with transition to prevent flicker
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (tab === 'all') {
+      params.delete('tab');
+    } else {
+      params.set('tab', tab);
+    }
+
+    startTransition(() => {
+      const queryString = params.toString();
+      const target = queryString ? `${pathname}?${queryString}` : pathname;
+      router.push(target, { scroll: false });
+    });
+  }, [searchParams, router, pathname]);
+
+  // Handle Find Me Prompt actions
+  const handleFindMePromptClick = useCallback(() => {
+    setShowFindMePrompt(false);
+    setShowFindMeModal(true);
+    if (eventState.details?._id) {
+      localStorage.setItem(`find_me_prompt_seen_${eventState.details._id}`, 'true');
+    }
+  }, [eventState.details?._id]);
+
+  const handleDismissPrompt = useCallback(() => {
+    setShowFindMePrompt(false);
+    if (eventState.details?._id) {
+      localStorage.setItem(`find_me_prompt_seen_${eventState.details._id}`, 'true');
+    }
+  }, [eventState.details?._id]);
 
   // Refresh photos after successful claim
   useEffect(() => {
@@ -141,26 +331,29 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       const response = await getTokenInfo(shareToken, auth);
 
       if (response && response.status === true && response.data) {
-        setEventDetails(response.data.event);
-        setAccessDetails(response.data.access);
+        setEventState(prev => ({
+          ...prev,
+          details: response.data.event,
+          access: response.data.access
+        }));
       }
     } catch (err: any) {
-      console.error('Error fetching event details:', err);
+      // console.error('Error fetching event details:', err);
 
-      // 👇 THIS IS THE NEW REDIRECT LOGIC
       if (err?.status === 401 || err?.response?.status === 401) {
         toast.error('Authentication required. Please sign in to access this event.');
 
-        // Store the current URL for redirect after login
         if (typeof window !== 'undefined') {
-          localStorage.setItem('redirectAfterLogin', `/guest/${shareToken}`);
+          try {
+            localStorage.setItem('redirectAfterLogin', `/guest/${shareToken}`);
+          } catch (e) {
+            console.warn('Failed to save redirect URL:', e);
+          }
         }
 
-        // Redirect to login
         router.push('/login');
         return;
       }
-      // 👆 END OF NEW REDIRECT LOGIC
 
       toast.error('Failed to load event details');
     }
@@ -173,48 +366,24 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   }, [shareToken]);
 
   // WebSocket connection
-  const webSocket = useEventWebSocket(eventDetails?._id || '', {
+  const webSocket = useEventWebSocket(eventState.details?._id || '', {
     userType: 'guest',
     shareToken: shareToken,
-    enabled: !!eventDetails?._id && !!shareToken
+    enabled: !!eventState.details?._id && !!shareToken
   });
 
-  // Event signature creation for deduplication
-  const createEventSignature = useCallback((eventType: string, payload: any): string => {
-    const mediaId = payload.mediaId || payload._id || payload.id || 'unknown';
-    const timestamp = payload.timestamp || Date.now();
-    const timeWindow = Math.floor(timestamp / 2000) * 2000;
-    return `${eventType}:${mediaId}:${timeWindow}`;
-  }, []);
+  // WebSocket handlers - use extracted hook with proper ref usage
+  useGuestWebSocketHandlers({
+    socket: webSocket.socket,
+    webSocketHandlers
+  });
 
-  // Deduplication check
-  const shouldProcessEvent = useCallback((eventType: string, payload: any): boolean => {
-    const signature = createEventSignature(eventType, payload);
 
-    if (processedEventsRef.current.has(signature)) {
-      console.log(`⏭️ Skipping duplicate ${eventType} event:`, signature);
-      return false;
-    }
-
-    processedEventsRef.current.add(signature);
-
-    const timeoutId = setTimeout(() => {
-      processedEventsRef.current.delete(signature);
-      eventCleanupTimeoutsRef.current.delete(signature);
-    }, 10000);
-
-    eventCleanupTimeoutsRef.current.set(signature, timeoutId);
-    return true;
-  }, [createEventSignature]);
 
   // Show/hide notification banner based on buffered changes
   useEffect(() => {
     setShowNotificationBanner(bufferedCount > 0);
   }, [bufferedCount]);
-
-  const handleViewportChange = useCallback((viewportInfo: any) => {
-    updateViewportInfo(viewportInfo);
-  }, [updateViewportInfo]);
 
   const handleApplyBufferedChanges = useCallback(() => {
     applyBufferedChanges();
@@ -233,174 +402,53 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     });
   }, [clearBufferedChanges]);
 
-  const bufferedChangesRef = useRef(bufferedChanges);
-  bufferedChangesRef.current = bufferedChanges;
-
-  // Optimized WebSocket event handlers with deduplication
-  useEffect(() => {
-    if (!webSocket.socket) return;
-
-    const handleMediaApproved = (payload: any) => {
-      if (!shouldProcessEvent('media_approved', payload)) return;
-      console.log('✅ Processing media approved:', payload.mediaId);
-      webSocketHandlers.handleMediaApproved(payload);
-      if (!bufferedChangesRef.current.some((change: any) => change.photo.id === payload.mediaId)) {
-        toast.success('New photos approved!', {
-          duration: 3000,
-          position: 'bottom-center'
-        });
-      }
-    };
-
-    const handleMediaStatusUpdated = (payload: any) => {
-      if (!shouldProcessEvent('media_status_updated', payload)) return;
-      console.log('📝 Processing status update:', payload.mediaId, payload.previousStatus, '→', payload.newStatus);
-      webSocketHandlers.handleMediaStatusUpdated(payload);
-      const items = Array.isArray(payload) ? payload : [payload];
-      items.forEach(item => {
-        if (item.newStatus === 'approved' && item.previousStatus !== 'approved') {
-          const approvalSignature = createEventSignature('media_approved', item);
-          if (!processedEventsRef.current.has(approvalSignature) &&
-            !bufferedChangesRef.current.some((change: any) => change.photo.id === item.mediaId)) {
-            toast.success('Photo approved!', {
-              duration: 2000,
-              position: 'bottom-center'
-            });
-          }
-        } else if (item.newStatus === 'hidden' || item.newStatus === 'rejected') {
-          toast.info('Photo was removed', {
-            duration: 3000,
-            position: 'bottom-center'
-          });
-        }
-      });
-    };
-
-    const handleNewMediaUploaded = (payload: any) => {
-      if (!shouldProcessEvent('new_media_uploaded', payload)) return;
-      console.log('📸 Processing new media upload');
-      webSocketHandlers.handleNewMediaUploaded(payload);
-      if (!bufferedChangesRef.current.some((change: any) => change.reason.includes('upload'))) {
-        toast.success('New photos added!', {
-          duration: 3000,
-          position: 'bottom-center'
-        });
-      }
-    };
-
-    const handleMediaRemoved = (payload: any) => {
-      if (!shouldProcessEvent('media_removed', payload)) return;
-      console.log('🗑️ Processing media removal');
-      webSocketHandlers.handleMediaRemoved(payload);
-      const count = payload.mediaIds?.length || 1;
-      toast.info(`${count} photo${count > 1 ? 's' : ''} removed`, {
-        duration: 3000,
-        position: 'bottom-center'
-      });
-    };
-
-    const handleMediaProcessingComplete = (payload: any) => {
-      if (!shouldProcessEvent('media_processing_complete', payload)) return;
-      console.log('⚡ Processing completion event');
-      webSocketHandlers.handleMediaProcessingComplete(payload);
-      toast.success('High-quality version ready!', {
-        duration: 2000,
-        position: 'bottom-center'
-      });
-    };
-
-    webSocket.socket.on('media_approved', handleMediaApproved);
-    webSocket.socket.on('media_status_updated', handleMediaStatusUpdated);
-    webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
-    webSocket.socket.on('media_removed', handleMediaRemoved);
-    webSocket.socket.on('guest_media_removed', handleMediaRemoved);
-    webSocket.socket.on('media_processing_complete', handleMediaProcessingComplete);
-
-    return () => {
-      if (webSocket.socket) {
-        webSocket.socket.off('media_approved', handleMediaApproved);
-        webSocket.socket.off('media_status_updated', handleMediaStatusUpdated);
-        webSocket.socket.off('new_media_uploaded', handleNewMediaUploaded);
-        webSocket.socket.off('media_removed', handleMediaRemoved);
-        webSocket.socket.off('guest_media_removed', handleMediaRemoved);
-        webSocket.socket.off('media_processing_complete', handleMediaProcessingComplete);
-      }
-    };
-  }, [webSocket.socket, webSocketHandlers, shouldProcessEvent, createEventSignature]);
-
   // Room stats handler
   const handleRoomStats = useCallback((payload: any) => {
-    setRoomStats(payload);
+    setEventState(prev => ({
+      ...prev,
+      roomStats: payload
+    }));
   }, []);
 
   useEffect(() => {
     if (!webSocket.socket) return;
     webSocket.socket.on('room_user_counts', handleRoomStats);
-    return () => webSocket.socket?.off('room_user_counts', handleRoomStats);
+    return () => {
+      if (webSocket.socket) {
+        webSocket.socket.off('room_user_counts', handleRoomStats);
+      }
+    };
   }, [webSocket.socket, handleRoomStats]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      eventCleanupTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
-      eventCleanupTimeoutsRef.current.clear();
-      processedEventsRef.current.clear();
       cleanup();
     };
   }, [cleanup]);
 
-  // Upload functionality
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    if (files.length > 0) {
-      setSelectedFiles(files);
-    }
-  };
+  // Upload complete handler for extracted component
+  const handleUploadComplete = useCallback((newPhotos: TransformedPhoto[]) => {
+    // Optimistically update the query cache
+    queryClient.setQueryData(['guest-media', shareToken], (oldData: any) => {
+      if (!oldData) return oldData;
+      const pages = oldData.pages || [];
+      if (pages.length === 0) return oldData;
+      const firstPage = pages[0];
 
-  const handleUpload = async () => {
-    if (selectedFiles.length === 0) {
-      toast.error('Please select at least one photo');
-      return;
-    }
-
-    try {
-      setUploading(true);
-      const result = await uploadGuestPhotos(
-        shareToken,
-        selectedFiles,
-        guestInfo,
-        auth || undefined
-      );
-
-      if (result.status) {
-        const { summary } = result.data;
-        if (summary.success > 0) {
-          toast.success(
-            summary.failed === 0
-              ? `All ${summary.success} photo(s) uploaded successfully!`
-              : `${summary.success} photo(s) uploaded, ${summary.failed} failed`
-          );
-
-          setSelectedFiles([]);
-          setGuestInfo({ name: '', email: '' });
-          setShowUploadDialog(false);
-        } else {
-          toast.error('All uploads failed. Please try again.');
-        }
-      } else {
-        toast.error(result.message || 'Upload failed');
-      }
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      toast.error(error.message || 'Upload failed. Please try again.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setSelectedFiles(files => files.filter((_, i) => i !== index));
-  };
+      return {
+        ...oldData,
+        pages: [
+          {
+            ...firstPage,
+            photos: [...newPhotos, ...firstPage.photos],
+            total: (firstPage.total || 0) + newPhotos.length
+          },
+          ...pages.slice(1)
+        ]
+      };
+    });
+  }, [shareToken]);
 
   // Connection Status Component
   const ConnectionStatus = memo(() => {
@@ -439,7 +487,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const navigatePhoto = useCallback(
     (direction: 'next' | 'prev') => {
       let newIndex: number;
-      if (direction === 'next' && selectedPhotoIndex < photos.length - 1) {
+      if (direction === 'next' && selectedPhotoIndex < displayedPhotos.length - 1) {
         newIndex = selectedPhotoIndex + 1;
       } else if (direction === 'prev' && selectedPhotoIndex > 0) {
         newIndex = selectedPhotoIndex - 1;
@@ -447,12 +495,12 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         return;
       }
       setSelectedPhotoIndex(newIndex);
-      setSelectedPhoto(photos[newIndex]);
+      setSelectedPhoto(displayedPhotos[newIndex]);
     },
-    [selectedPhotoIndex, photos],
+    [selectedPhotoIndex, displayedPhotos],
   );
 
-  const RoomStatsDisplay = memo(({ roomStats }: { roomStats: any }) => {
+  const RoomStatsDisplay = memo(({ roomStats }: { roomStats: EventState['roomStats'] }) => {
     if (!roomStats.guestCount) return null;
 
     return (
@@ -472,28 +520,25 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     try {
       await claimContent();
     } catch (error) {
-      console.error('Manual claim failed:', error);
+      // console.error('Manual claim failed:', error);
     }
   }, [claimContent]);
+
 
   // Content rendering
   const renderContent = useCallback(() => {
     if (isInitialLoading) {
       return (
-        <div className="text-center py-16">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading photos...</p>
-          {webSocket.isAuthenticated && (
-            <p className="text-sm text-green-600 mt-2">
-              ✓ Real-time updates enabled
-            </p>
-          )}
-          {isCheckingClaim && auth && (
-            <p className="text-sm text-blue-600 mt-2">
-              Checking for previous uploads...
-            </p>
-          )}
-        </div>
+        <FullPageLoading
+          message="Loading photos…"
+          submessage={
+            webSocket.isAuthenticated
+              ? '✓ Real-time updates enabled'
+              : isCheckingClaim && auth
+                ? 'Checking for previous uploads…'
+                : undefined
+          }
+        />
       );
     }
 
@@ -506,7 +551,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               {error instanceof Error ? error.message : 'Failed to load photos'}
             </p>
             <button
-              onClick={refresh}
+              onClick={() => refresh()}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
             >
               Try Again
@@ -522,7 +567,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           <Camera className="w-20 h-20 mx-auto text-gray-300 mb-4" />
           <h3 className="text-xl font-medium text-gray-600 mb-2">No photos yet</h3>
           <p className="text-gray-400 mb-6">Be the first to share a memory!</p>
-          {eventDetails?.permissions?.can_upload && (
+          {eventState.details?.default_guest_permissions?.upload && (
             <Button
               onClick={() => setShowUploadDialog(true)}
               className="bg-blue-500 hover:bg-blue-600 text-white"
@@ -540,19 +585,242 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
       );
     }
 
+    // Generate CSS variables for the event
+    const eventStyles = eventState.details ? generateEventCSS(eventState.details) : {};
+
     return (
-      <PinterestPhotoGrid
-        photos={photos}
-        onPhotoClick={handlePhotoClick}
-        hasNextPage={hasNextPage}
-        isLoadingMore={isLoadingMore}
-        onLoadMore={loadMore}
-        onViewportChange={handleViewportChange}
-        eventStyling={eventDetails?.styling_config}
-      />
+      <div className="space-y-6" style={eventStyles as React.CSSProperties}>
+        {matchedPhotos && activeTab === 'my_photos' && (
+          <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 animate-in fade-in slide-in-from-top-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-600 p-2 rounded-lg text-white">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-semibold text-blue-900 dark:text-blue-200">
+                  Showing {matchedPhotos.length} photos of you
+                </p>
+                <p className="text-xs text-blue-700 dark:text-blue-300">
+                  These are the best matches from the current gallery.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-white hover:bg-white/80 text-blue-700 border-blue-200"
+                onClick={() => setShowFindMeModal(true)}
+              >
+                Rescan
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-blue-700 hover:bg-blue-100"
+                onClick={() => handleTabChange('all')}
+              >
+                Show All Photos
+              </Button>
+            </div>
+          </div>
+        )}\n        {/* Keep-Alive Strategy for All Photos / Highlights - Always mounted, toggled visibility */}
+        <div style={{ display: (activeTab === 'all' || activeTab === 'highlights') ? 'block' : 'none' }}>
+          {(() => {
+            // Derive data for this view (independent of My Photos)
+            const gridData = activeTab === 'highlights'
+              ? photos.filter(p => p.approval?.status === 'approved' || p.approval?.status === 'auto_approved')
+              : photos;
+
+            // Logic to render grid
+            const styling = (eventState.details as any)?.styling_config;
+            const layoutId = styling?.gallery?.layout_id ?? 1;
+
+            if (layoutId === 2) {
+              const galleryPhotos = gridData.map(p => ({
+                id: p.id,
+                eventId: p.eventId || '',
+                albumId: p.albumId,
+                type: 'image',
+                imageUrl: p.src,
+                responsive_urls: p.responsive_urls,
+                width: p.width,
+                height: p.height,
+                metadata: { width: p.width, height: p.height },
+                approval: p.approval,
+                uploadedBy: p.uploaded_by,
+                createdAt: p.createdAt
+              } as unknown as Photo));
+
+              const spacingId = styling?.gallery?.grid_spacing ?? 1;
+              const spacingMap: Record<number, number> = { 0: 4, 1: 8, 2: 12, 3: 16 };
+              const spacing = spacingMap[spacingId] || 8;
+
+              return (
+                <RowsPhotoGallery
+                  photos={galleryPhotos}
+                  onPhotoClick={(photo, index) => {
+                    const original = gridData.find(p => p.id === photo.id);
+                    if (original) handlePhotoClick(original, index);
+                  }}
+                  userPermissions={{
+                    upload: eventState.details?.default_guest_permissions?.upload ?? true,
+                    download: eventState.details?.default_guest_permissions?.download ?? true,
+                    moderate: false,
+                    delete: false
+                  }}
+                  currentTab="approved"
+                  onStatusUpdate={() => { }}
+                  onDownload={(photo) => {
+                    const original = gridData.find(p => p.id === photo.id);
+                    if (original) {
+                      const link = document.createElement('a');
+                      link.href = original.responsive_urls?.original || original.src;
+                      link.download = `photo-${original.id}`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }
+                  }}
+                  selectionMode={false}
+                  spacing={spacing}
+                  targetRowHeight={styling?.gallery?.thumbnail_size === 0 ? 180 : styling?.gallery?.thumbnail_size === 2 ? 350 : 250}
+                  onNearEnd={loadMore}
+                />
+              );
+            }
+
+            return (
+              <PinterestPhotoGrid
+                photos={gridData}
+                onPhotoClick={handlePhotoClick}
+                hasNextPage={hasNextPage}
+                isLoadingMore={isLoadingMore}
+                onLoadMore={loadMore}
+                onViewportChange={() => { }}
+                eventStyling={(eventState.details as any)?.styling_config}
+                layout="masonry"
+              />
+            );
+          })()}
+        </div>
+
+        {/* My Photos - Conditional Mount */}
+        {activeTab === 'my_photos' && (
+          <div className="animate-in fade-in duration-300">
+            {(() => {
+              if (!guestToken) {
+                return <MyPhotosEmptyState onFindMe={() => setShowFindMeModal(true)} />;
+              }
+              if (!matchedPhotos) {
+                return (
+                  <div className="flex justify-center py-20">
+                    <LoadingSpinner className="text-[var(--primary-color)]" />
+                  </div>
+                );
+              }
+              if (matchedPhotos.length === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+                    <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+                      <Camera className="w-10 h-10 text-gray-400" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                      No Photos Found
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 mb-4 max-w-sm">
+                      We couldn't find any photos of you yet. Try uploading a different selfie or check back as more photos are added.
+                    </p>
+                    <Button
+                      onClick={() => setShowFindMeModal(true)}
+                      variant="outline"
+                      className="mt-4"
+                    >
+                      Try Another Selfie
+                    </Button>
+                  </div>
+                );
+              }
+
+              // Render My Photos Grid
+              const gridData = matchedPhotos;
+              const styling = (eventState.details as any)?.styling_config;
+              const layoutId = styling?.gallery?.layout_id ?? 1;
+
+              if (layoutId === 2) {
+                const galleryPhotos = gridData.map(p => ({
+                  id: p.id,
+                  eventId: p.eventId || '',
+                  albumId: p.albumId,
+                  type: 'image',
+                  imageUrl: p.src,
+                  responsive_urls: p.responsive_urls,
+                  width: p.width,
+                  height: p.height,
+                  metadata: { width: p.width, height: p.height },
+                  approval: p.approval,
+                  uploadedBy: p.uploaded_by,
+                  createdAt: p.createdAt
+                } as unknown as Photo));
+                const spacingId = styling?.gallery?.grid_spacing ?? 1;
+                const spacingMap: Record<number, number> = { 0: 4, 1: 8, 2: 12, 3: 16 };
+                const spacing = spacingMap[spacingId] || 8;
+
+                return (
+                  <RowsPhotoGallery
+                    photos={galleryPhotos}
+                    onPhotoClick={(photo, index) => {
+                      const original = gridData.find(p => p.id === photo.id);
+                      if (original) handlePhotoClick(original, index);
+                    }}
+                    userPermissions={{
+                      upload: true, download: true, moderate: false, delete: false
+                    }}
+                    currentTab="approved"
+                    onStatusUpdate={() => { }}
+                    onDownload={(photo) => {
+                      const original = gridData.find(p => p.id === photo.id);
+                      if (original) {
+                        const link = document.createElement('a');
+                        link.href = original.responsive_urls?.original || original.src;
+                        link.download = `photo-${original.id}`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      }
+                    }}
+                    selectionMode={false}
+                    spacing={spacing}
+                    targetRowHeight={styling?.gallery?.thumbnail_size === 0 ? 180 : styling?.gallery?.thumbnail_size === 2 ? 350 : 250}
+                  />
+                );
+              }
+
+              return (
+                <PinterestPhotoGrid
+                  photos={gridData}
+                  onPhotoClick={handlePhotoClick}
+                  hasNextPage={false}
+                  isLoadingMore={false}
+                  onLoadMore={() => { }}
+                  onViewportChange={() => { }}
+                  eventStyling={(eventState.details as any)?.styling_config}
+                  layout="masonry"
+                />
+              );
+            })()}
+          </div>
+        )}
+
+
+
+
+      </div>
     );
   }, [
     photos,
+    displayedPhotos,
+    matchedPhotos,
     isInitialLoading,
     isLoadingMore,
     hasNextPage,
@@ -562,8 +830,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     loadMore,
     refresh,
     webSocket.isAuthenticated,
-    eventDetails,
-    handleViewportChange,
+    eventState.details,
     isCheckingClaim,
     auth
   ]);
@@ -571,8 +838,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   if (!shareToken) {
     notFound();
   }
-
-  console.log('hasClaimableContent', hasClaimableContent)
+  // console.log(eventState, 'eventStateeventState')
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
       {/* Notification Banner for buffered changes */}
@@ -584,7 +850,14 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         onAction={handleApplyBufferedChanges}
         onDismiss={handleDismissNotification}
         actionLabel="View Now"
-        position="top"
+      />
+
+      {/* Find Me Auto-Prompt Banner */}
+      < FindMePromptBanner
+        isVisible={showFindMePrompt}
+        totalPhotos={totalPhotos}
+        onFindMe={handleFindMePromptClick}
+        onDismiss={handleDismissPrompt}
       />
 
       {/* Claiming Status Banner - Shows when claiming is in progress */}
@@ -592,7 +865,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
           <div className="bg-blue-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="font-medium">Claiming your previous uploads...</span>
+            <span className="font-medium">Claiming your previous uploads…</span>
           </div>
         </div>
       )}
@@ -620,176 +893,187 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
       {/* Dynamic Event Cover */}
       <DynamicEventCover
-        eventDetails={eventDetails}
+        eventDetails={eventState.details}
         photoCount={photos.length}
         totalPhotos={totalPhotos}
       />
 
+      {/* Sticky Guest Header */}
+      <GuestHeader
+        eventDetails={eventState.details}
+        themeColors={themeColors}
+        onDownload={startDownload}
+        isDownloading={isDownloading}
+        totalPhotos={displayedPhotos.length}
+        onFindMe={() => setShowFindMeModal(true)}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        hasMatches={!!matchedPhotos && matchedPhotos.length > 0}
+        onUpload={() => setShowUploadDialog(true)}
+        connectionStatus={
+          // Inline Connection Status for simplicity
+          !webSocket.isConnected ? (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <WifiOffIcon className="h-3 w-3" />
+              Offline
+            </Badge>
+          ) : !webSocket.isAuthenticated ? (
+            <Badge variant="secondary" className="flex items-center gap-1">
+              <WifiIcon className="h-3 w-3" />
+              Connecting...
+            </Badge>
+          ) : (
+            <Badge variant="default" className="flex items-center gap-1 bg-green-500">
+              <WifiIcon className="h-3 w-3" />
+              Live
+            </Badge>
+          )
+        }
+      />
+
+      <SelfieUploadModal
+        isOpen={showFindMeModal}
+        onClose={() => setShowFindMeModal(false)}
+        eventId={eventState.details?._id || ''}
+        onSearchResults={(results) => {
+          if (!results || results.length === 0) {
+            setMatchedPhotos(null);
+          } else {
+            const transformed = results.map(r => transformApiPhoto(r));
+            handleSearchResults(transformed);
+          }
+        }}
+      />
+
+
+      {/* Download Progress Banner */}
+      {
+        downloadProgress && (
+          <div className="fixed top-16 right-4 z-40 bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-80">
+            <div className="flex items-center gap-2 mb-2">
+              <LoadingSpinner size="sm" className="inline-flex" />
+              <span className="text-sm font-medium text-gray-900">
+                Preparing Download…
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${downloadProgress.progress}% ` }}
+              />
+            </div>
+            <div className="text-xs text-gray-600 space-y-1">
+              <div>Status: <span className="font-mono">{downloadProgress.status}</span></div>
+              <div>Progress: <span className="font-mono">{downloadProgress.progress}%</span></div>
+              <div>Files: <span className="font-mono">{downloadProgress.totalFiles}</span></div>
+              {downloadProgress.status === 'processing' ? `Processing ${downloadProgress.totalFiles} files…` : null}
+              {downloadProgress.status === 'completed' ? 'Download Ready' : null}
+            </div>
+            {/* Debug Info */}
+            <div className="mt-2 pt-2 border-t border-gray-200">
+              <div className="text-xs text-gray-500 space-y-1">
+                <div>Job ID: <span className="font-mono text-xs">{downloadJobId?.substring(0, 8)}...</span></div>
+                <div>Check console for detailed logs</div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
       {/* Photo Gallery Section */}
-      <div className="max-w-full mx-auto px-0 pb-8">
+      <div className="max-w-full mx-auto px-3 pb-0"
+        style={{
+          backgroundColor: themeColors.background,
+        }}
+      >
         {renderContent()}
       </div>
 
-      {/* Upload Dialog */}
-      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5 text-blue-500" />
-              Share Your Photos
-            </DialogTitle>
-          </DialogHeader>
+      {/* Upload Dialog - Lazy Loaded */}
+      <Suspense fallback={<div />}>
+        <GuestUploadDialog
+          isOpen={showUploadDialog}
+          onClose={() => setShowUploadDialog(false)}
+          shareToken={shareToken}
+          eventDetails={eventState.details}
+          auth={auth}
+          onUploadComplete={handleUploadComplete}
+        />
+      </Suspense>
 
-          <div className="space-y-4 p-4">
-            {!auth && (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600 mb-3">Tell us who you are (optional)</p>
-                <div className="space-y-2">
-                  <Input
-                    placeholder="Your name"
-                    value={guestInfo.name}
-                    onChange={(e) => setGuestInfo({ ...guestInfo, name: e.target.value })}
-                    className="text-sm"
-                  />
-                  <Input
-                    type="email"
-                    placeholder="Your email"
-                    value={guestInfo.email}
-                    onChange={(e) => setGuestInfo({ ...guestInfo, email: e.target.value })}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*,video/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  id="file-upload"
-                />
-                <label htmlFor="file-upload" className="cursor-pointer">
-                  <Camera className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-600">Click to select photos or videos</p>
-                  <p className="text-xs text-gray-500 mt-1">Max 10 files, 50MB each</p>
-                </label>
-              </div>
-
-              {selectedFiles.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">{selectedFiles.length} file(s) selected:</p>
-                  <div className="max-h-32 overflow-y-auto space-y-1">
-                    {selectedFiles.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded text-sm">
-                        <span className="truncate flex-1">{file.name}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeFile(index)}
-                          className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-blue-50 p-3 rounded-lg">
-              <div className="text-xs text-blue-700 space-y-1">
-                <p>• Photos will be {eventDetails?.permissions?.require_approval ? 'reviewed before appearing' : 'visible immediately'}</p>
-                <p>• Supported formats: JPG, PNG, HEIC, MP4, MOV</p>
-                <p>• Please only upload appropriate content</p>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowUploadDialog(false);
-                  setSelectedFiles([]);
-                  setGuestInfo({ name: '', email: '' });
-                }}
-                className="flex-1"
-                disabled={uploading}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleUpload}
-                disabled={selectedFiles.length === 0 || uploading}
-                className="flex-1"
-              >
-                {uploading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload {selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Find Me Modal */}
+      <SelfieUploadModal
+        isOpen={showFindMeModal}
+        onClose={() => setShowFindMeModal(false)}
+        eventId={eventState.details?._id || ''}
+        onSearchResults={handleSearchResults}
+        socket={webSocket.socket}
+      />
 
       {/* Floating Upload Button */}
-      {eventDetails?.permissions?.can_upload && (
-        <div className="fixed bottom-20 right-6 z-30">
-          <Button
-            onClick={() => setShowUploadDialog(true)}
-            className="text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
-            style={{ backgroundColor: 'var(--color-accent, #007bff)' }}
-            title="Upload Photos"
-          >
-            <Plus className="w-6 h-6" />
-          </Button>
-        </div>
-      )}
+      {
+        eventState.details?.default_guest_permissions?.upload && (
+          <div className="fixed bottom-20 right-6 z-30">
+            <Button
+              onClick={() => setShowUploadDialog(true)}
+              className="text-white shadow-lg hover:shadow-xl rounded-full w-14 h-14 p-0"
+              style={{ backgroundColor: 'var(--color-accent, #007bff)' }}
+              title="Upload Photos"
+              aria-label="Upload Photos"
+            >
+              <Plus className="w-6 h-6" />
+            </Button>
+          </div>
+        )
+      }
 
-      {/* Photo Viewer */}
+      {/* Photo Viewer - Lazy Loaded */}
       {photoViewerOpen && selectedPhoto && (
-        <FullscreenPhotoViewer
-          selectedPhoto={{
-            ...selectedPhoto,
-            albumId: null,
-            eventId: eventDetails?._id || '',
-            takenBy: Number((selectedPhoto as any).takenBy) || 0,
-            imageUrl: (selectedPhoto as any).imageUrl ?? selectedPhoto.src ?? '',
-            createdAt: new Date((selectedPhoto as any).createdAt || Date.now()),
-          }}
-          selectedPhotoIndex={selectedPhotoIndex}
-          photos={photos.map(photo => ({
-            ...photo,
-            albumId: null,
-            eventId: eventDetails?._id || '',
-            takenBy: Number((photo as any).takenBy) || 0,
-            imageUrl: (photo as any).imageUrl ?? photo.src ?? '',
-            createdAt: new Date((photo as any).createdAt || Date.now()),
-          }))}
-          onClose={() => setPhotoViewerOpen(false)}
-          onPrev={() => navigatePhoto('prev')}
-          onNext={() => navigatePhoto('next')}
-          setPhotoInfoOpen={(open) => {
-            console.log('Photo info:', open);
-          }}
-          downloadPhoto={() => {
-            console.log('Downloading photo:', selectedPhoto);
-          }}
-        />
+        <Suspense fallback={<div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center"><LoadingSpinner size="lg" className="text-white" /></div>}>
+          <FullscreenPhotoViewer
+            selectedPhoto={{
+              ...selectedPhoto,
+              type: 'image' as const,
+              takenBy: 'Guest',
+              imageUrl: selectedPhoto.src,
+              createdAt: new Date(selectedPhoto.createdAt),
+              metadata: {
+                width: selectedPhoto.width,
+                height: selectedPhoto.height
+              },
+              approval: {
+                ...selectedPhoto.approval,
+                approved_by: selectedPhoto.approval?.approved_by || undefined,
+                approved_at: selectedPhoto.approval?.approved_at ? new Date(selectedPhoto.approval.approved_at).toISOString() : undefined
+              }
+            }}
+            selectedPhotoIndex={selectedPhotoIndex}
+            photos={displayedPhotos.map(photo => ({
+              ...photo,
+              type: 'image' as const,
+              takenBy: 'Guest',
+              imageUrl: photo.src,
+              createdAt: new Date(photo.createdAt),
+              metadata: {
+                width: photo.width,
+                height: photo.height
+              },
+              approval: {
+                ...photo.approval,
+                approved_by: photo.approval?.approved_by || undefined,
+                approved_at: photo.approval?.approved_at ? new Date(photo.approval.approved_at).toISOString() : undefined
+              }
+            }))}
+            onClose={() => setPhotoViewerOpen(false)}
+            onPrev={() => navigatePhoto('prev')}
+            onNext={() => navigatePhoto('next')}
+            downloadPhoto={() => {
+              // console.log('Downloading photo:', selectedPhoto);
+            }}
+          />
+        </Suspense>
       )}
-    </div>
+    </div >
   );
 }
 

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 import { createEvent } from '@/services/apis/events.api';
 import { Event } from '@/types/backend-types/event.type';
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,6 +31,7 @@ const eventFormSchema = z.object({
 
 const EventCreateForm = () => {
   const router = useRouter();
+  const { getAccessToken } = useSecureAuth();
 
   const form = useForm<z.infer<typeof eventFormSchema>>({
     resolver: zodResolver(eventFormSchema),
@@ -48,7 +50,7 @@ const EventCreateForm = () => {
   const [authToken, setAuthToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('rc-token');
+    const storedToken = getAccessToken();
     if (storedToken) {
       setAuthToken(storedToken);
     } else {
@@ -59,7 +61,7 @@ const EventCreateForm = () => {
     // Set default start date to today
     const today = new Date();
     form.setValue('start_date', today);
-  }, [router]);
+  }, [router, getAccessToken]);
 
   const eventTemplates = [
     { value: 'wedding', label: 'Wedding' },

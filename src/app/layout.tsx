@@ -1,12 +1,11 @@
 // app/layout.tsx
-import Providers from '@/components/Providers';
+import { Providers } from '@/providers/MainProvider';
 import { ConditionalNavigation } from '@/components/navigation/ConditionalNavigation';
 import { Toaster } from "@/components/ui/sonner";
 import { FullscreenProvider } from '@/lib/FullscreenContext';
 import type { Metadata } from 'next';
 import { Manrope } from 'next/font/google';
 import './globals.css';
-import { ImageKitProvider } from '@imagekit/next';
 
 // Configure Manrope with desired weights and subsets
 const manrope = Manrope({
@@ -28,15 +27,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={manrope.className}>
         <Providers>
-          <ImageKitProvider urlEndpoint={process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT}>
-              <FullscreenProvider>
-                <ConditionalNavigation>
-                  {children}
-                </ConditionalNavigation>
-                {/* Toaster notification system */}
-                <Toaster />
-              </FullscreenProvider>
-          </ImageKitProvider>
+          <FullscreenProvider>
+            <ConditionalNavigation>
+              {children}
+            </ConditionalNavigation>
+            {/* Toaster notification system */}
+            <Toaster />
+          </FullscreenProvider>
         </Providers>
       </body>
     </html>

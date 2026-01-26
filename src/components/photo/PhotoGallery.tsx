@@ -1,79 +1,91 @@
-// components/photo/PhotoGallery.tsx - UPDATED with bulk operations
+/**
+ * OptimizedPhotoGallery - Refactored main component
+ * Reduced from 1241 lines to ~400 lines by extracting hooks and components
+ */
+
 'use client';
 
-import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
-import { XIcon, WifiIcon, WifiOffIcon, UploadIcon } from 'lucide-react';
+import { useRef, useCallback, useMemo, useEffect } from 'react';
+import { XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import {
-  useEventMedia,
   useInfiniteEventMediaFlat,
   useEventMediaCounts,
-  useUploadMultipleMedia,
   useUpdateMediaStatus,
   useDeleteMedia,
-  useGalleryUtils
+  useGalleryUtils,
 } from '@/hooks/useMediaQueries';
-import { StatusTabs } from '../album/StatusTabs';
 import { EmptyState } from '../album/EmptyState';
-import PhotoUploadDialog from '../album/PhotoUploadDialog';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
-import { OptimizedPhotoGrid } from './PhotoGrid';
-import { UploadProgressPanel } from '../album/UploadProgressPanel';
+import { RowsPhotoGallery } from './layout/RowsPhotoGallery';
 import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { UploadProgressTab } from '../progress/upload-progress';
+import UploadButton from '../guest/UploadButton';
+import useEventStore from '@/stores/useEventStore';
+import { updateEvent } from '@/services/apis/events.api';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
+import { useScrollContainer } from '@/contexts/ScrollContext';
 
-interface OptimizedPhotoGalleryProps extends PhotoGalleryProps {
-  shareToken?: string;
-}
+// Extracted hooks
+import { usePhotoGalleryState } from './hooks/usePhotoGalleryState';
+import { usePhotoSelection } from './hooks/usePhotoSelection';
+import { useBulkPhotoOperations } from './hooks/useBulkPhotoOperations';
+import { usePhotoUpload } from './hooks/usePhotoUpload';
+
+// Extracted components
+import { GalleryHeader } from './components/GalleryHeader/GalleryHeader';
+import { FloatingActionBar } from './components/BulkActions/FloatingActionBar';
+import { InfiniteScrollSentinel } from './components/PhotoGrid/InfiniteScrollSentinel';
+import { PhotoGridSkeleton } from './components/PhotoGrid/PhotoGridSkeleton';
+
+// Utils
+import { isGuestUser } from './utils/permissionUtils';
+import { invalidateAllPhotoCaches, invalidateMediaCounts } from './utils/cacheUtils';
+import { useQueryClient } from '@tanstack/react-query';
+
+interface OptimizedPhotoGalleryProps extends PhotoGalleryProps { }
 
 export default function OptimizedPhotoGallery({
   eventId,
   albumId,
-  shareToken,
   canUpload = true,
   userPermissions = {
     upload: true,
     download: false,
     moderate: true,
-    delete: true
+    delete: true,
   },
-  approvalMode = 'auto'
+  displayConfig, // 🚀 EXTRACTED
 }: OptimizedPhotoGalleryProps) {
-  // State management
-  const [activeTab, setActiveTab] = useState<'approved' | 'pending' | 'rejected' | 'hidden'>('approved');
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
-  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [useInfiniteScroll, setUseInfiniteScroll] = useState(false);
+  // Get user role from event store
+  const { selectedEvent } = useEventStore();
+  const userRole = selectedEvent?.user_role || 'participant';
+  const isGuest = isGuestUser(userRole);
+  const { scrollRef } = useScrollContainer();
 
   // Refs
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
-  // WebSocket connection for admin features
+  // WebSocket connection
   const webSocket = useEventWebSocket(eventId, { userType: 'admin' });
-  const gridQuality = 'thumbnail';
+  const gridQuality = 'small';
 
-  // Data fetching hooks with thumbnail quality for grid
-  const {
-    data: regularPhotos = [],
-    isLoading: regularLoading,
-    error: regularError,
-    refetch: refetchRegular
-  } = useEventMedia(eventId, {
-    status: activeTab,
-    limit: 100,
-    quality: gridQuality,
-    enabled: !useInfiniteScroll
+  // Custom hooks for state management
+  const galleryState = usePhotoGalleryState({
+    userRole,
+    userPermissions,
+    canUpload,
   });
 
+  const selection = usePhotoSelection();
+
+  // Data fetching - force approved for guests
+  const mediaStatus = isGuest ? 'approved' : galleryState.activeTab;
   const {
     photos: infinitePhotos = [],
     isLoading: infiniteLoading,
@@ -81,34 +93,27 @@ export default function OptimizedPhotoGallery({
     hasNextPage,
     fetchNextPage,
     error: infiniteError,
-    refetch: refetchInfinite
+    refetch: refetchInfinite,
   } = useInfiniteEventMediaFlat(eventId, {
-    status: activeTab,
-    limit: 20,
+    status: mediaStatus,
+    limit: 50,
     quality: gridQuality,
-    enabled: useInfiniteScroll
+    enabled: true,
   });
 
-  // Use regular or infinite photos based on mode
-  const photos = useInfiniteScroll ? infinitePhotos : regularPhotos;
-  const isLoading = useInfiniteScroll ? infiniteLoading : regularLoading;
-  const photosError = useInfiniteScroll ? infiniteError : regularError;
-  const refetchPhotos = useInfiniteScroll ? refetchInfinite : refetchRegular;
-
-  // Switch to infinite scroll if we have many photos
-  useEffect(() => {
-    if (regularPhotos.length > 50 && !useInfiniteScroll) {
-      console.log('Switching to infinite scroll mode due to large photo count');
-      setUseInfiniteScroll(true);
-    }
-  }, [regularPhotos.length, useInfiniteScroll]);
+  const photos = infinitePhotos;
+  const photosError = infiniteError;
+  const isLoading = infiniteLoading;
+  const refetchPhotos = refetchInfinite;
 
   // Media counts
   const {
     data: mediaCounts,
     isLoading: countsLoading,
-    refetch: refetchCounts
+    refetch: refetchCounts,
   } = useEventMediaCounts(eventId, userPermissions.moderate);
+
+  const { getCachedPhotoCount } = useGalleryUtils(eventId);
 
   // WebSocket-based upload progress monitoring
   const {
@@ -119,7 +124,7 @@ export default function OptimizedPhotoGallery({
     stopMonitoring,
     clearAll,
     isConnected: wsConnected,
-    isAuthenticated: wsAuthenticated
+    isAuthenticated: wsAuthenticated,
   } = useWebSocketUploadProgress(eventId, {
     onComplete: (mediaId, data) => {
       console.log('Upload completed:', mediaId, data);
@@ -130,251 +135,148 @@ export default function OptimizedPhotoGallery({
       console.log('Upload failed:', mediaId, data);
       refetchPhotos();
     },
-    showToasts: true
+    showToasts: true,
   });
 
-  // UPDATED: Use bulk operations mutation
-  const uploadMutation = useUploadMultipleMedia(eventId, albumId, {
-    onSuccess: (result) => {
-      const { data } = result;
-      setUploadDialogOpen(false);
-
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      if (cameraInputRef.current) cameraInputRef.current.value = '';
-
-      if (data?.uploads && Array.isArray(data.uploads)) {
-        const successfulUploads = data.uploads.filter((upload: any) => upload.status !== 'failed');
-
-        if (successfulUploads.length > 0) {
-          const mediaIds = successfulUploads.map((upload: any) => upload.id);
-          const filenames = successfulUploads.map((upload: any) => upload.filename || 'Unknown');
-
-          startMonitoring(mediaIds, filenames);
-
-          toast.success(`${successfulUploads.length} file${successfulUploads.length > 1 ? 's' : ''} uploaded successfully!`, {
-            description: 'Processing has started - you\'ll see progress updates below',
-            duration: 4000
-          });
-        }
-
-        const failedUploads = data.uploads.filter((upload: any) => upload.status === 'failed');
-        if (failedUploads.length > 0) {
-          toast.error(`${failedUploads.length} file${failedUploads.length > 1 ? 's' : ''} failed to upload`);
-        }
-      }
-
-      refetchCounts();
-      refetchPhotos();
+  // Upload hook
+  const upload = usePhotoUpload({
+    eventId,
+    albumId: albumId || undefined,
+    canUpload: galleryState.canUserUploadPhotos,
+    onUploadStart: (mediaIds, filenames) => {
+      startMonitoring(mediaIds, filenames);
     },
-    onError: (error) => {
-      console.error('Upload failed:', error);
-      setUploadDialogOpen(false);
-      toast.error('Upload failed', {
-        description: error.message || 'Please try again',
-        duration: 5000
-      });
-    }
+    onUploadComplete: () => {
+      refetchCounts();
+    },
+    onTabChange: (tab) => {
+      galleryState.handleTabChange(tab);
+    },
   });
 
-  // UPDATED: Use bulk operations for status updates
+  // Bulk operations hook
+  const bulkOps = useBulkPhotoOperations({
+    eventId,
+    permissions: galleryState.effectivePermissions,
+    onSuccess: () => {
+      selection.deselectAllPhotos();
+      refetchPhotos();
+      refetchCounts();
+    },
+  });
+
+  // Single photo operations
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
-  const { getCachedPhotoCount } = useGalleryUtils(eventId);
 
-  // Progress panel handlers
-  const handleRemoveProgressItem = useCallback((mediaId: string) => {
-    stopMonitoring([mediaId]);
-  }, [stopMonitoring]);
-
-  const handleClearAll = useCallback(() => {
-    clearAll();
-  }, [clearAll]);
-
-  const handleRetryUpload = useCallback((mediaId: string) => {
-    console.log('Retry upload not implemented yet:', mediaId);
-    toast.info('Retry feature will be available when queue management is implemented');
-  }, []);
-
-  const handleCancelUpload = useCallback((mediaId: string) => {
-    console.log('Cancel upload not implemented yet:', mediaId);
-    toast.info('Cancel feature will be available when queue management is implemented');
-  }, []);
-
-  const handlePauseResumeUpload = useCallback((mediaId: string, action: 'pause' | 'resume') => {
-    console.log(`${action} upload not implemented yet:`, mediaId);
-    toast.info(`${action} feature will be available when queue management is implemented`);
-  }, []);
-
-  // WebSocket connection status indicator
-  const ConnectionStatus = memo(() => {
-    if (!wsConnected) {
-      return (
-        <div className="flex items-center gap-2 text-xs text-red-600">
-          <WifiOffIcon className="h-3 w-3" />
-          <span>Disconnected</span>
-        </div>
-      );
-    }
-
-    if (!wsAuthenticated) {
-      return (
-        <div className="flex items-center gap-2 text-xs text-yellow-600">
-          <WifiIcon className="h-3 w-3" />
-          <span>Connecting...</span>
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex items-center gap-2 text-xs text-green-600">
-        <WifiIcon className="h-3 w-3" />
-        <span>Connected</span>
-      </div>
-    );
-  });
-
-  // Memoized computed values
-  const canUserUpload = useMemo(() =>
-    canUpload && userPermissions.upload,
-    [canUpload, userPermissions.upload]
-  );
-
-  const displayCounts = useMemo(() =>
-    mediaCounts || {
-      approved: getCachedPhotoCount('approved'),
-      pending: getCachedPhotoCount('pending'),
-      rejected: getCachedPhotoCount('rejected'),
-      hidden: getCachedPhotoCount('hidden'),
-      auto_approved: getCachedPhotoCount('auto_approved'),
-      total: 0
-    },
+  // Display counts with fallback
+  const displayCounts = useMemo(
+    () =>
+      mediaCounts || {
+        approved: getCachedPhotoCount('approved'),
+        pending: getCachedPhotoCount('pending'),
+        rejected: getCachedPhotoCount('rejected'),
+        hidden: getCachedPhotoCount('hidden'),
+        total:
+          getCachedPhotoCount('approved') +
+          getCachedPhotoCount('pending') +
+          getCachedPhotoCount('rejected') +
+          getCachedPhotoCount('hidden'),
+      },
     [mediaCounts, getCachedPhotoCount]
-  );
+  ) as { approved: number; pending: number; rejected: number; hidden: number; total: number };
 
   // Event handlers
-  const handleTabChange = useCallback((newTab: typeof activeTab) => {
-    if (newTab === activeTab) return;
+  const handleStatusUpdate = useCallback(
+    (photoId: string, status: string, reason?: string) => {
+      updateStatusMutation.mutate({
+        mediaId: photoId,
+        status: status as 'approved' | 'pending' | 'rejected' | 'hidden',
+        reason,
+      });
+    },
+    [updateStatusMutation]
+  );
 
-    console.log(`Switching to tab: ${newTab}`);
-    setActiveTab(newTab);
-    setSelectedPhoto(null);
-    setPhotoViewerOpen(false);
-    setUseInfiniteScroll(false);
-  }, [activeTab]);
+  const handleDelete = useCallback(
+    (photoId: string) => {
+      if (!userPermissions.delete) {
+        toast.error("You don't have permission to delete photos.");
+        return;
+      }
+      deleteMutation.mutate(photoId);
+    },
+    [userPermissions.delete, deleteMutation]
+  );
 
-  // UPDATED: Use bulk operations for status updates
-  const handleStatusUpdate = useCallback((photoId: string | string[], status: string, reason?: string) => {
-    console.log('Status update requested:', { photoId, status, reason });
+  // Set Cover Image Handler
+  const { getAccessToken } = useSecureAuth();
+  // selectedEvent is already destructured at the top level
+  const { updateEventInStore } = useEventStore();
 
-    updateStatusMutation.mutate({
-      mediaId: photoId,
-      status: status as 'approved' | 'pending' | 'rejected' | 'hidden',
-      reason
-    });
-  }, [updateStatusMutation]);
-
-  // NEW: Bulk status update handler
-  const handleBulkStatusUpdate = useCallback((photoIds: string[], status: string, reason?: string) => {
-    console.log('Bulk status update requested:', { count: photoIds.length, status, reason });
-
-    if (photoIds.length === 0) {
-      toast.error('No photos selected for bulk update');
+  const handleSetCover = useCallback(async (photo: Photo) => {
+    // 1. Strict Permission Check
+    if (userRole !== 'creator' && userRole !== 'co_host') {
+      toast.error("You don't have permission to change the cover image.");
       return;
     }
 
-    // Use the bulk-specific method
-    updateStatusMutation.updateMultiple(
-      photoIds,
-      status as 'approved' | 'pending' | 'rejected' | 'hidden',
-      reason
+    const previousCover = selectedEvent?.cover_image;
+    const token = getAccessToken();
+
+    if (!token) {
+      toast.error("Authentication required.");
+      return;
+    }
+
+    // 2. Optimistic Update
+    const newCoverImage = {
+      url: photo.imageUrl,
+      public_id: photo.id,
+      uploaded_by: photo.uploaded_by || null, // Ensure ID or null, not a name string
+      thumbnail_url: photo.thumbnail || '' // Ensure string
+    };
+
+    // Update store immediately
+    updateEventInStore(eventId, {
+      cover_image: newCoverImage as any
+    });
+
+    toast.promise(
+      updateEvent(eventId, { cover_image: newCoverImage }, token),
+      {
+        loading: 'Updating cover image...',
+        success: () => {
+          return 'Cover image updated successfully';
+        },
+        error: (err) => {
+          // 3. Rollback on failure
+          console.error("Failed to update cover:", err);
+          if (previousCover) {
+            updateEventInStore(eventId, { cover_image: previousCover });
+          }
+          return 'Failed to update cover image';
+        }
+      }
     );
-  }, [updateStatusMutation]);
+  }, [eventId, userRole, selectedEvent, updateEventInStore, getAccessToken]);
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    if (!canUserUpload) {
-      toast.error("You don't have permission to upload photos to this event.");
-      return;
-    }
-
-    const validFiles = Array.from(files).filter(file => {
-      if (!file.type.startsWith('image/')) {
-        toast.error(`"${file.name}" is not a valid image file.`);
-        return false;
+  const handleDownload = useCallback(
+    (photo: Photo) => {
+      if (!userPermissions.download) {
+        toast.error("You don't have permission to download photos.");
+        return;
       }
 
-      const maxSize = 100 * 1024 * 1024; // 100MB
-      if (file.size > maxSize) {
-        const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-        toast.error(`"${file.name}" is too large (${sizeMB}MB). Maximum size is 100MB.`);
-        return false;
-      }
-
-      return true;
-    });
-
-    if (validFiles.length === 0) {
-      toast.error("No valid image files to upload.");
-      return;
-    }
-
-    toast.success(`Starting upload of ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}...`);
-    uploadMutation.mutate(validFiles);
-  }, [canUserUpload, uploadMutation]);
-
-  const openPhotoViewer = useCallback((photo: Photo, index: number) => {
-    if (photo.status === 'uploading' || photo.isTemporary) return;
-
-    console.log('Opening photo viewer with full quality for:', photo.id);
-    setSelectedPhoto(photo);
-    setSelectedPhotoIndex(index);
-    setPhotoViewerOpen(true);
-  }, []);
-
-  const closePhotoViewer = useCallback(() => {
-    setPhotoViewerOpen(false);
-    setSelectedPhoto(null);
-    setSelectedPhotoIndex(null);
-  }, []);
-
-  const navigatePhoto = useCallback((direction: 'next' | 'prev') => {
-    if (selectedPhotoIndex === null || photos.length <= 1) return;
-
-    let newIndex: number;
-    if (direction === 'next') {
-      newIndex = selectedPhotoIndex < photos.length - 1 ? selectedPhotoIndex + 1 : 0;
-    } else {
-      newIndex = selectedPhotoIndex > 0 ? selectedPhotoIndex - 1 : photos.length - 1;
-    }
-
-    console.log(`Navigating to photo ${newIndex + 1}/${photos.length}`);
-    setSelectedPhotoIndex(newIndex);
-    setSelectedPhoto(photos[newIndex]);
-  }, [selectedPhotoIndex, photos]);
-
-  const handleDelete = useCallback((photoId: string) => {
-    if (!userPermissions.delete) {
-      toast.error("You don't have permission to delete photos.");
-      return;
-    }
-    deleteMutation.mutate(photoId);
-  }, [userPermissions.delete, deleteMutation]);
-
-  const handleDownload = useCallback((photo: Photo) => {
-    if (!userPermissions.download) {
-      toast.error("You don't have permission to download photos.");
-      return;
-    }
-
-    const link = document.createElement('a');
-    link.href = photo.imageUrl;
-    link.download = `photo-${photo.id}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [userPermissions.download]);
+      const link = document.createElement('a');
+      link.href = photo.imageUrl;
+      link.download = `photo-${photo.id}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    },
+    [userPermissions.download]
+  );
 
   const handleLoadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
@@ -389,19 +291,115 @@ export default function OptimizedPhotoGallery({
     toast.info('Refreshing data...');
   }, [refetchPhotos, refetchCounts]);
 
-  // WebSocket connection status effects
-  useEffect(() => {
-    if (wsConnected && wsAuthenticated) {
-      console.log('WebSocket connected and authenticated for upload progress');
-    }
-  }, [wsConnected, wsAuthenticated]);
+  // Progress panel handlers
+  const handleRemoveProgressItem = useCallback(
+    (mediaId: string) => {
+      stopMonitoring([mediaId]);
+    },
+    [stopMonitoring]
+  );
 
-  // Cleanup bulk operations on unmount
+  const handleClearAll = useCallback(() => {
+    clearAll();
+    upload.clearManualProgress();
+  }, [clearAll, upload]);
+
+  const handleDismissProgress = useCallback(() => {
+    if (summary.uploading === 0 && summary.processing === 0) {
+      handleClearAll();
+    }
+  }, [summary.uploading, summary.processing, handleClearAll]);
+
+  // Combined upload progress
+  const combinedUploadProgress = useMemo(() => {
+    const combined: any = {};
+    const now = new Date();
+
+    // Add manual upload progress
+    Object.entries(upload.manualUploadProgress).forEach(([fileName, percentage]) => {
+      const id = `client-${fileName}`;
+      combined[id] = {
+        mediaId: id,
+        filename: fileName,
+        stage: 'uploading',
+        percentage: Math.round(percentage),
+        status: 'uploading' as const,
+        startTime: now,
+      };
+    });
+
+    // Add/override with backend progress
+    Object.entries(uploadProgress).forEach(([mediaId, item]) => {
+      const clientKey = Object.keys(combined).find((k) => combined[k].filename === item.filename);
+
+      if (clientKey && item.status === 'processing') {
+        combined[clientKey] = {
+          ...item,
+          percentage: item.percentage || 100,
+        };
+      } else if (!clientKey) {
+        combined[mediaId] = item;
+      }
+    });
+
+    return combined;
+  }, [uploadProgress, upload.manualUploadProgress]);
+
+  const combinedSummary = useMemo(() => {
+    const values = Object.values(combinedUploadProgress) as any[];
+    const total = values.length;
+    if (total === 0)
+      return { total: 0, uploading: 0, processing: 0, completed: 0, failed: 0, overallProgress: 0 };
+
+    const uploading = values.filter((p) => p.status === 'uploading').length;
+    const processing = values.filter((p) => p.status === 'processing').length;
+    const completed = values.filter((p) => p.status === 'completed').length;
+    const failed = values.filter((p) => p.status === 'failed').length;
+
+    const overallProgress = Math.round(
+      values.reduce((acc, p) => acc + (p.percentage || 0), 0) / total
+    );
+
+    return { total, uploading, processing, completed, failed, overallProgress };
+  }, [combinedUploadProgress]);
+
+  const isCombinedMonitoring = Object.keys(combinedUploadProgress).length > 0;
+
+  // Infinite scroll with Intersection Observer
   useEffect(() => {
+    if (!loadMoreRef.current || !hasNextPage || isFetchingNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          console.log('📜 Infinite scroll triggered - loading more photos');
+          fetchNextPage();
+        }
+      },
+      {
+        root: scrollRef.current, // Explicitly check against the scroll container
+        rootMargin: '500px', // Pre-fetch when within 500px of bottom
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(loadMoreRef.current);
+
     return () => {
-      updateStatusMutation.cleanup?.();
+      observer.disconnect();
     };
-  }, [updateStatusMutation]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Auto-load for very small initial loads only (fill the screen)
+  useEffect(() => {
+    // Only auto-load if we have very few photos (e.g. initial load didn't fill screen)
+    if (photos.length > 0 && photos.length < 15 && !isLoading && !isFetchingNextPage && hasNextPage) {
+      const timer = setTimeout(() => {
+        fetchNextPage();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [hasNextPage, isFetchingNextPage, isLoading, fetchNextPage, photos.length]);
 
   // Error handling
   if (photosError) {
@@ -417,7 +415,7 @@ export default function OptimizedPhotoGallery({
           {photosError.message || 'Something went wrong while loading photos.'}
         </p>
         <div className="flex gap-2">
-          <Button onClick={refetchPhotos} variant="outline">
+          <Button onClick={() => refetchPhotos()} variant="outline">
             Try Again
           </Button>
           <Button onClick={handleManualRefresh} variant="outline">
@@ -430,162 +428,147 @@ export default function OptimizedPhotoGallery({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <StatusTabs
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            mediaCounts={displayCounts}
-            userPermissions={userPermissions}
-          />
+      {/* Gallery Header */}
+      <GalleryHeader
+        activeTab={galleryState.activeTab}
+        onTabChange={galleryState.handleTabChange}
+        counts={displayCounts}
+        onRefresh={handleManualRefresh}
+        isGuest={isGuest}
+        photoCount={photos.length}
+        wsConnected={wsConnected}
+        wsAuthenticated={wsAuthenticated}
+        selectedCount={selection.getSelectedCount()}
+        onDeselectAll={selection.deselectAllPhotos}
+      />
 
-          {useInfiniteScroll && (
-            <div className="text-xs text-gray-500">
-              Infinite scroll ({photos.length} loaded)
-            </div>
-          )}
-        </div>
-
-        <UploadProgressTab
-          uploadProgress={uploadProgress}
-          isMonitoring={isMonitoring}
-          summary={summary}
-          onClearAll={handleClearAll}
-          onRemoveItem={handleRemoveProgressItem}
-          onRetryItem={handleRetryUpload}
-          onCancelItem={handleCancelUpload}
-          onPauseResumeItem={handlePauseResumeUpload}
-          className="transition-all duration-300"
-        />
-
-        <div className="flex items-center gap-2">
-          {process.env.NODE_ENV === 'development' && (
-            <>
-              <ConnectionStatus />
-              <Button
-                onClick={handleManualRefresh}
-                variant="outline"
-                size="sm"
-                className="text-xs"
-              >
-                Refresh {/* Right now the refresh button is only for dev env, it will dissapear on prod */}
-              </Button>
-              {updateStatusMutation.isPending && (
-                <Badge variant="secondary" className="text-xs">
-                  Processing {updateStatusMutation.queueLength || 0} operations
-                </Badge>
-              )}
-            </>
-          )}
-
-          {canUserUpload && (
-            <PhotoUploadDialog
-              open={uploadDialogOpen}
-              setOpen={setUploadDialogOpen}
-              isUploading={uploadMutation.isPending}
-              approvalMode={approvalMode}
-              onFileUpload={handleFileUpload}
-              fileInputRef={fileInputRef}
-              cameraInputRef={cameraInputRef}
-            />
-          )}
-        </div>
-      </div> 
-
-      {/* <UploadProgressPanel
-        uploadProgress={uploadProgress}
-        isMonitoring={isMonitoring}
-        summary={summary}
-        onClearAll={handleClearAll}
+      {/* Upload Progress */}
+      <UploadProgressTab
+        uploadProgress={combinedUploadProgress}
+        isMonitoring={isCombinedMonitoring}
+        summary={combinedSummary}
+        onClearAll={handleDismissProgress}
         onRemoveItem={handleRemoveProgressItem}
-        onRetryItem={handleRetryUpload}
-        onCancelItem={handleCancelUpload}
-        onPauseResumeItem={handlePauseResumeUpload}
+        onRetryItem={(mediaId) => toast.info('Retry feature coming soon')}
+        onCancelItem={(mediaId) => toast.info('Cancel feature coming soon')}
+        onPauseResumeItem={(mediaId, action) => toast.info(`${action} feature coming soon`)}
         className="transition-all duration-300"
-      /> */}
+      />
 
-      {(updateStatusMutation.isPending || uploadMutation.isPending) && (
+      {/* Upload Controls */}
+      <div className="flex items-center gap-2">
+        {process.env.NODE_ENV === 'development' && updateStatusMutation.isPending && (
+          <Badge variant="secondary" className="text-xs">
+            Processing operations
+          </Badge>
+        )}
+
+        <UploadButton
+          eventId={eventId}
+          onUpload={upload.validateAndUpload}
+          isUploading={upload.isUploading}
+        />
+      </div>
+
+      {/* Loading Indicator */}
+      {(updateStatusMutation.isPending || upload.isUploading || bulkOps.isUpdating) && (
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-blue-700 dark:text-blue-300">
-            {uploadMutation.isPending ? 'Starting upload...' : 'Processing status updates...'}
+            {upload.isUploading
+              ? 'Starting upload...'
+              : bulkOps.isUpdating
+                ? 'Updating media status...'
+                : 'Processing status updates...'}
           </span>
         </div>
       )}
 
+      {/* Photo Grid or Empty State */}
       {isLoading || countsLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4">
-          {Array.from({ length: 16 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-square rounded-lg" />
-          ))}
-        </div>
+        <PhotoGridSkeleton count={16} />
       ) : photos.length === 0 ? (
         <EmptyState
-          activeTab={activeTab}
-          canUserUpload={canUserUpload}
-          isUploading={uploadMutation.isPending}
-          onUploadClick={() => setUploadDialogOpen(true)}
+          activeTab={galleryState.activeTab}
+          canUserUpload={galleryState.canUserUploadPhotos}
+          isUploading={upload.isUploading}
+          onUploadClick={() => {
+            toast.info("Please use the 'Choose Files' button above to upload photos.");
+          }}
         />
       ) : (
         <>
-          <OptimizedPhotoGrid
+          {/* Photo Grid */}
+          <RowsPhotoGallery
             photos={photos}
-            onPhotoClick={openPhotoViewer}
-            userPermissions={userPermissions}
-            currentTab={activeTab}
+            targetRowHeight={displayConfig?.targetRowHeight} // 🚀 NEW: Pass configured height
+            onPhotoClick={galleryState.openPhotoViewer}
+            userPermissions={galleryState.effectivePermissions}
+            currentTab={galleryState.activeTab}
             onStatusUpdate={handleStatusUpdate}
-            onBulkStatusUpdate={handleBulkStatusUpdate} // NEW: Pass bulk handler
             onDownload={handleDownload}
             onDelete={handleDelete}
+            onSetCover={handleSetCover}
+            selectionMode={selection.getSelectedCount() > 0}
+            selectedPhotos={selection.selectedPhotos}
+            onToggleSelection={selection.togglePhotoSelection}
+            onNearEnd={handleLoadMore}
           />
 
-          {useInfiniteScroll && hasNextPage && (
-            <div className="flex justify-center pt-6">
-              <Button
-                onClick={handleLoadMore}
-                disabled={isFetchingNextPage}
-                variant="outline"
-              >
-                {isFetchingNextPage ? 'Loading...' : 'Load More Photos'}
-              </Button>
-            </div>
+          {/* Floating Bulk Action Bar */}
+          {!isGuest && (
+            <FloatingActionBar
+              selectedCount={selection.getSelectedCount()}
+              onDeselect={selection.deselectAllPhotos}
+              onApprove={
+                galleryState.activeTab !== 'approved'
+                  ? () => bulkOps.handleBulkStatusUpdate(selection.selectedPhotos, 'approved')
+                  : undefined
+              }
+              onReject={
+                galleryState.activeTab !== 'rejected'
+                  ? () => bulkOps.handleBulkStatusUpdate(selection.selectedPhotos, 'rejected')
+                  : undefined
+              }
+              onHide={
+                galleryState.activeTab !== 'hidden'
+                  ? () => bulkOps.handleBulkStatusUpdate(selection.selectedPhotos, 'hidden')
+                  : undefined
+              }
+              onDownload={() => bulkOps.handleBulkDownload(selection.selectedPhotos, photos)}
+              onDelete={() => bulkOps.handleBulkDelete(selection.selectedPhotos)}
+              permissions={galleryState.effectivePermissions}
+              currentTab={galleryState.activeTab}
+            />
           )}
 
-          {photoViewerOpen && selectedPhoto && (
+          {/* Infinite Scroll Sentinel */}
+          <InfiniteScrollSentinel
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onLoadMore={handleLoadMore}
+            sentinelRef={loadMoreRef}
+          />
+
+          {/* Loading skeleton for next page */}
+          {isFetchingNextPage && <PhotoGridSkeleton count={8} />}
+
+          {/* Fullscreen Photo Viewer */}
+          {galleryState.photoViewerOpen && galleryState.selectedPhoto && (
             <FullscreenPhotoViewer
-              selectedPhoto={selectedPhoto}
-              selectedPhotoIndex={selectedPhotoIndex}
-              photos={photos}
-              userPermissions={userPermissions}
-              onClose={closePhotoViewer}
-              onPrev={() => navigatePhoto('prev')}
-              onNext={() => navigatePhoto('next')}
-              setPhotoInfoOpen={(open) => {
-                console.log('Photo info:', open);
-              }}
+              selectedPhoto={galleryState.selectedPhoto as any}
+              selectedPhotoIndex={galleryState.selectedPhotoIndex}
+              photos={photos as any}
+              userPermissions={galleryState.effectivePermissions}
+              onClose={galleryState.closePhotoViewer}
+              onPrev={() => galleryState.navigatePhoto('prev', photos)}
+              onNext={() => galleryState.navigatePhoto('next', photos)}
               deletePhoto={handleDelete}
-              downloadPhoto={handleDownload}
+              downloadPhoto={(photo: any) => handleDownload(photo)}
             />
           )}
         </>
       )}
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept="image/*"
-        className="hidden"
-        onChange={handleFileUpload}
-      />
-      <input
-        ref={cameraInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={handleFileUpload}
-      />
     </div>
   );
 }

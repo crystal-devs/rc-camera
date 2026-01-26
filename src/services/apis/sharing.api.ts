@@ -77,7 +77,7 @@ interface EventDetails {
   end_date?: string;
   template: string;
   visibility: 'anyone_with_link' | 'invited_only' | 'private';
-  cover_image?: { url: string };
+  cover_image?: { public_id: string };
   location?: { name: string };
   permissions: {
     can_view: boolean;
@@ -268,7 +268,7 @@ export const removeParticipant = async (
 
 // services/apis/sharing.api.ts
 
-export const getTokenInfo = async (token: string, authToken?: string | null) => {
+export const getShareTokenInfo = async (token: string, authToken?: string | null) => {
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -279,31 +279,29 @@ export const getTokenInfo = async (token: string, authToken?: string | null) => 
       headers['Authorization'] = `Bearer ${authToken}`;
     }
 
-    console.log('🔍 Making request with headers:', {
-      hasAuth: authToken,
+    console.log('🔍 Making share token request with headers:', {
+      hasAuth: !!authToken,
       token: token.substring(0, 8) + '...'
     });
 
     const response = await axios.get(
-      `${API_BASE_URL}/token/${token}`, // Updated endpoint
+      `${API_BASE_URL}/share/${token}`,
       { headers }
     );
 
-    if (response.data?.status) {
-      return response.data;
-    } else {
-      throw new Error(response.data?.message || 'Invalid token');
-    }
+    // Return the full response for handling different scenarios
+    return response.data;
   } catch (error) {
-    console.error('Error fetching token info:', error);
+    console.error('Error fetching share token info:', error);
 
     if (axios.isAxiosError(error)) {
-      // Pass through the specific error response
+      // Pass through the specific error response for proper handling
       if (error.response) {
         const errorData = {
-          status: error.response.status,
-          message: error.response.data?.message || 'Failed to fetch token info',
+          status: error.response.data?.status || false,
           code: error.response.data?.code || error.response.status,
+          message: error.response.data?.message || 'Failed to fetch share token info',
+          error: error.response.data?.error || { message: 'Unknown error' },
           data: error.response.data
         };
         throw errorData;
@@ -313,6 +311,9 @@ export const getTokenInfo = async (token: string, authToken?: string | null) => 
     throw error;
   }
 };
+
+// Legacy support - keep for backward compatibility
+export const getTokenInfo = getShareTokenInfo;
 
 // Legacy support if needed
 export const getTokenInfoWithPassword = async (
