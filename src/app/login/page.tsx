@@ -3,7 +3,7 @@ import React, { useEffect, useState, Suspense } from 'react'
 import { LoginForm } from './components/login-form'
 import { Toaster } from "@/components/ui/sonner"
 import { GoogleOAuthProvider } from "@react-oauth/google"
-import { AuthProvider } from '@/providers/AuthProvider';
+
 import { useSearchParams } from 'next/navigation';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AuthGuard } from '@/components/auth/AuthGuard';

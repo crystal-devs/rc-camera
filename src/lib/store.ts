@@ -163,7 +163,7 @@ interface SettingsActions {
     fetchSubscription: () => Promise<void>;
     fetchUsage: () => Promise<void>;
     fetchAvailablePlans: () => Promise<void>;
-    upgradeSubscription: (planId: string) => Promise<{ success: boolean; message: string; redirectUrl?: string }>;
+    upgradeSubscription: (planId: string, paymentMethodId?: string) => Promise<{ success: boolean; message: string; redirectUrl?: string }>;
     logout: () => Promise<void>;
     login: (userData: Record<string, any>) => void;
 }
@@ -529,7 +529,7 @@ export const useStore = create<SettingsState & SettingsActions>()(
                 }
             },
 
-            upgradeSubscription: async (planId: string) => {
+            upgradeSubscription: async (planId: string, paymentMethodId?: string) => {
                 const state = get();
                 if (!state.isAuthenticated) {
                     throw new Error('Must be authenticated to upgrade subscription');
@@ -537,7 +537,10 @@ export const useStore = create<SettingsState & SettingsActions>()(
 
                 set({ isUpgradingSubscription: true });
                 try {
-                    const response = await apiClient.post<any>('/user/subscription/upgrade', { planId });
+                    const response = await apiClient.post<any>('/user/subscription/upgrade', {
+                        planId,
+                        paymentMethodId
+                    });
 
                     if (response.status === 200) {
                         const responseData = response.data;

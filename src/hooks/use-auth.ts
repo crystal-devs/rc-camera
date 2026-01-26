@@ -1,133 +1,27 @@
 "use client";
-import { useEffect, useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { authManager } from '@/lib/auth-manager';
-import logger from '@/lib/logger';
+import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
+/**
+ * Legacy hook for auth state - Refactored to use SecureAuthContext
+ * @deprecated Use useSecureAuth() directly instead
+ */
 export const useAuth = () => {
-  const [authToken, setAuthToken] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string>('');
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const router = useRouter();
-
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        await authManager.init();
-
-        if (authManager.isAuthenticated()) {
-          const token = authManager.getAuthToken();
-          const userId = authManager.getUserId();
-
-          setAuthToken(token);
-          setCurrentUserId(userId || '');
-          setIsAuthenticated(true);
-        } else {
-          setIsAuthenticated(false);
-          setAuthToken(null);
-          setCurrentUserId('');
-        }
-      } catch (error) {
-        console.error("Auth initialization failed:", error);
-        setIsAuthenticated(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initAuth();
-  }, [router]);
+  const { getAccessToken, user, isAuthenticated, isLoading } = useSecureAuth();
 
   return {
-    authToken,
-    currentUserId,
+    authToken: getAccessToken(),
+    currentUserId: user?.id || '',
     isAuthenticated,
     isLoading
   };
 };
 
+/**
+ * Legacy hook for token - Refactored to use SecureAuthContext
+ * @deprecated Use useSecureAuth() directly instead
+ */
 export const useAuthToken = () => {
-  // Initialize with null to prevent SSR/hydration issues
-  const [token, setToken] = useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const tokenRef = useRef<string | null>(null); // Track current token
-
-  // Initialize token after component mounts to avoid hydration mismatch
-  useEffect(() => {
-    if (isInitialized) return;
-
-    const initToken = async () => {
-      try {
-        // Initialize auth manager
-        await authManager.init();
-        const currentToken = authManager.getAuthToken();
-
-        logger.debug('useAuthToken: Initial token check', {
-          hasToken: !!currentToken,
-          mode: authManager.getCurrentState().mode
-        });
-
-        setToken(currentToken);
-        tokenRef.current = currentToken; // Store in ref
-        setIsInitialized(true);
-
-        // Listen for storage events from other tabs
-        const handleStorageChange = (e: StorageEvent) => {
-          if (e.key === 'auth_event') {
-            logger.debug('useAuthToken: Auth changed in another tab');
-            authManager.init().then(() => {
-              const newToken = authManager.getAuthToken();
-              if (newToken !== tokenRef.current) {
-                setToken(newToken);
-                tokenRef.current = newToken;
-              }
-            });
-          }
-        };
-
-        // Listen for local events from AuthManager (same tab)
-        const handleLocalAuthUpdate = (e: Event) => {
-          const customEvent = e as CustomEvent;
-          logger.debug('useAuthToken: Auth updated locally', customEvent.detail);
-          const newToken = authManager.getAuthToken();
-          if (newToken !== tokenRef.current) {
-            setToken(newToken);
-            tokenRef.current = newToken;
-          }
-        };
-
-        // Poll for auth changes (fallback)
-        const intervalId = setInterval(async () => {
-          try {
-            const currentToken = authManager.getAuthToken();
-            if (currentToken !== tokenRef.current) {
-              // logger.debug('useAuthToken: Token updated via polling'); // Reduce noise
-              setToken(currentToken);
-              tokenRef.current = currentToken;
-            }
-          } catch (e) {
-            logger.error('Error polling for token', e);
-          }
-        }, 1000); // Poll every 1s just in case
-
-        window.addEventListener('storage', handleStorageChange);
-        window.addEventListener('rc-auth-update', handleLocalAuthUpdate);
-
-        return () => {
-          window.removeEventListener('storage', handleStorageChange);
-          window.removeEventListener('rc-auth-update', handleLocalAuthUpdate);
-          clearInterval(intervalId);
-        };
-      } catch (e) {
-        logger.error('Error in useAuthToken initialization', e);
-        return () => { };
-      }
-    };
-
-    initToken();
-  }, [isInitialized]); // Only depend on isInitialized, not token!
-
-  return token;
+  const { getAccessToken } = useSecureAuth();
+  return getAccessToken();
 };
+

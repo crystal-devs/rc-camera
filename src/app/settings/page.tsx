@@ -10,14 +10,13 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { LoginPrompt } from './components/login-prompt';
 import { useStore } from '@/lib/store';
-import { SubscriptionAndStorage, SubscriptionPlanSelector } from '@/components/subscription/SubscriptionAndStorage';
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { 
-    theme, 
-    setTheme, 
-    requireAuthForSettings, 
+  const {
+    theme,
+    setTheme,
+    requireAuthForSettings,
     setRequireAuthForSettings,
     privateProfile,
     setPrivateProfile,
@@ -27,7 +26,7 @@ export default function SettingsPage() {
     hydrated,
     logout: storeLogout
   } = useStore();
-  
+
   const [notifications, setNotifications] = useState(true);
   const [emailNotifications, setEmailNotifications] = useState(true);
 
@@ -35,7 +34,7 @@ export default function SettingsPage() {
     setTheme(newTheme);
     toast.success(`Theme set to ${newTheme}`);
   };
-  
+
   const handleLogout = () => {
     storeLogout(); // Use the Zustand store logout function
     toast.success('Logged out successfully');
@@ -51,20 +50,20 @@ export default function SettingsPage() {
           </Button>
           <h1 className="text-2xl font-semibold">Settings</h1>
         </div>
-        
+
         {hydrated && isAuthenticated ? (
           <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
             <LogOut className="h-4 w-4" />
             <span>Logout</span>
           </Button>
         ) : (
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => {
               localStorage.setItem('redirectAfterLogin', window.location.pathname);
               router.push('/login');
-            }} 
+            }}
             className="gap-2"
           >
             <LogIn className="h-4 w-4" />
@@ -72,15 +71,12 @@ export default function SettingsPage() {
           </Button>
         )}
       </div>
-      
+
       {hydrated && !isAuthenticated && <LoginPrompt />}
-      
+
       {/* Display subscription and storage information for all users */}
-      <SubscriptionAndStorage />
-      
-      {/* Display available subscription plans */}
-      <SubscriptionPlanSelector />
-      
+
+
       <div className="space-y-6">
         {/* Appearance */}
         <Card>
@@ -95,7 +91,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div className="flex flex-col gap-6">
                 <div className="grid grid-cols-3 gap-2">
-                  <Button 
+                  <Button
                     onClick={() => handleThemeChange('light')}
                     variant={theme === 'light' ? 'default' : 'outline'}
                     className="flex flex-col items-center gap-1 h-auto py-3"
@@ -103,7 +99,7 @@ export default function SettingsPage() {
                     <Sun className="h-5 w-5" />
                     <span>Light</span>
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => handleThemeChange('dark')}
                     variant={theme === 'dark' ? 'default' : 'outline'}
                     className="flex flex-col items-center gap-1 h-auto py-3"
@@ -111,7 +107,7 @@ export default function SettingsPage() {
                     <Moon className="h-5 w-5" />
                     <span>Dark</span>
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => handleThemeChange('system')}
                     variant={theme === 'system' ? 'default' : 'outline'}
                     className="flex flex-col items-center gap-1 h-auto py-3"
@@ -141,9 +137,9 @@ export default function SettingsPage() {
                   <p className="font-medium">Push Notifications</p>
                   <p className="text-sm text-muted-foreground">Receive notifications on your device</p>
                 </div>
-                <Switch 
-                  checked={notifications} 
-                  onCheckedChange={setNotifications} 
+                <Switch
+                  checked={notifications}
+                  onCheckedChange={setNotifications}
                 />
               </div>
               <Separator />
@@ -152,9 +148,9 @@ export default function SettingsPage() {
                   <p className="font-medium">Email Notifications</p>
                   <p className="text-sm text-muted-foreground">Receive updates and alerts via email</p>
                 </div>
-                <Switch 
-                  checked={emailNotifications} 
-                  onCheckedChange={setEmailNotifications} 
+                <Switch
+                  checked={emailNotifications}
+                  onCheckedChange={setEmailNotifications}
                 />
               </div>
             </div>
@@ -177,8 +173,8 @@ export default function SettingsPage() {
                   <p className="font-medium">Require Login for Settings</p>
                   <p className="text-sm text-muted-foreground">Protect settings access with authentication</p>
                 </div>
-                <Switch 
-                  checked={requireAuthForSettings} 
+                <Switch
+                  checked={requireAuthForSettings}
                   onCheckedChange={setRequireAuthForSettings}
                   disabled={!hydrated || !isAuthenticated}
                 />
@@ -189,8 +185,8 @@ export default function SettingsPage() {
                   <p className="font-medium">Private Profile</p>
                   <p className="text-sm text-muted-foreground">Only share your profile with approved users</p>
                 </div>
-                <Switch 
-                  checked={privateProfile} 
+                <Switch
+                  checked={privateProfile}
                   onCheckedChange={setPrivateProfile}
                   disabled={!hydrated || !isAuthenticated}
                 />
@@ -201,8 +197,8 @@ export default function SettingsPage() {
                   <p className="font-medium">Auto Save</p>
                   <p className="text-sm text-muted-foreground">Automatically save changes</p>
                 </div>
-                <Switch 
-                  checked={autoSave} 
+                <Switch
+                  checked={autoSave}
                   onCheckedChange={setAutoSave}
                   disabled={!hydrated || !isAuthenticated}
                 />
@@ -223,42 +219,42 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <SettingItem 
+              <SettingItem
                 icon={<User className="h-5 w-5" />}
                 title="Account"
                 description="Manage your account information"
                 onClick={() => router.push('/settings/account')}
               />
               <Separator />
-              <SettingItem 
+              <SettingItem
                 icon={<Lock className="h-5 w-5" />}
                 title="Privacy & Security"
                 description="Control your privacy settings and security options"
                 onClick={() => router.push('/settings/privacy')}
               />
               <Separator />
-              <SettingItem 
+              <SettingItem
                 icon={<Languages className="h-5 w-5" />}
                 title="Language"
                 description="Change your preferred language"
                 onClick={() => router.push('/settings/language')}
               />
               <Separator />
-              <SettingItem 
+              <SettingItem
                 icon={<AccessibilityIcon className="h-5 w-5" />}
                 title="Accessibility"
                 description="Customize accessibility options"
                 onClick={() => router.push('/settings/accessibility')}
               />
               <Separator />
-              <SettingItem 
+              <SettingItem
                 icon={<HardDrive className="h-5 w-5" />}
                 title="Storage & Data"
                 description="Manage your storage and data usage"
                 onClick={() => router.push('/settings/storage')}
               />
               <Separator />
-              <SettingItem 
+              <SettingItem
                 icon={<HelpCircle className="h-5 w-5" />}
                 title="Help & Support"
                 description="Get help and contact support"
@@ -267,7 +263,7 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-        
+
         <div className="text-center text-xs text-muted-foreground pt-4 pb-8">
           Version 1.0.0 • Terms of Service • Privacy Policy
         </div>
@@ -283,7 +279,7 @@ function SettingItem({ icon, title, description, onClick }: {
   onClick: () => void;
 }) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className="flex items-center justify-between w-full group text-left"
     >

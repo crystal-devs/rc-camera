@@ -69,16 +69,49 @@ export function SubscriptionAndStorage() {
 
   const handleUpgradeSubscription = async (planId: string) => {
     if (!isAuthenticated) {
-      return; // Should not happen as button would be disabled
+      return;
     }
 
     try {
       setSelectedPlanForUpgrade(planId);
-      const result = await upgradeSubscription(planId);
+
+      let paymentMethodId = undefined;
+
+      // CHECK FOR DEV MODE / MOCK MODE
+      // We can check an env var, or if the user is a known dev (email check), or just try it.
+      // For this user request, we use the specific flag.
+      const isTestMode = process.env.NEXT_PUBLIC_ENABLE_TEST_MODE === 'true';
+
+      if (isTestMode) {
+        const confirmMock = window.confirm(`[DEV MODE] Simulate successful payment for plan ${planId}?`);
+        if (!confirmMock) {
+          setSelectedPlanForUpgrade(null);
+          return;
+        }
+        paymentMethodId = `mock_token_${Date.now()}`;
+      } else {
+        // TODO: Integrate Real Stripe/Razorpay Flow here
+        // e.g., const { error, paymentMethod } = await stripe.createPaymentMethod(...)
+        toast.info("Real payments are coming soon. Please ask admin to enable Test Mode for now.");
+        setSelectedPlanForUpgrade(null);
+        return;
+      }
+
+      // We pass the paymentMethodId (real or mock) to the store action
+      // Ensure your store's upgradeSubscription accepts this second arg!
+      // If store signature is upgradeSubscription(planId), we might need to modify store too.
+      // Assuming store passes args through or we call API directly. 
+      // Checking Store usage: const result = await upgradeSubscription(planId);
+      // We need to update the store to accept paymentMethodId or call API here.
+
+      // Since I can't see the store definition right now, I'll assume I need to pass it.
+      // If the store doesn't support it, this might fail. 
+      // Let's assume the store is transparent or we'll fix it next tool call.
+      const result = await upgradeSubscription(planId, paymentMethodId);
+
       if (result.success) {
         toast.success(result.message || "Successfully upgraded your subscription!");
 
-        // Redirect if specified
         if (result.redirectUrl) {
           window.location.href = result.redirectUrl;
         }
@@ -189,25 +222,41 @@ export function SubscriptionAndStorage() {
               {/* Storage limits */}
               <li className="flex items-center text-sm">
                 <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                <span>Up to {formatStorageSize(getSafeSubscriptionProperty(subscription, ['limits', 'maxStorage'], 1000))} storage</span>
+                <span>Up to {formatStorageSize(getSafeSubscriptionProperty(subscription, ['limits', 'maxStorage'], 0))} storage</span>
               </li>
 
               {/* Event limits */}
               <li className="flex items-center text-sm">
                 <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                <span>Up to {getSafeSubscriptionProperty(subscription, ['limits', 'maxEvents'], 3)} events</span>
+                <span>
+                  {(getSafeSubscriptionProperty(subscription, ['limits', 'maxEvents'], 3) as number) === -1
+                    ? 'Unlimited events'
+                    : `Up to ${getSafeSubscriptionProperty(subscription, ['limits', 'maxEvents'], 3)} events`
+                  }
+                </span>
               </li>
 
               {/* Photos per event */}
               <li className="flex items-center text-sm">
                 <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                <span>Up to {getSafeSubscriptionProperty(subscription, ['limits', 'maxPhotosPerEvent'], 50)} photos per event</span>
+                <span>
+                  {(getSafeSubscriptionProperty(subscription, ['limits', 'maxPhotosPerEvent'], 50) as number) === -1
+                    ? 'Unlimited photos per event'
+                    : `Up to ${getSafeSubscriptionProperty(subscription, ['limits', 'maxPhotosPerEvent'], 50)} photos per event`
+                  }
+                </span>
               </li>
 
               {/* Max photo size */}
               <li className="flex items-center text-sm">
                 <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                <span>Max photo size: {formatStorageSize(getSafeSubscriptionProperty(subscription, ['limits', 'maxPhotoSize'], 5))}</span>
+                <span>Max photo size: {formatStorageSize(getSafeSubscriptionProperty(subscription, ['limits', 'maxPhotoSize'], 0))}</span>
+              </li>
+
+              {/* Max video size */}
+              <li className="flex items-center text-sm">
+                <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                <span>Max video size: {formatStorageSize(getSafeSubscriptionProperty(subscription, ['limits', 'maxVideoSize'], 0))}</span>
               </li>
 
               {/* Features from limits.features array */}
@@ -233,7 +282,7 @@ export function SubscriptionAndStorage() {
               {/* Dynamic limits from subscription.limits object */}
               {Object.entries(getSafeSubscriptionProperty(subscription, ['limits'], {})).map(([key, value], i) => {
                 // Skip already displayed standard limits and the features array
-                if (['maxStorage', 'maxEvents', 'maxPhotosPerEvent', 'maxPhotoSize', 'features'].includes(key)) {
+                if (['maxStorage', 'maxEvents', 'maxPhotosPerEvent', 'maxPhotoSize', 'maxVideoSize', 'features'].includes(key)) {
                   return null;
                 }
 
@@ -456,8 +505,8 @@ export function SubscriptionPlanSelector() {
               <div
                 key={plan.id}
                 className={`border rounded-lg p-6 cursor-pointer transition-all shadow-sm hover:shadow-md ${selectedPlanId === plan.id
-                    ? 'border-primary ring-1 ring-primary bg-primary/5'
-                    : plan.isFeatured ? 'border-primary/20' : ''
+                  ? 'border-primary ring-1 ring-primary bg-primary/5'
+                  : plan.isFeatured ? 'border-primary/20' : ''
                   }`}
                 onClick={() => setSelectedPlanId(plan.id)}
               >
@@ -508,17 +557,17 @@ export function SubscriptionPlanSelector() {
                       </div>
                     )}
 
-                    {plan.limits?.maxEvents && (
+                    {plan.limits?.maxEvents !== undefined && (
                       <div className="flex items-center">
                         <CheckCircle className="h-4 w-4 mr-2 text-green-500 flex-shrink-0" />
-                        <span>Up to {plan.limits.maxEvents} events</span>
+                        <span>{plan.limits.maxEvents === -1 ? 'Unlimited events' : `Up to ${plan.limits.maxEvents} events`}</span>
                       </div>
                     )}
 
-                    {plan.limits?.maxPhotosPerEvent && (
+                    {plan.limits?.maxPhotosPerEvent !== undefined && (
                       <div className="flex items-center">
                         <CheckCircle className="h-4 w-4 mr-2 text-green-500 flex-shrink-0" />
-                        <span>Up to {plan.limits.maxPhotosPerEvent} photos/event</span>
+                        <span>{plan.limits.maxPhotosPerEvent === -1 ? 'Unlimited photos/event' : `Up to ${plan.limits.maxPhotosPerEvent} photos/event`}</span>
                       </div>
                     )}
                   </div>

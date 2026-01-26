@@ -243,7 +243,13 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
                 provider: userData.provider
                 // Exclude avatar and other potentially sensitive fields
             };
+            // Store non-sensitive user data in localStorage
             localStorage.setItem('userData', JSON.stringify(minimalUserData));
+
+            // SYNC WITH STORE
+            import('@/lib/store').then(({ useStore }) => {
+                useStore.getState().login(userData);
+            });
 
             logger.info('User logged in successfully', { userId: userData.id });
 
@@ -299,6 +305,11 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
             // Exclude avatar and other potentially sensitive fields
         };
         localStorage.setItem('userData', JSON.stringify(minimalUserData));
+
+        // SYNC WITH STORE
+        import('@/lib/store').then(({ useStore }) => {
+            useStore.getState().login(userData);
+        });
 
         logger.info('Auth state set from result', { userId: userData.id });
     }, [setAuthToken]);
@@ -388,10 +399,11 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
                 const authState = await authManager.init();
 
                 // Load user data from localStorage
+                let userData: UserData | null = null;
                 const userDataStr = localStorage.getItem('userData');
                 if (userDataStr) {
                     try {
-                        const userData = JSON.parse(userDataStr);
+                        userData = JSON.parse(userDataStr);
                         setUser(userData);
                     } catch (e) {
                         logger.warn('Failed to parse stored user data');
@@ -401,6 +413,20 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
                 // If we have an authenticated session, attempt immediate token refresh
                 if (authState.mode === 'authenticated') {
                     try {
+                        // SYNC WITH STORE: Ensure global store knows we are authenticated
+                        import('@/lib/store').then(({ useStore }) => {
+                            useStore.getState().setAuthenticated(true);
+                            if (userData) {
+                                useStore.getState().setUserData(userData);
+                                // Trigger data fetch
+                                setTimeout(() => {
+                                    useStore.getState().fetchSubscription();
+                                    useStore.getState().fetchUsage();
+                                    useStore.getState().fetchAvailablePlans();
+                                }, 0);
+                            }
+                        });
+
                         await refreshAuth();
                     } catch (error) {
                         // Silent fail - will retry on API calls
@@ -411,6 +437,12 @@ export const SecureAuthProvider: React.FC<SecureAuthProviderProps> = ({ children
                         localStorage.removeItem('logout_complete');
                     }
                     setUser(null);
+
+                    // SYNC WITH STORE: Ensure logged out state
+                    import('@/lib/store').then(({ useStore }) => {
+                        useStore.getState().setAuthenticated(false);
+                        useStore.getState().setUserData(null);
+                    });
                 }
 
                 // Cleanup function
