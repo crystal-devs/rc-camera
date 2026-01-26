@@ -1,18 +1,24 @@
 /**
  * CSRF Token Service
- * Industry-standard CSRF protection using double-submit cookie pattern
+ * Industry-standard CSRF protection using HMAC-signed tokens
+ * 
+ * Token format: timestamp:randomBytes:signature
+ * - Server generates signed token with expiry
+ * - Client stores in memory/sessionStorage
+ * - Client sends in X-CSRF-Token header
+ * - Server validates signature and expiry
  */
 
 import logger from '@/lib/logger';
 
 const CSRF_TOKEN_KEY = 'csrf-token';
+const CSRF_EXPIRY_KEY = 'csrf-token-expiry';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export class CSRFService {
     private static instance: CSRFService;
     private csrfToken: string | null = null;
-    private lastFetchTime: number = 0;
-    private readonly TOKEN_VALIDITY_MS = 3600000; // 1 hour
+    private tokenExpiresAt: number = 0;
 
     static getInstance(): CSRFService {
         if (!CSRFService.instance) {
@@ -25,21 +31,27 @@ export class CSRFService {
      * Get CSRF token - fetches new one if expired or missing
      */
     async getToken(): Promise<string> {
-        // Check if we have a valid cached token
+        // Check if we have a valid cached token (in memory)
         if (this.csrfToken && this.isTokenValid()) {
             return this.csrfToken;
         }
 
-        // Try to get from sessionStorage first
+        // Try to get from sessionStorage
         if (typeof window !== 'undefined') {
             const storedToken = sessionStorage.getItem(CSRF_TOKEN_KEY);
-            if (storedToken && this.isTokenValid()) {
-                this.csrfToken = storedToken;
-                return storedToken;
+            const storedExpiry = sessionStorage.getItem(CSRF_EXPIRY_KEY);
+
+            if (storedToken && storedExpiry) {
+                const expiryTime = parseInt(storedExpiry, 10);
+                if (Date.now() < expiryTime) {
+                    this.csrfToken = storedToken;
+                    this.tokenExpiresAt = expiryTime;
+                    return storedToken;
+                }
             }
         }
 
-        // Fetch new token
+        // Fetch new token from server
         return await this.fetchNewToken();
     }
 
@@ -66,15 +78,18 @@ export class CSRFService {
             }
 
             this.csrfToken = data.csrfToken;
-            this.lastFetchTime = Date.now();
 
-            // Store in sessionStorage with additional security measures
+            // Parse expiry from response or default to 1 hour
+            if (data.expiresAt) {
+                this.tokenExpiresAt = new Date(data.expiresAt).getTime();
+            } else {
+                this.tokenExpiresAt = Date.now() + 3600000; // 1 hour default
+            }
+
+            // Store in sessionStorage for page refresh persistence
             if (typeof window !== 'undefined') {
-                // Add a prefix to make it harder to guess
-                const secureKey = `__csrf_${Date.now()}__`;
                 sessionStorage.setItem(CSRF_TOKEN_KEY, data.csrfToken);
-                // Store the key itself in a way that's harder to enumerate
-                sessionStorage.setItem('csrf_key_ref', secureKey);
+                sessionStorage.setItem(CSRF_EXPIRY_KEY, this.tokenExpiresAt.toString());
             }
 
             logger.debug('CSRF token fetched successfully');
@@ -89,9 +104,10 @@ export class CSRFService {
      * Check if current token is still valid
      */
     private isTokenValid(): boolean {
-        if (!this.lastFetchTime) return false;
-        const elapsed = Date.now() - this.lastFetchTime;
-        return elapsed < this.TOKEN_VALIDITY_MS;
+        if (!this.tokenExpiresAt) return false;
+        // Refresh 5 minutes before expiry for safety margin
+        const buffer = 5 * 60 * 1000;
+        return Date.now() < (this.tokenExpiresAt - buffer);
     }
 
     /**
@@ -99,10 +115,11 @@ export class CSRFService {
      */
     async refreshToken(): Promise<string> {
         this.csrfToken = null;
-        this.lastFetchTime = 0;
+        this.tokenExpiresAt = 0;
 
         if (typeof window !== 'undefined') {
             sessionStorage.removeItem(CSRF_TOKEN_KEY);
+            sessionStorage.removeItem(CSRF_EXPIRY_KEY);
         }
 
         return await this.fetchNewToken();
@@ -113,10 +130,11 @@ export class CSRFService {
      */
     clearToken(): void {
         this.csrfToken = null;
-        this.lastFetchTime = 0;
+        this.tokenExpiresAt = 0;
 
         if (typeof window !== 'undefined') {
             sessionStorage.removeItem(CSRF_TOKEN_KEY);
+            sessionStorage.removeItem(CSRF_EXPIRY_KEY);
         }
 
         logger.debug('CSRF token cleared');
@@ -147,3 +165,4 @@ export async function initializeCSRF(): Promise<void> {
         logger.error('Failed to initialize CSRF protection', error);
     }
 }
+
