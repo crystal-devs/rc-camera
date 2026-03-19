@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import {
   Loader2, CheckCircle, AlertTriangle, ArrowRight, LogIn,
-  Calendar, MapPin, Users, Sparkles
+  Calendar, MapPin, Users, Sparkles, Lock
 } from 'lucide-react';
 import { getTokenInfo } from '@/services/apis/sharing.api';
 import { useToken } from '@/hooks/useToken';
@@ -54,6 +54,9 @@ export default function JoinPage() {
   const [tokenData, setTokenData] = useState<TokenResponse | null>(null);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [requiresPin, setRequiresPin] = useState(false);
+  const [enteredPin, setEnteredPin] = useState('');
+  const [pinErrorMsg, setPinErrorMsg] = useState('');
 
   // Extract S3 key from cover data
   const getS3Key = (cover: any): string | null => {
@@ -81,7 +84,15 @@ export default function JoinPage() {
       setLoading(true);
       setError('');
 
-      const response = await getTokenInfo(token, authToken);
+      // Get PIN from URL if present
+      let pin = new URLSearchParams(window.location.search).get('pin');
+      
+      const savedPinKey = `event_pin_${token}`;
+      if (!pin && typeof window !== 'undefined') {
+        pin = localStorage.getItem(savedPinKey);
+      }
+      
+      const response = await getTokenInfo(token, authToken, pin);
 
       if (!response.data?.event) {
         throw new Error('Invalid response format');
@@ -92,19 +103,20 @@ export default function JoinPage() {
       // Check if user has already joined this event
       const joinedKey = `joined_${token}`;
       if (typeof window !== 'undefined' && localStorage.getItem(joinedKey) === 'true' && access.canJoin) {
-        console.debug('🚀 User has already joined, redirecting to event...');
         setIsRedirecting(true);
-        router.push(`/guest/${token}`);
+        router.push(pin ? `/guest/${token}?pin=${pin}` : `/guest/${token}`);
         return;
       }
 
       // --- AUTO-REDIRECTION LOGIC ---
-      // If user is already authenticated and has access, redirect immediately
       if (authToken && access.canJoin && !access.requiresAuth) {
-        console.debug('🚀 User already has access, redirecting to event...');
         setIsRedirecting(true);
-        router.push(`/guest/${token}`);
+        router.push(pin ? `/guest/${token}?pin=${pin}` : `/guest/${token}`);
         return;
+      }
+
+      if (typeof window !== 'undefined' && pin) {
+        localStorage.setItem(savedPinKey, pin);
       }
 
       setTokenData({ event, access });
@@ -124,11 +136,20 @@ export default function JoinPage() {
       console.error('❌ Token validation error:', e);
       setLoading(false);
 
-      if (e.status === 401) {
+      const errMsg = e?.error?.message || e?.message || '';
+      const isPasswordRequired = (e?.code === 401 || e?.status === 401) && (errMsg === 'password_required' || errMsg.toLowerCase().includes('password'));
+
+      // If it's a password issue, let the user enter the PIN natively
+      if (isPasswordRequired) {
+        setRequiresPin(true);
+        return;
+      }
+
+      if (e?.status === 401 || e?.code === 401) {
         setError('This event requires you to sign in first.');
-      } else if (e.status === 403) {
+      } else if (e?.status === 403 || e?.code === 403) {
         setError(e.message || 'You don\'t have permission to access this event.');
-      } else if (e.status === 404) {
+      } else if (e?.status === 404 || e?.code === 404) {
         setError('Event not found. The link may be invalid or expired.');
       } else {
         setError(e.message || 'Unable to access this event. Please try again.');
@@ -185,7 +206,10 @@ export default function JoinPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(joinedKey, 'true');
     }
-    router.push(`/guest/${token}`);
+    const pinFromUrl = new URLSearchParams(window.location.search).get('pin');
+    const savedPin = typeof window !== 'undefined' ? localStorage.getItem(`event_pin_${token}`) : null;
+    const finalPin = pinFromUrl || savedPin;
+    router.push(finalPin ? `/guest/${token}?pin=${finalPin}` : `/guest/${token}`);
   };
 
   const getAccessDeniedMessage = (visibility: string, role: string): string => {
@@ -280,6 +304,62 @@ export default function JoinPage() {
                 </Button>
               )}
             </div>
+          </motion.div>
+        ) : requiresPin ? (
+          <motion.div
+            key="pin"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative z-10 w-full max-w-md text-center p-8 rounded-3xl bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl"
+          >
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-white/10 border border-white/20">
+              <Lock className="h-8 w-8 text-white" />
+            </div>
+            <h2 className="text-3xl font-semibold text-white mb-4 tracking-tight">Protected Event</h2>
+            <p className="text-white/60 mb-8 leading-relaxed font-light">
+              This event is protected. Please enter the PIN to unlock the invitation.
+            </p>
+            <form 
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setPinErrorMsg('');
+                if (!enteredPin) return;
+                try {
+                  setLoading(true);
+                  const response = await getTokenInfo(token, authToken, enteredPin);
+                  if (response.data?.event) {
+                    if (typeof window !== 'undefined') {
+                       localStorage.setItem(`event_pin_${token}`, enteredPin);
+                    }
+                    setTokenData({ event: response.data.event, access: response.data.access });
+                    setRequiresPin(false);
+                  }
+                  setLoading(false);
+                } catch (err: any) {
+                  setLoading(false);
+                  setPinErrorMsg('Incorrect PIN. Please try again.');
+                }
+              }}
+              className="flex flex-col gap-4"
+            >
+              <input
+                type="password"
+                value={enteredPin}
+                onChange={(e) => setEnteredPin(e.target.value)}
+                placeholder="Enter PIN"
+                className="w-full h-14 bg-black/20 border border-white/10 rounded-2xl px-6 text-center text-2xl tracking-[0.2em] text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-white/30 transition-all font-light"
+                autoFocus
+              />
+              {pinErrorMsg && <p className="text-red-400 text-sm mt-1">{pinErrorMsg}</p>}
+              <Button
+                type="submit"
+                className="w-full h-14 mt-4 bg-white text-black hover:bg-white/90 rounded-2xl text-lg font-medium transition-all"
+                disabled={!enteredPin || loading}
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Unlock Access'}
+              </Button>
+            </form>
           </motion.div>
         ) : tokenData ? (
           <motion.div

@@ -11,7 +11,7 @@ interface Event {
   title: string
   description: string
   created_by: string
-  visibility: 'private' | 'anyone_with_link' | 'public'
+  visibility: 'private' | 'anyone_with_link' | 'invited_only'
   start_date: string
   end_date: string | null
   timezone: string

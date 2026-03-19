@@ -491,8 +491,18 @@ export default function EventsPage() {
                       </span>
                     </div>
 
-                    <div className="text-gray-500">
-                      {event.share_settings.is_active ? 'Public' : 'Restricted'} event
+                    <div className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      event.visibility === 'anyone_with_link'
+                        ? 'bg-green-50 text-green-700'
+                        : event.visibility === 'invited_only'
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {event.visibility === 'anyone_with_link'
+                        ? '🌐 Open'
+                        : event.visibility === 'invited_only'
+                        ? '🔵 Protected'
+                        : '⚠️ Draft'}
                     </div>
                   </div>
                 </div>

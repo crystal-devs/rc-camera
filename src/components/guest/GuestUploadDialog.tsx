@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, memo } from 'react';
+import { useState, useCallback, memo, useEffect } from 'react';
 import { Upload, Camera, X, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,8 @@ interface GuestUploadDialogProps {
     eventDetails: Event | null;
     auth: string | null;
     onUploadComplete: (photos: TransformedPhoto[]) => void;
+    /** Whether the event requires host approval before photos are visible */
+    requireApproval?: boolean;
 }
 
 /**
@@ -36,18 +38,46 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
     shareToken,
     eventDetails,
     auth,
-    onUploadComplete
+    onUploadComplete,
+    requireApproval = false,
 }: GuestUploadDialogProps) {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [uploading, setUploading] = useState(false);
     const [guestInfo, setGuestInfo] = useState({ name: '', email: '' });
 
-    const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(event.target.files || []);
-        if (files.length > 0) {
-            setSelectedFiles(files as File[]);
+    const maxPerGuest = (eventDetails as any)?.permissions?.max_photos_per_guest || 0;
+    const [sessionCount, setSessionCount] = useState(0);
+
+    // Update session count when dialog opens
+    useEffect(() => {
+        if (isOpen && eventDetails?._id) {
+            setSessionCount(parseInt(localStorage.getItem(`rc_uploads_${eventDetails._id}`) || '0', 10));
         }
-    }, []);
+    }, [isOpen, eventDetails?._id]);
+
+    const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+        let files = Array.from(event.target.files || []);
+        
+        if (maxPerGuest > 0) {
+            const currentCount = parseInt(localStorage.getItem(`rc_uploads_${eventDetails?._id}`) || '0', 10);
+            const remaining = maxPerGuest - currentCount;
+            const totalPending = selectedFiles.length + files.length;
+            
+            if (totalPending > remaining) {
+                toast.error(`You can only upload ${remaining} more photo(s)`);
+                const allowedNewFiles = remaining - selectedFiles.length;
+                if (allowedNewFiles > 0) {
+                    files = files.slice(0, allowedNewFiles);
+                } else {
+                    return;
+                }
+            }
+        }
+
+        if (files.length > 0) {
+            setSelectedFiles(prev => [...prev, ...files]);
+        }
+    }, [maxPerGuest, eventDetails?._id, selectedFiles.length]);
 
     const removeFile = useCallback((index: number) => {
         setSelectedFiles(files => files.filter((_, i) => i !== index));
@@ -82,7 +112,10 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
                         width: upload.width || 800,
                         height: upload.height || 600,
                         uploaded_by: guestInfo.name || 'Guest',
-                        approval: upload.approval || { status: 'approved' },
+                        // Correctly reflect moderation state — don't assume auto_approved
+                        approval: upload.approval || {
+                            status: requireApproval ? 'pending' : 'auto_approved'
+                        },
                         createdAt: new Date().toISOString(),
                         albumId: eventDetails?._id,
                         eventId: eventDetails?._id,
@@ -101,17 +134,39 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
                 }
 
                 const { summary } = result.data;
+
                 if (summary && summary.success > 0) {
-                    toast.success(
-                        summary.failed === 0
-                            ? `All ${summary.success} photo(s) uploaded successfully!`
-                            : `${summary.success} photo(s) uploaded, ${summary.failed} failed`
-                    );
+                    if (eventDetails?._id) {
+                        const key = `rc_uploads_${eventDetails._id}`;
+                        const current = parseInt(localStorage.getItem(key) || '0', 10);
+                        localStorage.setItem(key, String(current + summary.success));
+                    }
+
+                    if (requireApproval) {
+                        toast.success(
+                            `⏳ ${summary.success} photo${summary.success !== 1 ? 's' : ''} submitted for review!`,
+                            {
+                                description: 'The host will approve them shortly. They\'ll appear once approved.',
+                                duration: 5000,
+                            }
+                        );
+                    } else {
+                        toast.success(
+                            summary.failed === 0
+                                ? `All ${summary.success} photo(s) uploaded successfully!`
+                                : `${summary.success} photo(s) uploaded, ${summary.failed} failed`
+                        );
+                    }
 
                     resetForm();
                     onClose();
                 } else if (result.data.uploads?.length > 0) {
-                    toast.success('Photos uploaded successfully!');
+                    if (eventDetails?._id) {
+                        const key = `rc_uploads_${eventDetails._id}`;
+                        const current = parseInt(localStorage.getItem(key) || '0', 10);
+                        localStorage.setItem(key, String(current + result.data.uploads.length));
+                    }
+                    toast.success(requireApproval ? '⏳ Photos submitted for review!' : 'Photos uploaded successfully!');
                     resetForm();
                     onClose();
                 } else {
@@ -180,6 +235,11 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
                                 <Camera className="mx-auto h-8 w-8 text-gray-400 mb-2" />
                                 <p className="text-sm text-gray-600">Click to select photos or videos</p>
                                 <p className="text-xs text-gray-500 mt-1">Max 10 files, 50MB each</p>
+                                {maxPerGuest > 0 && (
+                                    <p className="text-xs font-medium text-amber-600 mt-2">
+                                        You can upload {maxPerGuest - sessionCount - selectedFiles.length} more photo(s)
+                                    </p>
+                                )}
                             </label>
                         </div>
 

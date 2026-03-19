@@ -57,6 +57,7 @@ export interface Event {
     has_password_protection: boolean;
     last_shared_at: string | null;
     restricted_to_guests: boolean;
+    is_active?: boolean;
   }
   co_hosts: string[];
 }
@@ -126,6 +127,7 @@ export interface EventFormData {
       videos: boolean;
     };
     require_approval: boolean;
+    max_photos_per_guest?: number;
   };
   share_settings: {
     is_active: boolean;

@@ -40,8 +40,11 @@ import { loadGuestToken, saveGuestToken } from '@/utils/guestTokenStorage';
 import { FullPageLoading, LoadingSpinner } from '@/components/ui/loading';
 import { FindMePromptBanner } from '@/components/guest/FindMePromptBanner';
 import { MyPhotosEmptyState } from '@/components/guest/MyPhotosEmptyState';
+import { PinEntryModal } from '@/components/guest/PinEntryModal';
+import { EventClosedScreen } from '@/components/guest/EventClosedScreen';
 
 // Dynamic imports for heavy components (Vercel best practice: bundle-dynamic-imports)
+
 const FullscreenPhotoViewer = lazy(() =>
   import('@/components/photo/FullscreenPhotoViewer').then(m => ({ default: m.FullscreenPhotoViewer }))
 );
@@ -115,13 +118,33 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   const [showNotificationBanner, setShowNotificationBanner] = useState<boolean>(false);
   const [showFindMeModal, setShowFindMeModal] = useState(false);
   const [showFindMePrompt, setShowFindMePrompt] = useState(false);
-  // Tab state
+  // PIN / Password protection state
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [enteredPassword, setEnteredPassword] = useState<string | null>(null);
+
   // Tab state derived from URL
   const activeTab = useMemo(() => {
     const tab = searchParams.get('tab');
     return (tab === 'my_photos' || tab === 'highlights') ? tab : 'all';
   }, [searchParams]);
   const [matchedPhotos, setMatchedPhotos] = useState<TransformedPhoto[] | null>(null);
+
+  // Upload Constraint State
+  const [sessionUploadCount, setSessionUploadCount] = useState(0);
+
+  useEffect(() => {
+    if (eventState.details?._id) {
+      const count = parseInt(localStorage.getItem(`rc_uploads_${eventState.details._id}`) || '0', 10);
+      setSessionUploadCount(count);
+    }
+  }, [eventState.details?._id, showUploadDialog]);
+
+  const uploadsAllowed = (eventState.details as any)?.permissions?.can_upload !== false;
+  const maxPerGuest = (eventState.details as any)?.permissions?.max_photos_per_guest || 0;
+  const uploadLimitReached = maxPerGuest > 0 && sessionUploadCount >= maxPerGuest;
+  const canUploadNow = uploadsAllowed && !uploadLimitReached;
 
   // Download manager hook (extracted for better performance)
   const {
@@ -326,23 +349,41 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   }, [claimResult, refresh]);
 
   // Fetch event details
-  const fetchEventDetails = async (shareToken: string) => {
+  const fetchEventDetails = async (shareToken: string, password?: string | null) => {
     try {
-      const response = await getTokenInfo(shareToken, auth);
+      const response = await getTokenInfo(shareToken, auth, password);
 
       if (response && response.status === true && response.data) {
+        if (typeof window !== 'undefined' && password) {
+          localStorage.setItem(`event_pin_${shareToken}`, password);
+        }
         setEventState(prev => ({
           ...prev,
           details: response.data.event,
           access: response.data.access
         }));
+        // Close PIN modal on success
+        setShowPinModal(false);
+        setPinError(null);
       }
     } catch (err: any) {
-      // console.error('Error fetching event details:', err);
+      // Password required — show PIN modal
+      const errMsg = err?.error?.message || err?.message || '';
+      if (
+        err?.code === 401 ||
+        errMsg === 'password_required' ||
+        errMsg.toLowerCase().includes('password')
+      ) {
+        setShowPinModal(true);
+        if (password) {
+          // Wrong password was entered
+          setPinError('Incorrect password. Please try again.');
+        }
+        return;
+      }
 
-      if (err?.status === 401 || err?.response?.status === 401) {
+      if (err?.code === 401 || err?.status === 401) {
         toast.error('Authentication required. Please sign in to access this event.');
-
         if (typeof window !== 'undefined') {
           try {
             localStorage.setItem('redirectAfterLogin', `/guest/${shareToken}`);
@@ -350,7 +391,6 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             console.warn('Failed to save redirect URL:', e);
           }
         }
-
         router.push('/login');
         return;
       }
@@ -359,10 +399,35 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
     }
   };
 
+  const handlePinSubmit = async (password: string) => {
+    setPinLoading(true);
+    setPinError(null);
+    setEnteredPassword(password);
+    await fetchEventDetails(shareToken, password);
+    setPinLoading(false);
+  };
+
   useEffect(() => {
     if (shareToken) {
-      fetchEventDetails(shareToken);
+      const pinFromUrl = new URLSearchParams(window.location.search).get('pin');
+      const savedPin = typeof window !== 'undefined' ? localStorage.getItem(`event_pin_${shareToken}`) : null;
+      const finalPin = pinFromUrl || savedPin;
+
+      if (pinFromUrl) {
+        // Strip pin from URL history for privacy
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('pin');
+        window.history.replaceState({}, '', newUrl.toString());
+      }
+      
+      if (finalPin) {
+        setEnteredPassword(finalPin);
+        fetchEventDetails(shareToken, finalPin);
+      } else {
+        fetchEventDetails(shareToken);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareToken]);
 
   // WebSocket connection
@@ -567,7 +632,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           <Camera className="w-20 h-20 mx-auto text-gray-300 mb-4" />
           <h3 className="text-xl font-medium text-gray-600 mb-2">No photos yet</h3>
           <p className="text-gray-400 mb-6">Be the first to share a memory!</p>
-          {eventState.details?.default_guest_permissions?.upload && (
+          {canUploadNow ? (
             <Button
               onClick={() => setShowUploadDialog(true)}
               className="bg-blue-500 hover:bg-blue-600 text-white"
@@ -575,6 +640,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
               <Upload className="w-4 h-4 mr-2" />
               Upload First Photo
             </Button>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-500 rounded-lg text-sm border font-medium">
+              <Camera className="w-4 h-4" />
+              {!uploadsAllowed ? 'Uploads are closed' : `You've shared your ${maxPerGuest} photos ✓`}
+            </div>
           )}
           {webSocket.isAuthenticated && (
             <span className="block mt-2 text-sm text-green-600">
@@ -664,7 +734,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
                     if (original) handlePhotoClick(original, index);
                   }}
                   userPermissions={{
-                    upload: eventState.details?.default_guest_permissions?.upload ?? true,
+                    upload: canUploadNow,
                     download: eventState.details?.default_guest_permissions?.download ?? true,
                     moderate: false,
                     delete: false
@@ -774,7 +844,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
                       if (original) handlePhotoClick(original, index);
                     }}
                     userPermissions={{
-                      upload: true, download: true, moderate: false, delete: false
+                      upload: canUploadNow, download: true, moderate: false, delete: false
                     }}
                     currentTab="approved"
                     onStatusUpdate={() => { }}
@@ -838,6 +908,17 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   if (!shareToken) {
     notFound();
   }
+
+  // Feature D: Closed Event Screen
+  if (eventState.details && eventState.details.share_settings?.is_active === false) {
+    return (
+      <EventClosedScreen
+        eventTitle={eventState.details.title}
+        eventDate={eventState.details.start_date}
+      />
+    );
+  }
+
   // console.log(eventState, 'eventStateeventState')
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #f8f9fa)' }}>
@@ -859,6 +940,16 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         onFindMe={handleFindMePromptClick}
         onDismiss={handleDismissPrompt}
       />
+
+      {/* PIN / Password Protection Modal */}
+      {showPinModal && (
+        <PinEntryModal
+          eventTitle={eventState.details?.title}
+          onSubmit={handlePinSubmit}
+          isLoading={pinLoading}
+          error={pinError}
+        />
+      )}
 
       {/* Claiming Status Banner - Shows when claiming is in progress */}
       {isClaiming && (
@@ -909,7 +1000,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         activeTab={activeTab}
         onTabChange={handleTabChange}
         hasMatches={!!matchedPhotos && matchedPhotos.length > 0}
-        onUpload={() => setShowUploadDialog(true)}
+        onUpload={canUploadNow ? () => setShowUploadDialog(true) : undefined}
         connectionStatus={
           // Inline Connection Status for simplicity
           !webSocket.isConnected ? (
@@ -998,6 +1089,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           eventDetails={eventState.details}
           auth={auth}
           onUploadComplete={handleUploadComplete}
+          requireApproval={(eventState.details as any)?.permissions?.require_approval === true}
         />
       </Suspense>
 
@@ -1012,7 +1104,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
       {/* Floating Upload Button */}
       {
-        eventState.details?.default_guest_permissions?.upload && (
+        canUploadNow && (
           <div className="fixed bottom-20 right-6 z-30">
             <Button
               onClick={() => setShowUploadDialog(true)}

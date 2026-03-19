@@ -120,14 +120,14 @@ export default function EventDashboardPage() {
         if (!selectedEvent) return '';
 
         switch (selectedEvent.visibility) {
-            case 'public':
-                return 'Public - Anyone can find and access this event';
             case 'anyone_with_link':
-                return 'Accessible to all with link/QR code. Guest can view and upload to the album.';
+                return 'Open — Anyone with the link can view and upload photos. No account needed.';
+            case 'invited_only':
+                return 'Protected — Only guests on your invite list can access. They must be logged in.';
             case 'private':
-                return 'Private - Only invited users can access';
+                return '⚠️ Not shared yet — Go to Settings › Sharing to choose how guests can join.';
             default:
-                return 'Unknown privacy setting';
+                return '';
         }
     };
 
@@ -449,8 +449,21 @@ export default function EventDashboardPage() {
                             <div className="flex items-center gap-2 text-sm">
                                 <EyeIcon className="h-4 w-4 text-gray-400" />
                                 <span className="text-gray-600">Visibility:</span>
-                                <Badge variant="secondary" className="text-xs">
-                                    {selectedEvent?.visibility || 'private'}
+                                <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${
+                                        selectedEvent?.visibility === 'anyone_with_link'
+                                            ? 'bg-green-100 text-green-700'
+                                            : selectedEvent?.visibility === 'invited_only'
+                                            ? 'bg-blue-100 text-blue-700'
+                                            : 'bg-amber-100 text-amber-700'
+                                    }`}
+                                >
+                                    {selectedEvent?.visibility === 'anyone_with_link'
+                                        ? '🌐 Open'
+                                        : selectedEvent?.visibility === 'invited_only'
+                                        ? '🔵 Protected'
+                                        : '⚠️ Draft'}
                                 </Badge>
                             </div>
 

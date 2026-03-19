@@ -268,34 +268,36 @@ export const removeParticipant = async (
 
 // services/apis/sharing.api.ts
 
-export const getShareTokenInfo = async (token: string, authToken?: string | null) => {
+export const getShareTokenInfo = async (
+  token: string,
+  authToken?: string | null,
+  password?: string | null
+) => {
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
-    // Add auth token if available (for authenticated users)
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
     }
 
-    console.log('🔍 Making share token request with headers:', {
-      hasAuth: !!authToken,
-      token: token.substring(0, 8) + '...'
-    });
+    // Send password for password-protected events
+    if (password) {
+      headers['x-event-password'] = password;
+    }
 
-    const response = await axios.get(
+    // Use a clean axios instance to bypass any global interceptors 
+    // that aggressively catch 401s and redirect to /login
+    const cleanAxios = axios.create();
+    const response = await cleanAxios.get(
       `${API_BASE_URL}/share/${token}`,
       { headers }
     );
 
-    // Return the full response for handling different scenarios
     return response.data;
   } catch (error) {
-    console.error('Error fetching share token info:', error);
-
     if (axios.isAxiosError(error)) {
-      // Pass through the specific error response for proper handling
       if (error.response) {
         const errorData = {
           status: error.response.data?.status || false,
