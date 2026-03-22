@@ -27,6 +27,7 @@ export const API_ROUTES = {
   MEDIA: {
     UPLOAD: '/media/upload',
     GET_EVENT: (eventId: string) => `/media/event/${eventId}`,
+    GET_COUNTS: (eventId: string) => `/media/event/${eventId}/counts`,
     GET_ALBUM: (albumId: string) => `/media/album/${albumId}`,
     GET_BY_ID: (mediaId: string) => `/media/${mediaId}`,
     UPDATE_STATUS: (mediaId: string) => `/media/${mediaId}/status`,

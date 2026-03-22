@@ -370,23 +370,29 @@ export const getEventMediaCounts = async (
     total: number;
 } | null> => {
     try {
-        // const endpoint = `${API_BASE_URL}/media/event/${eventId}/counts`;
+        const endpoint = API_ROUTES.MEDIA.GET_COUNTS(eventId);
 
-        // console.log(`Fetching media counts for eventId: ${eventId}`);
+        console.log(`Fetching media counts for eventId: ${eventId}`);
 
-        // const response = await axios.get(endpoint, {
-        //     headers: {
-        //         'Authorization': `Bearer ${authToken}`,
-        //     },
-        //     timeout: 10000,
-        // });
+        const headers: any = {
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'no-cache',
+        };
 
-        // if (response.data && response.data.status === true) {
-        //     return response.data.data;
-        // }
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
 
-        // throw new Error(response.data?.message || 'Failed to fetch media counts');
-        return null;
+        const response = await apiClient.get(endpoint, {
+            headers,
+            timeout: 10000,
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data;
+        }
+
+        throw new Error(response.data?.message || 'Failed to fetch media counts');
     } catch (error) {
         console.error('Error fetching media counts:', error);
         return null;

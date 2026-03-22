@@ -27,6 +27,7 @@ import useEventStore from '@/stores/useEventStore';
 import { useStore } from '@/lib/store';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
 import EventCoverSelector from '@/components/event/EventCoverSelector';
+import { formatStorageSize } from '@/lib/subscription-utils';
 
 export default function EventDashboardPage() {
     const params = useParams();
@@ -38,9 +39,12 @@ export default function EventDashboardPage() {
     const {
         selectedEvent,
         getEventFromCacheOrFetch,
+        invalidateEventCache,
         isLoadingEvent,
         userRole
     } = useEventStore();
+
+    const subscription = useStore(state => state.subscription);
 
     const { getAccessToken } = useSecureAuth();
     const [authToken, setAuthToken] = React.useState('');
@@ -54,10 +58,16 @@ export default function EventDashboardPage() {
 
     // Fetch event data
     React.useEffect(() => {
-        if (eventId && authToken && (!selectedEvent || selectedEvent._id !== eventId)) {
-            getEventFromCacheOrFetch(eventId, authToken);
+        if (eventId && authToken) {
+            // Auto-heal local cache if stats look corrupted
+            if (selectedEvent && selectedEvent._id === eventId && ((selectedEvent.stats?.total_size_mb || 0) < 0 || (selectedEvent.stats?.photos || 0) < 0)) {
+                invalidateEventCache(eventId);
+                getEventFromCacheOrFetch(eventId, authToken);
+            } else if (!selectedEvent || selectedEvent._id !== eventId) {
+                getEventFromCacheOrFetch(eventId, authToken);
+            }
         }
-    }, [eventId, authToken, selectedEvent, getEventFromCacheOrFetch]);
+    }, [eventId, authToken, selectedEvent, getEventFromCacheOrFetch, invalidateEventCache]);
 
     // Generate wall URL
     React.useEffect(() => {
@@ -132,9 +142,14 @@ export default function EventDashboardPage() {
     };
 
     const getModerationText = () => {
-        // Based on your API, this might be determined by permissions or settings
-        // For now, showing a general message
-        return 'Uploads immediately visible in the album, no pre-publishing moderation.';
+        if (!selectedEvent) return '';
+        const permissions = selectedEvent.permissions as any;
+        const uploadsEnabled = permissions?.can_upload !== false;
+        
+        if (!uploadsEnabled) {
+             return 'Uploads are currently disabled. Guests cannot contribute new photos or videos.';
+        }
+        return 'Uploads are currently allowed. Media will be visible in the album automatically.';
     };
 
     if (isLoadingEvent) {
@@ -354,7 +369,12 @@ export default function EventDashboardPage() {
                                 <CardTitle className="text-base font-medium flex items-center gap-2">
                                     📊 Statistics
                                 </CardTitle>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => {
+                                    if (eventId && authToken) {
+                                        invalidateEventCache(eventId as string);
+                                        getEventFromCacheOrFetch(eventId as string, authToken);
+                                    }
+                                }}>
                                     <RefreshCwIcon className="h-4 w-4" />
                                 </Button>
                             </div>
@@ -366,9 +386,9 @@ export default function EventDashboardPage() {
                             <div className="text-sm">
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-gray-600">
-                                        {selectedEvent?.stats?.total_size_mb?.toFixed(2) || '0.00'} GB of 0.0 GB used (0%)
+                                        {formatStorageSize(Math.max(0, selectedEvent?.stats?.total_size_mb || 0))} of {formatStorageSize(subscription?.limits?.maxStorage || 0)} used ({subscription?.limits?.maxStorage ? Math.min(100, Math.max(0, Math.round((Math.max(0, selectedEvent?.stats?.total_size_mb || 0) / subscription.limits.maxStorage) * 100))) : 0}%)
                                     </span>
-                                    <Button variant="link" size="sm" className="h-auto p-0 text-xs">
+                                    <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => router.push('/settings')}>
                                         Upgrade
                                     </Button>
                                 </div>

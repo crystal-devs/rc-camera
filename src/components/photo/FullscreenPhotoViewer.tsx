@@ -8,6 +8,17 @@ import { Photo } from '@/types/PhotoGallery.types';
 import { useFullscreen } from '@/lib/FullscreenContext';
 import { PhotoInfoSheet } from './PhotoInfoSheet';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 
 interface FullscreenPhotoViewerProps {
   selectedPhoto: Photo;
@@ -41,6 +52,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const [isHighResLoading, setIsHighResLoading] = useState(false);
   const [photoInfoOpen, setPhotoInfoOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -311,8 +323,15 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (deletePhoto && confirm('Are you sure you want to delete this photo?')) {
+    if (deletePhoto) {
+      setShowDeleteConfirm(true);
+    }
+  }, [deletePhoto]);
+
+  const confirmDelete = useCallback(() => {
+    if (deletePhoto) {
       deletePhoto(selectedPhoto.id);
+      setShowDeleteConfirm(false);
     }
   }, [deletePhoto, selectedPhoto.id]);
 
@@ -561,7 +580,6 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         </div>
       </div>
 
-      {/* Photo Info Sheet */}
       <PhotoInfoSheet
         isOpen={photoInfoOpen}
         onClose={() => setPhotoInfoOpen(false)}
@@ -602,6 +620,26 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           }
         } : undefined}
       />
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent className="z-[110]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This photo will be permanently deleted from this event. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <style jsx>{`
         @keyframes fadeInOut {

@@ -14,6 +14,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from '@/lib/utils';
 
 interface OptimizedProgressiveImageProps {
@@ -53,6 +63,8 @@ export const OptimizedProgressiveImage = ({
   priority = false,
   layout = 'grid' // 'grid' | 'rows'
 }: OptimizedProgressiveImageProps & { layout?: 'grid' | 'rows' }) => {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   // 🚀 OPTIMIZED: Direct URL generation without duplicate preloading
   const { src, placeholder } = useMemo(() => {
     const supportsWebP = typeof window !== 'undefined' && sessionStorage.getItem('webp-support') === 'true';
@@ -316,7 +328,7 @@ export const OptimizedProgressiveImage = ({
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (confirm('Delete permanently?')) onDelete(photo.id);
+                        setShowDeleteConfirm(true);
                       }}
                       className="text-red-600 focus:text-red-600"
                     >
@@ -337,6 +349,31 @@ export const OptimizedProgressiveImage = ({
           )}
         </>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this photo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This photo will be permanently deleted from this event. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onDelete) onDelete(photo.id);
+                setShowDeleteConfirm(false);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
