@@ -110,6 +110,20 @@ export const useInfiniteMediaQuery = ({
 
     // WebSocket handlers
     const webSocketHandlers = {
+        // ── New slim guest events (v2) ────────────────────────────────────────
+        handleNewPhotosAvailable: useCallback((payload: { eventId: string; count: number }) => {
+            // Buffer N synthetic entries so bufferedCount ticks up and the
+            // NotificationBanner ("N new photos available") shows up.
+            setBufferedChanges((prev) => [
+                ...prev,
+                ...Array.from({ length: payload.count }, (_, i) => ({
+                    type: 'approved',
+                    photo: { id: `ws-${Date.now()}-${i}`, eventId: payload.eventId },
+                    reason: 'approval'
+                }))
+            ]);
+        }, []),
+        // ── Legacy handlers kept for admin/wall pages ─────────────────────────
         handleMediaApproved: useCallback((payload: any) => {
             setBufferedChanges((prev) => [
                 ...prev,

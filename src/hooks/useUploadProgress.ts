@@ -3,11 +3,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { SSE_UPLOAD_PROGRESS_ROUTE } from '@/services/apis/z.all-routes';
 
 export interface UploadProgressData {
     mediaId: string;
     eventId: string;
-    stage: 'uploading' | 'preview_creating' | 'processing' | 'variants_creating' | 'completed';
+    stage: 'queued' | 'uploading' | 'preview_creating' | 'processing' | 'variants_creating' | 'completed' | 'failed' | 'paused' | 'preview_ready';
     percentage: number;
     message?: string;
     filename?: string;
@@ -52,7 +53,7 @@ export function useUploadProgress(
 
     const [uploadProgress, setUploadProgress] = useState<UploadProgressState>({});
     const [isMonitoring, setIsMonitoring] = useState(false);
-    const cleanupIntervalRef = useRef<NodeJS.Timeout>();
+    const cleanupIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Start monitoring uploads
     const startMonitoring = useCallback((mediaIds: string[], filenames?: string[]) => {
@@ -211,17 +212,64 @@ export function useUploadProgress(
         }
     }, [eventId, uploadProgress, handleProgressUpdate]);
 
-    // Setup WebSocket event listeners
+    // Setup SSE connection for progress updates
+    useEffect(() => {
+        if (!eventId || !isMonitoring) return;
+
+        console.log('📊 Setting up SSE connection for upload progress:', eventId);
+        
+        const sseUrl = SSE_UPLOAD_PROGRESS_ROUTE(eventId);
+        const eventSource = new EventSource(sseUrl);
+
+        eventSource.onmessage = (event) => {
+            // Heartbeats and empty messages have no data
+            if (!event.data) return;
+            
+            try {
+                const data = JSON.parse(event.data);
+                if (data.mediaId) {
+                    handleProgressUpdate(data);
+                }
+            } catch (err) {
+                console.warn('Failed to parse SSE progress data:', err);
+            }
+        };
+
+        // Custom event listeners for specific SSE event names if needed
+        eventSource.addEventListener('upload_progress', (event: any) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleProgressUpdate(data);
+            } catch (err) {
+                console.error('SSE Error parsing progress data:', err);
+            }
+        });
+
+        eventSource.addEventListener('upload_failed', (event: any) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleUploadFailed(data);
+            } catch (err) {
+                console.error('SSE Error parsing failure data:', err);
+            }
+        });
+
+        eventSource.onerror = (err) => {
+            console.error('SSE connection error:', err);
+            // Browser automatically tries to reconnect SSE usually
+        };
+
+        return () => {
+            console.log('📊 Closing SSE connection for event:', eventId);
+            eventSource.close();
+        };
+    }, [eventId, isMonitoring, handleProgressUpdate, handleUploadFailed]);
+
+    // Keep legacy WebSocket listeners for 'media_ready' only (guest-facing triggers)
     useEffect(() => {
         if (!webSocket?.socket) return;
-
         const socket = webSocket.socket;
 
-        console.log('📊 Setting up upload progress WebSocket listeners');
-
-        // Listen for progress updates
-        socket.on('upload_progress', handleProgressUpdate);
-        socket.on('upload_failed', handleUploadFailed);
         socket.on('media_ready', handleMediaReady);
         socket.on('upload_complete', (data: any) => {
             handleProgressUpdate({
@@ -235,13 +283,10 @@ export function useUploadProgress(
         });
 
         return () => {
-            console.log('📊 Cleaning up upload progress WebSocket listeners');
-            socket.off('upload_progress', handleProgressUpdate);
-            socket.off('upload_failed', handleUploadFailed);
             socket.off('media_ready', handleMediaReady);
             socket.off('upload_complete');
         };
-    }, [webSocket?.socket, handleProgressUpdate, handleUploadFailed, handleMediaReady]);
+    }, [webSocket?.socket, handleMediaReady, handleProgressUpdate]);
 
     // Cleanup stale progress entries
     useEffect(() => {

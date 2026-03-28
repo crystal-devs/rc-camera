@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { uploadGuestPhotos } from '@/services/apis/guest.api';
 import { Event, TransformedPhoto } from '@/types/events';
+import { pLimit } from '@/utils/async';
 
 interface GuestUploadDialogProps {
     isOpen: boolean;
@@ -96,23 +97,27 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
 
         try {
             setUploading(true);
-            const result = await uploadGuestPhotos(
-                shareToken,
-                selectedFiles,
-                guestInfo,
-                auth || undefined
-            );
+            const limit = pLimit(2); // Guest uploads are more expensive (multipart), keep concurrency low
+            const allUploadedPhotos: TransformedPhoto[] = [];
+            let totalSuccess = 0;
 
-            if (result.status) {
-                // Transform uploaded photos
-                if (result.data.uploads && Array.isArray(result.data.uploads)) {
-                    const newPhotos = result.data.uploads.map((upload: any) => ({
+            // Process each file individually but with concurrency limit
+            // This avoids sending 1 massive 500MB POST request
+            const uploadPromises = selectedFiles.map(file => limit(async () => {
+                const result = await uploadGuestPhotos(
+                    shareToken,
+                    [file], // Send 1 file at a time
+                    guestInfo,
+                    auth || undefined
+                );
+
+                if (result.status && result.data.uploads) {
+                    const photos = result.data.uploads.map((upload: any) => ({
                         id: upload.mediaId,
                         src: upload.originalUrl,
                         width: upload.width || 800,
                         height: upload.height || 600,
                         uploaded_by: guestInfo.name || 'Guest',
-                        // Correctly reflect moderation state — don't assume auto_approved
                         approval: upload.approval || {
                             status: requireApproval ? 'pending' : 'auto_approved'
                         },
@@ -129,58 +134,46 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
                         },
                         processing: { status: 'processing' }
                     } as TransformedPhoto));
+                    
+                    allUploadedPhotos.push(...photos);
+                    totalSuccess += (result.data.summary?.success || 1);
+                }
+            }));
 
-                    onUploadComplete(newPhotos);
+            await Promise.allSettled(uploadPromises);
+
+            if (allUploadedPhotos.length > 0) {
+                onUploadComplete(allUploadedPhotos);
+
+                if (eventDetails?._id) {
+                    const key = `rc_uploads_${eventDetails._id}`;
+                    const current = parseInt(localStorage.getItem(key) || '0', 10);
+                    localStorage.setItem(key, String(current + totalSuccess));
                 }
 
-                const { summary } = result.data;
-
-                if (summary && summary.success > 0) {
-                    if (eventDetails?._id) {
-                        const key = `rc_uploads_${eventDetails._id}`;
-                        const current = parseInt(localStorage.getItem(key) || '0', 10);
-                        localStorage.setItem(key, String(current + summary.success));
-                    }
-
-                    if (requireApproval) {
-                        toast.success(
-                            `⏳ ${summary.success} photo${summary.success !== 1 ? 's' : ''} submitted for review!`,
-                            {
-                                description: 'The host will approve them shortly. They\'ll appear once approved.',
-                                duration: 5000,
-                            }
-                        );
-                    } else {
-                        toast.success(
-                            summary.failed === 0
-                                ? `All ${summary.success} photo(s) uploaded successfully!`
-                                : `${summary.success} photo(s) uploaded, ${summary.failed} failed`
-                        );
-                    }
-
-                    resetForm();
-                    onClose();
-                } else if (result.data.uploads?.length > 0) {
-                    if (eventDetails?._id) {
-                        const key = `rc_uploads_${eventDetails._id}`;
-                        const current = parseInt(localStorage.getItem(key) || '0', 10);
-                        localStorage.setItem(key, String(current + result.data.uploads.length));
-                    }
-                    toast.success(requireApproval ? '⏳ Photos submitted for review!' : 'Photos uploaded successfully!');
-                    resetForm();
-                    onClose();
+                if (requireApproval) {
+                    toast.success(
+                        `⏳ ${totalSuccess} photo${totalSuccess !== 1 ? 's' : ''} submitted for review!`,
+                        {
+                            description: 'The host will approve them shortly.',
+                            duration: 5000,
+                        }
+                    );
                 } else {
-                    toast.error('All uploads failed. Please try again.');
+                    toast.success(`Successfully uploaded ${totalSuccess} photo(s)!`);
                 }
+
+                resetForm();
+                onClose();
             } else {
-                toast.error(result.message || 'Upload failed');
+                toast.error('Upload failed. Please try again.');
             }
         } catch (error: any) {
             toast.error(error.message || 'Upload failed. Please try again.');
         } finally {
             setUploading(false);
         }
-    }, [selectedFiles, shareToken, guestInfo, auth, eventDetails?._id, onUploadComplete, resetForm, onClose]);
+    }, [selectedFiles, shareToken, guestInfo, auth, eventDetails?._id, onUploadComplete, resetForm, onClose, requireApproval]);
 
     const handleClose = useCallback(() => {
         if (!uploading) {

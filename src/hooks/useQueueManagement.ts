@@ -53,8 +53,8 @@ export function useQueueManagement(
 ) {
   const {
     autoRefresh = true,
-    refreshInterval = 10000,
-    enableWebSocket = true,
+    refreshInterval = 30000, // 30s polling is enough for background stats
+    enableWebSocket = false, // Disabled in favor of polling
     onQueueAlert
   } = options;
 
@@ -293,103 +293,20 @@ export function useQueueManagement(
     }
   }, [queueItems, pauseResumeUpload]);
 
-  // WebSocket event handlers
+  // REST Polling for queue updates
   useEffect(() => {
-    if (!enableWebSocket || !webSocket?.socket) return;
+    // Initial fetch
+    fetchQueueData();
 
-    const socket = webSocket.socket;
-
-    const handleQueueUpdate = (data: any) => {
-      console.log('📊 Queue update received:', data);
-      
-      setQueueItems(prev => {
-        const index = prev.findIndex(item => item.mediaId === data.mediaId);
-        if (index >= 0) {
-          const updated = [...prev];
-          updated[index] = { ...updated[index], ...data };
-          return updated;
-        }
-        return prev;
-      });
-    };
-
-    const handleQueueStats = (data: any) => {
-      console.log('📈 Queue stats received:', data);
-      if (data.stats) {
-        setStats(data.stats);
-      }
-    };
-
-    const handleQueueAlert = (data: any) => {
-      console.log('🚨 Queue alert received:', data);
-      
-      const { alert } = data;
-      
-      if (onQueueAlert) {
-        onQueueAlert(alert);
-      } else {
-        // Default alert handling
-        const severity = alert.severity || 'warning';
-        const title = `Queue ${severity.charAt(0).toUpperCase() + severity.slice(1)}`;
-        
-        if (severity === 'critical' || severity === 'error') {
-          toast.error(title, { description: alert.message });
-        } else {
-          toast.warning(title, { description: alert.message });
-        }
-      }
-    };
-
-    const handlePerformanceMetrics = (data: any) => {
-      console.log('📊 Performance metrics received:', data);
-      // You can use this data to show real-time performance indicators
-    };
-
-    const handleBatchOperation = (data: any) => {
-      console.log('🔄 Batch operation update:', data);
-      
-      const { operation } = data;
-      
-      if (operation.status === 'completed') {
-        toast.success(`Batch ${operation.type} completed`, {
-          description: `Affected ${operation.affectedCount} items`
-        });
-        fetchQueueData(); // Refresh data
-      } else if (operation.status === 'failed') {
-        toast.error(`Batch ${operation.type} failed`, {
-          description: operation.error || 'Operation failed'
-        });
-      }
-    };
-
-    // Set up event listeners
-    socket.on('queue_update', handleQueueUpdate);
-    socket.on('queue_stats', handleQueueStats);
-    socket.on('queue_alert', handleQueueAlert);
-    socket.on('performance_metrics', handlePerformanceMetrics);
-    socket.on('batch_operation', handleBatchOperation);
-
-    return () => {
-      socket.off('queue_update', handleQueueUpdate);
-      socket.off('queue_stats', handleQueueStats);
-      socket.off('queue_alert', handleQueueAlert);
-      socket.off('performance_metrics', handlePerformanceMetrics);
-      socket.off('batch_operation', handleBatchOperation);
-    };
-  }, [enableWebSocket, webSocket?.socket, onQueueAlert, fetchQueueData]);
-
-  // Auto refresh
-  useEffect(() => {
-    fetchQueueData(); // Initial fetch
-
-    if (autoRefresh && !enableWebSocket) {
+    if (autoRefresh) {
       const interval = setInterval(() => {
-        fetchQueueStats(); // Only fetch stats if WebSocket is handling item updates
+        // Fetch full data if we are in a state that needs it, or just stats
+        fetchQueueData();
       }, refreshInterval);
 
       return () => clearInterval(interval);
     }
-  }, [fetchQueueData, fetchQueueStats, autoRefresh, enableWebSocket, refreshInterval]);
+  }, [fetchQueueData, autoRefresh, refreshInterval]);
 
   // Filter functions
   const getActiveItems = useCallback(() => {

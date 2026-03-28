@@ -258,28 +258,6 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
         enabled: !!eventState.details?._id && !!shareToken
     });
 
-    // Simplified deduplication using a simple set with auto-cleanup
-    const processedEvents = useMemo(() => new Set<string>(), []);
-    const eventTimeouts = useMemo(() => new Map<string, NodeJS.Timeout>(), []);
-
-    const shouldProcessEvent = useCallback((eventType: string, payload: any): boolean => {
-        const mediaId = payload.mediaId || payload._id || payload.id || 'unknown';
-        const signature = `${eventType}:${mediaId}`;
-
-        if (processedEvents.has(signature)) {
-            return false;
-        }
-
-        processedEvents.add(signature);
-
-        const timeoutId = setTimeout(() => {
-            processedEvents.delete(signature);
-            eventTimeouts.delete(signature);
-        }, 10000);
-
-        eventTimeouts.set(signature, timeoutId);
-        return true;
-    }, [processedEvents, eventTimeouts]);
 
     // Show/hide notification banner based on buffered changes
     useEffect(() => {
@@ -303,92 +281,43 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
         });
     }, [clearBufferedChanges]);
 
-    // Optimized WebSocket event handlers
+    // ── Slim guest WebSocket events (v2) ────────────────────────────────────
+    // Guests receive only 2 events:
+    //   new_photos_available → increment buffered count → show banner
+    //   photo_removed        → silently remove from local state
     useEffect(() => {
         if (!webSocket.socket) return;
 
-        const handleMediaApproved = (payload: any) => {
-            if (!shouldProcessEvent('media_approved', payload)) return;
-            webSocketHandlers.handleMediaApproved(payload);
-            if (!bufferedChanges.some((change: any) => change.photo.id === payload.mediaId)) {
-                toast.success('New photos approved!', {
-                    duration: 3000,
-                    position: 'bottom-center'
-                });
-            }
+        const handleNewPhotosAvailable = (payload: any) => {
+            const count = payload?.count ?? 1;
+            // Increment the buffered count so the NotificationBanner appears
+            // The banner shows "N new photos available — tap to update"
+            webSocketHandlers.handleNewPhotosAvailable
+                ? webSocketHandlers.handleNewPhotosAvailable({ eventId: payload?.eventId, count })
+                : toast.info(
+                    count === 1
+                        ? 'A new photo was added'
+                        : `${count} new photos added`,
+                    { duration: 4000, position: 'bottom-center' }
+                );
         };
 
-        const handleMediaStatusUpdated = (payload: any) => {
-            if (!shouldProcessEvent('media_status_updated', payload)) return;
-            webSocketHandlers.handleMediaStatusUpdated(payload);
-            const items = Array.isArray(payload) ? payload : [payload];
-            items.forEach(item => {
-                if (item.newStatus === 'approved' && item.previousStatus !== 'approved') {
-                    const approvalSignature = `media_approved:${item.mediaId} `;
-                    if (!processedEvents.has(approvalSignature) &&
-                        !bufferedChanges.some((change: any) => change.photo.id === item.mediaId)) {
-                        toast.success('Photo approved!', {
-                            duration: 2000,
-                            position: 'bottom-center'
-                        });
-                    }
-                } else if (item.newStatus === 'hidden' || item.newStatus === 'rejected') {
-                    toast.info('Photo was removed', {
-                        duration: 3000,
-                        position: 'bottom-center'
-                    });
-                }
-            });
+        const handlePhotoRemoved = (payload: any) => {
+            if (!payload?.mediaId) return;
+            // Route to existing handleMediaRemoved which removes from local state
+            webSocketHandlers.handleMediaRemoved?.({ mediaId: payload.mediaId, eventId: payload.eventId });
         };
 
-        const handleNewMediaUploaded = (payload: any) => {
-            if (!shouldProcessEvent('new_media_uploaded', payload)) return;
-            webSocketHandlers.handleNewMediaUploaded(payload);
-            if (!bufferedChanges.some((change: any) => change.reason.includes('upload'))) {
-                toast.success('New photos added!', {
-                    duration: 3000,
-                    position: 'bottom-center'
-                });
-            }
-        };
-
-        const handleMediaRemoved = (payload: any) => {
-            if (!shouldProcessEvent('media_removed', payload)) return;
-            webSocketHandlers.handleMediaRemoved(payload);
-            const count = payload.mediaIds?.length || 1;
-            toast.info(`${count} photo${count > 1 ? 's' : ''} removed`, {
-                duration: 3000,
-                position: 'bottom-center'
-            });
-        };
-
-        const handleMediaProcessingComplete = (payload: any) => {
-            if (!shouldProcessEvent('media_processing_complete', payload)) return;
-            webSocketHandlers.handleMediaProcessingComplete(payload);
-            toast.success('High-quality version ready!', {
-                duration: 2000,
-                position: 'bottom-center'
-            });
-        };
-
-        webSocket.socket.on('media_approved', handleMediaApproved);
-        webSocket.socket.on('media_status_updated', handleMediaStatusUpdated);
-        webSocket.socket.on('new_media_uploaded', handleNewMediaUploaded);
-        webSocket.socket.on('media_removed', handleMediaRemoved);
-        webSocket.socket.on('guest_media_removed', handleMediaRemoved);
-        webSocket.socket.on('media_processing_complete', handleMediaProcessingComplete);
+        webSocket.socket.on('new_photos_available', handleNewPhotosAvailable);
+        webSocket.socket.on('photo_removed', handlePhotoRemoved);
 
         return () => {
             if (webSocket.socket) {
-                webSocket.socket.off('media_approved', handleMediaApproved);
-                webSocket.socket.off('media_status_updated', handleMediaStatusUpdated);
-                webSocket.socket.off('new_media_uploaded', handleNewMediaUploaded);
-                webSocket.socket.off('media_removed', handleMediaRemoved);
-                webSocket.socket.off('guest_media_removed', handleMediaRemoved);
-                webSocket.socket.off('media_processing_complete', handleMediaProcessingComplete);
+                webSocket.socket.off('new_photos_available', handleNewPhotosAvailable);
+                webSocket.socket.off('photo_removed', handlePhotoRemoved);
             }
         };
-    }, [webSocket.socket, webSocketHandlers, shouldProcessEvent, processedEvents, bufferedChanges]);
+    }, [webSocket.socket, webSocketHandlers]);
 
     // Room stats handler
     const handleRoomStats = useCallback((payload: any) => {
@@ -411,12 +340,9 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
     // Cleanup on unmount
     useEffect(() => {
         return () => {
-            eventTimeouts.forEach(timeout => clearTimeout(timeout));
-            eventTimeouts.clear();
-            processedEvents.clear();
             cleanup();
         };
-    }, [cleanup, eventTimeouts, processedEvents]);
+    }, [cleanup]);
 
     // Upload functionality
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {

@@ -25,6 +25,7 @@ import { useAuthToken } from '@/hooks/use-auth';
 import { authManager } from '@/lib/auth-manager';
 import { queryKeys } from '@/lib/queryKeys';
 import { Photo } from '@/types/PhotoGallery.types';
+import { pLimit } from '@/utils/async';
 
 // Industry standard: Optimized cache configuration for image galleries (Google Photos style)
 const CACHE_CONFIG = {
@@ -278,8 +279,9 @@ export function useUploadMultipleMedia(
       const errors: any[] = [];
       const batchUploads: any[] = [];
 
-      // 3. Upload concurrently to S3
-      const uploadPromises = files.map(async (file, index) => {
+      // 3. Upload concurrently to S3 with a limit of 3
+      const limit = pLimit(3);
+      const uploadPromises = files.map((file, index) => limit(async () => {
         const uploadData = uploadUrls[index];
         if (!uploadData) return;
 
@@ -323,7 +325,7 @@ export function useUploadMultipleMedia(
           errors.push({ filename: file.name, error: err.message });
           progressMap[file.name] = 0;
         }
-      });
+      }));
 
       await Promise.allSettled(uploadPromises);
 
