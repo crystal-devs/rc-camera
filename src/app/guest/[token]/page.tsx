@@ -996,7 +996,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
 
       {/* Photo Viewer - Lazy Loaded */}
       {photoViewerOpen && selectedPhoto && (
-        <Suspense fallback={<div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center"><LoadingSpinner size="lg" className="text-white" /></div>}>
+        <Suspense fallback={<div className="fixed inset-0 bg-black/90 z-[2000] flex items-center justify-center"><LoadingSpinner size="lg" className="text-white" /></div>}>
           <FullscreenPhotoViewer
             selectedPhoto={{
               ...selectedPhoto,

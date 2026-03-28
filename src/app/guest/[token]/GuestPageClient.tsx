@@ -514,19 +514,21 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
                 <style dangerouslySetInnerHTML={{ __html: `:root { ${cssString} }` }} />
             )}
 
-            <GuestHeader
-                eventDetails={eventState.details}
-                themeColors={themeColors}
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-                onDownload={handleBulkDownload}
-                isDownloading={isDownloading}
-                totalPhotos={totalPhotos}
-                onFindMe={() => setShowFindMeModal(true)}
-                hasMatches={!!matchedPhotos && matchedPhotos.length > 0}
-                onUpload={() => setShowUploadDialog(true)}
-                connectionStatus={<ConnectionStatus />}
-            />
+            {!photoViewerOpen && (
+                <GuestHeader
+                    eventDetails={eventState.details}
+                    themeColors={themeColors}
+                    activeTab={activeTab}
+                    onTabChange={handleTabChange}
+                    onDownload={handleBulkDownload}
+                    isDownloading={isDownloading}
+                    totalPhotos={totalPhotos}
+                    onFindMe={() => setShowFindMeModal(true)}
+                    hasMatches={!!matchedPhotos && matchedPhotos.length > 0}
+                    onUpload={() => setShowUploadDialog(true)}
+                    connectionStatus={<ConnectionStatus />}
+                />
+            )}
 
             {/* Dynamic Cover with Title */}
             <DynamicEventCover
@@ -539,7 +541,7 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
                 {/* Notification Banner */}
-                {showNotificationBanner && (
+                {showNotificationBanner && !photoViewerOpen && (
                     <NotificationBanner
                         isVisible={showNotificationBanner}
                         type="info"
@@ -704,12 +706,14 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
             </main>
 
             {/* Floating Upload Button (Mobile) */}
-            <button
-                onClick={() => setShowUploadDialog(true)}
-                className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-[var(--primary-color)] text-[var(--primary-foreground)] rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-40"
-            >
-                <Plus className="w-7 h-7" />
-            </button>
+            {!photoViewerOpen && (
+                <button
+                    onClick={() => setShowUploadDialog(true)}
+                    className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-[var(--primary-color)] text-[var(--primary-foreground)] rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-40"
+                >
+                    <Plus className="w-7 h-7" />
+                </button>
+            )}
 
             {/* Upload Dialog */}
             <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>

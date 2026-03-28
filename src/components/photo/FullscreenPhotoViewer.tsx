@@ -400,7 +400,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   const content = (
     <div
-      className="fixed inset-0 z-[100] bg-black m-0 p-0 overflow-hidden"
+      className="fixed inset-0 z-[2000] bg-black m-0 p-0 overflow-hidden"
       data-photo-viewer
       style={{ margin: 0, padding: 0, width: '100vw', height: '100dvh' }}
     >

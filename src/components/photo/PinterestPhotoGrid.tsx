@@ -406,7 +406,7 @@ export const PinterestPhotoGrid: React.FC<{
                   height: position.height,
                   contain: 'paint' // Optimization hint
                 }}
-                className="transition-[left,top,width,height] duration-300 ease-out"
+                className="will-change-[left,top]" // Optimization for masonry performance
               >
                 <PinterestPhotoCard
                   photo={photo}
