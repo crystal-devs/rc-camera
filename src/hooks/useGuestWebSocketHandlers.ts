@@ -16,7 +16,7 @@ interface WebSocketHandlers {
     /** Called when N new approved photos are available. Guests should show a refresh banner. */
     handleNewPhotosAvailable: (payload: { eventId: string; count: number }) => void;
     /** Called when a visible photo is removed. Remove it silently from local state. */
-    handlePhotoRemoved: (payload: { mediaId: string; eventId: string }) => void;
+    handleMediaRemoved: (payload: { mediaId: string; eventId: string }) => void;
 }
 
 interface UseGuestWebSocketHandlersOptions {
@@ -70,7 +70,8 @@ export function useGuestWebSocketHandlers({
         if (!mediaId) return;
         if (!deduplicate('photo_removed', mediaId)) return;
 
-        webSocketHandlers.handlePhotoRemoved({ mediaId, eventId: payload?.eventId });
+        // Call handleMediaRemoved which directly mutates the React Query cache
+        webSocketHandlers.handleMediaRemoved({ mediaId, eventId: payload?.eventId });
         // No toast for removal — silent UX is less disruptive
     }, [deduplicate, webSocketHandlers]);
 

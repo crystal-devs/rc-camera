@@ -1,6 +1,6 @@
 // hooks/useInfiniteMediaQuery.ts - Clean and simple
 'use client';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, useCallback } from 'react';
 import { getEventMediaWithGuestToken } from '@/services/apis/media.api';
 import { MediaFetchOptions, transformApiPhoto } from '@/types/events';
@@ -33,6 +33,7 @@ export const useInfiniteMediaQuery = ({
 
     // Buffered changes state for WebSocket updates
     const [bufferedChanges, setBufferedChanges] = useState<any[]>([]);
+    const queryClient = useQueryClient();
 
     const fetchMediaPage = async ({ pageParam = 1 }) => {
         if (!shareToken) {
@@ -142,12 +143,23 @@ export const useInfiniteMediaQuery = ({
                 { type: 'uploaded', photo: payload, reason: 'upload' }
             ]);
         }, []),
-        handleMediaRemoved: useCallback((payload: any) => {
-            setBufferedChanges((prev) => [
-                ...prev,
-                { type: 'removed', photo: payload, reason: 'removal' }
-            ]);
-        }, []),
+        handleMediaRemoved: useCallback((payload: { mediaId: string, eventId: string }) => {
+            // Silently remove from local query cache so it disappears instantly
+            if (!payload?.mediaId) return;
+            
+            const cacheKey = ['guest-media', shareToken];
+            queryClient.setQueriesData({ queryKey: cacheKey }, (oldData: any) => {
+                if (!oldData || !oldData.pages) return oldData;
+                return {
+                    ...oldData,
+                    pages: oldData.pages.map((page: any) => ({
+                        ...page,
+                        photos: page.photos.filter((p: any) => p.id !== payload.mediaId),
+                        total: Math.max(0, page.total - 1)
+                    }))
+                };
+            });
+        }, [queryClient, shareToken]),
         handleMediaProcessingComplete: useCallback((payload: any) => {
             setBufferedChanges((prev) => [
                 ...prev,

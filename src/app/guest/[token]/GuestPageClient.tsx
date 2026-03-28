@@ -281,43 +281,9 @@ export function GuestPageClient({ shareToken, initialEvent, initialAccess }: Gue
         });
     }, [clearBufferedChanges]);
 
-    // ── Slim guest WebSocket events (v2) ────────────────────────────────────
-    // Guests receive only 2 events:
-    //   new_photos_available → increment buffered count → show banner
-    //   photo_removed        → silently remove from local state
-    useEffect(() => {
-        if (!webSocket.socket) return;
-
-        const handleNewPhotosAvailable = (payload: any) => {
-            const count = payload?.count ?? 1;
-            // Increment the buffered count so the NotificationBanner appears
-            // The banner shows "N new photos available — tap to update"
-            webSocketHandlers.handleNewPhotosAvailable
-                ? webSocketHandlers.handleNewPhotosAvailable({ eventId: payload?.eventId, count })
-                : toast.info(
-                    count === 1
-                        ? 'A new photo was added'
-                        : `${count} new photos added`,
-                    { duration: 4000, position: 'bottom-center' }
-                );
-        };
-
-        const handlePhotoRemoved = (payload: any) => {
-            if (!payload?.mediaId) return;
-            // Route to existing handleMediaRemoved which removes from local state
-            webSocketHandlers.handleMediaRemoved?.({ mediaId: payload.mediaId, eventId: payload.eventId });
-        };
-
-        webSocket.socket.on('new_photos_available', handleNewPhotosAvailable);
-        webSocket.socket.on('photo_removed', handlePhotoRemoved);
-
-        return () => {
-            if (webSocket.socket) {
-                webSocket.socket.off('new_photos_available', handleNewPhotosAvailable);
-                webSocket.socket.off('photo_removed', handlePhotoRemoved);
-            }
-        };
-    }, [webSocket.socket, webSocketHandlers]);
+    // Note: photo_removed and new_photos_available socket listeners are registered
+    // by useGuestWebSocketHandlers (called in the parent page via page.tsx).
+    // Do not register them here to avoid double-firing.
 
     // Room stats handler
     const handleRoomStats = useCallback((payload: any) => {
