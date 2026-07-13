@@ -30,6 +30,7 @@ const mapApiEventToEvent = (apiEvent: any): Event => {
     share_settings: apiEvent.share_settings || {
       is_active: true,
       password: null,
+      has_password: false,
       expires_at: null
     },
     permissions: apiEvent.permissions || {
@@ -210,6 +211,27 @@ export const createEvent = async (eventData: Partial<Event>, authToken: string):
   } finally {
     createEventInProgress = false;
   }
+};
+
+export interface MyAccessResponse {
+  event_id: string;
+  role: string;
+  permissions: string[];
+}
+
+/**
+ * The caller's role + server-computed permission set for an event.
+ * Single source of truth for client-side RBAC UI (docs/RBAC_DESIGN.md).
+ */
+export const getMyAccess = async (
+  eventId: string,
+  authToken: string
+): Promise<MyAccessResponse> => {
+  const response = await axios.get(`${API_BASE_URL}/event/${eventId}/my-access`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+    timeout: 10000
+  });
+  return response.data.data as MyAccessResponse;
 };
 
 // Track ongoing update requests

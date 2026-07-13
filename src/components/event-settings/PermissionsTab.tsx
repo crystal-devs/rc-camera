@@ -1,12 +1,14 @@
-// components/PermissionsTab.tsx
-import React from 'react';
-import { Camera, Video, Eye, Settings, Upload, Shield, CheckCircle, Clock } from 'lucide-react';
+// components/event-settings/PermissionsTab.tsx
+'use client';
 
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
+import React from 'react';
+import { Camera, Video, Eye, Upload, Download, CheckCircle2, Clock, X } from 'lucide-react';
+
 import { EventFormData } from '@/types/events';
+import {
+    SettingsSection, SettingsCard, ToggleRow, ChoiceTile, Field, inputWell
+} from './primitives';
+import { cn } from '@/lib/utils';
 
 interface PermissionsTabProps {
     formData: EventFormData;
@@ -17,208 +19,126 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
     formData,
     onInputChange
 }) => {
+    const uploadsEnabled = formData.permissions?.can_upload !== false;
+    const maxPerGuest = formData.permissions?.max_photos_per_guest || 0;
+
     return (
-        <div className="space-y-12">
-            {/* Photo Review Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column - Info */}
-                <div className="space-y-3">
-                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
-                        <Shield className="h-5 w-5 text-muted-foreground" />
-                        Photo Review
-                    </h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                        Choose whether to approve photos before they appear.
-                    </p>
-                    <Badge variant="secondary" className="text-xs w-fit">
-                        Content Control
-                    </Badge>
-                </div>
+        <div className="space-y-10">
+            {/* ── Moderation ───────────────────────────────────────────────── */}
+            <SettingsSection
+                title="Photo review"
+                description="Decide whether uploads appear instantly or wait for your approval first."
+            >
+                <SettingsCard>
+                    <div role="radiogroup" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <ChoiceTile
+                            selected={!formData.permissions?.require_approval}
+                            onSelect={() => onInputChange('permissions.require_approval', false)}
+                            icon={<CheckCircle2 />}
+                            title="Publish instantly"
+                            description="Photos appear the moment they're uploaded. Great for trusted groups."
+                        />
+                        <ChoiceTile
+                            selected={!!formData.permissions?.require_approval}
+                            onSelect={() => onInputChange('permissions.require_approval', true)}
+                            icon={<Clock />}
+                            title="Review first"
+                            description="You approve each photo before guests see it. Peace of mind for formal events."
+                        />
+                    </div>
+                </SettingsCard>
+            </SettingsSection>
 
-                {/* Right Column - Review Options */}
-                <div className="lg:col-span-2">
-                    <RadioGroup
-                        value={formData.permissions?.require_approval ? "review_first" : "publish_directly"}
-                        onValueChange={(value) => onInputChange('permissions.require_approval', value === "review_first")}
-                    >
-                        <div className="group relative">
-                            <div className="flex items-start space-x-4 p-5 rounded-lg border hover:border-primary/30 hover:bg-accent/50 transition-all duration-200 cursor-pointer">
-                                <RadioGroupItem value="publish_directly" id="publish_directly" className="mt-1" />
-                                <div className="flex-1 space-y-2">
-                                    <div className="flex items-center gap-3">
-                                        <CheckCircle className="h-4 w-4 text-muted-foreground" />
-                                        <Label htmlFor="publish_directly" className="text-base font-medium cursor-pointer text-foreground">
-                                            Auto-publish photos
-                                        </Label>
-                                        <Badge variant="outline" className="text-xs px-2 py-0.5">
-                                            Instant
-                                        </Badge>
-                                    </div>
-                                    <p className="text-sm text-muted-foreground pl-7">
-                                        Photos appear instantly when uploaded. Great for trusted groups and casual events!
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="group relative">
-                            <div className="flex items-start space-x-4 p-5 rounded-lg border hover:border-primary/30 hover:bg-accent/50 transition-all duration-200 cursor-pointer">
-                                <RadioGroupItem value="review_first" id="review_first" className="mt-1" />
-                                <div className="flex-1 space-y-2">
-                                    <div className="flex items-center gap-3">
-                                        <Clock className="h-4 w-4 text-muted-foreground" />
-                                        <Label htmlFor="review_first" className="text-base font-medium cursor-pointer text-foreground">
-                                            Review before publishing
-                                        </Label>
-                                        <Badge variant="outline" className="text-xs px-2 py-0.5">
-                                            Secure
-                                        </Badge>
-                                    </div>
-                                    <p className="text-sm text-muted-foreground pl-7">
-                                        You approve each photo first. Perfect for peace of mind and professional events!
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </RadioGroup>
-                </div>
-            </div>
-
-            {/* Divider */}
-            <div className="border-t border-border"></div>
-
-            {/* Guest Permissions Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column - Info */}
-                <div className="space-y-3">
-                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
-                        <Settings className="h-5 w-5 text-muted-foreground" />
-                        Guest Permissions
-                    </h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                        Control what guests can do at your event.
-                    </p>
-                    <Badge variant="secondary" className="text-xs w-fit">
-                        Access Control
-                    </Badge>
-                </div>
-
-                {/* Right Column - Permission Toggles */}
-                <div className="lg:col-span-2 space-y-3">
-                    <div className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/30 transition-all duration-200">
-                        <div className="flex items-center gap-4">
-                            <Eye className="h-5 w-5 text-muted-foreground" />
-                            <div className="space-y-0.5">
-                                <Label className="text-base font-medium text-foreground">
-                                    View photos
-                                </Label>
-                                <p className="text-sm text-muted-foreground">Let guests browse all the memories</p>
-                            </div>
-                        </div>
-                        <Switch
-                            checked={formData.permissions?.can_view}
+            {/* ── Guest permissions ────────────────────────────────────────── */}
+            <SettingsSection
+                title="What guests can do"
+                description="Control browsing, uploading, and downloading. Turning uploads off keeps existing photos untouched."
+            >
+                <SettingsCard>
+                    <div className="divide-y divide-border/70">
+                        <ToggleRow
+                            icon={<Eye />}
+                            title="View photos"
+                            description="Let guests browse the full gallery."
+                            checked={!!formData.permissions?.can_view}
                             onCheckedChange={(checked) => onInputChange('permissions.can_view', checked)}
                         />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/30 transition-all duration-200">
-                        <div className="flex items-center gap-4">
-                            <Upload className="h-5 w-5 text-muted-foreground" />
-                            <div className="space-y-0.5">
-                                <Label className="text-base font-medium text-foreground">
-                                    Upload photos
-                                </Label>
-                                <p className="text-sm text-muted-foreground">Allow guests to add their own shots</p>
-                            </div>
-                        </div>
-                        <Switch
-                            checked={formData.permissions?.can_upload}
+                        <ToggleRow
+                            icon={<Upload />}
+                            title="Upload photos"
+                            description="Allow guests to add their own shots."
+                            checked={!!formData.permissions?.can_upload}
                             onCheckedChange={(checked) => onInputChange('permissions.can_upload', checked)}
                         />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/30 transition-all duration-200">
-                        <div className="flex items-center gap-4">
-                            <Camera className="h-5 w-5 text-muted-foreground" />
-                            <div className="space-y-0.5">
-                                <Label className="text-base font-medium text-foreground">
-                                    Download photos
-                                </Label>
-                                <p className="text-sm text-muted-foreground">Let guests save memories to keep forever</p>
-                            </div>
-                        </div>
-                        <Switch
-                            checked={formData.permissions?.can_download}
+                        <ToggleRow
+                            icon={<Download />}
+                            title="Download photos"
+                            description="Let guests save memories to their device."
+                            checked={!!formData.permissions?.can_download}
                             onCheckedChange={(checked) => onInputChange('permissions.can_download', checked)}
                         />
                     </div>
-                </div>
-            </div>
 
-            {/* Divider */}
-            <div className="border-t border-border"></div>
-
-            {/* Media Types Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column - Info */}
-                <div className="space-y-3">
-                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-3">
-                        <Camera className="h-5 w-5 text-muted-foreground" />
-                        Media Types
-                    </h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                        Choose what types of content guests can upload.
-                    </p>
-                    <Badge variant="secondary" className="text-xs w-fit">
-                        Content Types
-                    </Badge>
-                </div>
-
-                {/* Right Column - Media Type Toggles */}
-                <div className="lg:col-span-2">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/30 transition-all duration-200 h-full">
-                            <div className="flex items-center gap-4">
-                                <Camera className="h-5 w-5 text-muted-foreground" />
-                                <div className="space-y-0.5">
-                                    <Label className="text-base font-medium text-foreground cursor-pointer">
-                                        Photos
-                                    </Label>
-                                    <p className="text-xs text-muted-foreground">JPEG, PNG, HEIC</p>
+                    {uploadsEnabled && (
+                        <div className="mt-4 rounded-xl bg-background p-4 ring-1 ring-inset ring-border/70">
+                            <Field
+                                label="Upload limit per guest"
+                                htmlFor="max-photos"
+                                hint='Cap each guest&apos;s uploads for a "disposable camera" feel. 0 means unlimited.'
+                            >
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        id="max-photos"
+                                        type="number"
+                                        min="0"
+                                        max="500"
+                                        value={maxPerGuest}
+                                        onChange={(e) => onInputChange('permissions.max_photos_per_guest', parseInt(e.target.value) || 0)}
+                                        className={cn(inputWell, 'max-w-[120px] bg-card')}
+                                    />
+                                    <span className="text-sm text-muted-foreground">
+                                        {maxPerGuest === 0 ? 'Unlimited' : `${maxPerGuest} photos each`}
+                                    </span>
+                                    {maxPerGuest > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onInputChange('permissions.max_photos_per_guest', 0)}
+                                            className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                        >
+                                            <X className="size-3.5" /> Remove cap
+                                        </button>
+                                    )}
                                 </div>
-                            </div>
-                            <Switch
-                                checked={formData.permissions?.allowed_media_types?.images}
-                                onCheckedChange={(checked) => onInputChange('permissions.allowed_media_types.images', checked)}
-                            />
+                            </Field>
                         </div>
+                    )}
+                </SettingsCard>
+            </SettingsSection>
 
-                        <div className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-accent/30 transition-all duration-200 h-full">
-                            <div className="flex items-center gap-4">
-                                <Video className="h-5 w-5 text-muted-foreground" />
-                                <div className="space-y-0.5">
-                                    <Label className="text-base font-medium text-foreground cursor-pointer">
-                                        Videos
-                                    </Label>
-                                    <p className="text-xs text-muted-foreground">MP4, MOV, AVI</p>
-                                </div>
-                            </div>
-                            <Switch
-                                checked={formData.permissions?.allowed_media_types?.videos}
-                                onCheckedChange={(checked) => onInputChange('permissions.allowed_media_types.videos', checked)}
-                            />
-                        </div>
+            {/* ── Media types ──────────────────────────────────────────────── */}
+            <SettingsSection
+                title="Media types"
+                description="Choose what guests can upload. Videos capture emotions beautifully but use more storage."
+            >
+                <SettingsCard>
+                    <div className="divide-y divide-border/70">
+                        <ToggleRow
+                            icon={<Camera />}
+                            title="Photos"
+                            description="JPEG, PNG, HEIC"
+                            checked={!!formData.permissions?.allowed_media_types?.images}
+                            onCheckedChange={(checked) => onInputChange('permissions.allowed_media_types.images', checked)}
+                        />
+                        <ToggleRow
+                            icon={<Video />}
+                            title="Videos"
+                            description="MP4, MOV, AVI"
+                            checked={!!formData.permissions?.allowed_media_types?.videos}
+                            onCheckedChange={(checked) => onInputChange('permissions.allowed_media_types.videos', checked)}
+                        />
                     </div>
-                    
-                    {/* Simplified Pro Tip */}
-                    <div className="mt-6 p-4 bg-muted/50 rounded-lg border">
-                        <p className="text-sm text-muted-foreground">
-                            <span className="font-medium text-foreground">💡 Tip:</span> Videos capture emotions beautifully but use more storage. 
-                            Choose based on your event type and needs.
-                        </p>
-                    </div>
-                </div>
-            </div>
+                </SettingsCard>
+            </SettingsSection>
         </div>
     );
 };

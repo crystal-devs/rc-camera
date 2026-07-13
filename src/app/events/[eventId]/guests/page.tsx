@@ -86,7 +86,8 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from "sonner";
-import useEventStore from '@/stores/useEventStore';
+import { useEventRole } from '@/hooks/useEventRole';
+import { UserRole, hasRolePrivilege } from '@/types/roles';
 
 // Types
 import { Event } from '@/types/backend-types/event.type';
@@ -105,16 +106,17 @@ export default function GuestManagementPage({ params }: PageProps) {
   const { eventId } = React.use(params);
   const router = useRouter();
   const { getAccessToken } = useSecureAuth();
-  const { userRole } = useEventStore();
+  const { role: eventRole } = useEventRole(eventId);
 
-  // Access control - only creators and co-hosts can manage guests
+  // Access control - only creators and co-hosts can manage guests.
+  // Gates on the loaded event's server-computed role, not the persisted
+  // store value (which can be stale across account/event switches).
   React.useEffect(() => {
-    const allowedRoles = ['creator', 'co_host'];
-    if (!allowedRoles.includes(userRole || '')) {
+    if (eventRole !== null && !hasRolePrivilege(eventRole, UserRole.CO_HOST)) {
       toast.error("Access denied. Only event creators and co-hosts can manage participants.");
       router.push(`/events/${eventId}`);
     }
-  }, [userRole, eventId, router]);
+  }, [eventRole, eventId, router]);
 
   // Local state for UI
   const [event, setEvent] = useState<Event | null>(null);

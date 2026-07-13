@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 import useEventStore from '@/stores/useEventStore';
+import { useEventRole } from '@/hooks/useEventRole';
 
 // Navigation items
 const getNavItems = (selectedEventId: string | null) => {
@@ -36,7 +37,7 @@ const getNavItems = (selectedEventId: string | null) => {
             requiresEvent: true,
         },
         {
-            icon: <ImageIcon size={20} />,
+            icon: <UserIcon size={20} />,
             label: 'Guests',
             href: `${baseRoute}/guests`,
             requiresEvent: true,
@@ -45,18 +46,6 @@ const getNavItems = (selectedEventId: string | null) => {
             icon: <Settings2Icon size={20} />,
             label: 'Event Settings',
             href: `${baseRoute}/settings`,
-            requiresEvent: true,
-        },
-        {
-            icon: <Sparkles size={20} />,
-            label: 'AI Highlights',
-            href: `${baseRoute}/highlights`,
-            requiresEvent: true,
-        },
-        {
-            icon: <LayoutTemplate size={20} />,
-            label: 'Templates',
-            href: `/templates`,
             requiresEvent: true,
         },
         {
@@ -76,16 +65,18 @@ const getNavItems = (selectedEventId: string | null) => {
 
 export function CustomSidebar() {
     const pathname = usePathname();
-    const { selectedEvent, userRole } = useEventStore();
+    const { selectedEvent } = useEventStore();
+    // Role from the loaded event's server-computed user_role — hidden until
+    // known, so guests never see management links even with stale local state
+    const { canManageEvent } = useEventRole();
 
     // Get navigation items based on selected event
     const navItems = getNavItems(selectedEvent?._id || null);
 
     // Filter out restricted items for non-admin users
-    const allowedRoles = ['creator', 'co_host'];
     const filteredNavItems = navItems.filter(item => {
         if (item.label === 'Guests' || item.label === 'Event Settings') {
-            return allowedRoles.includes(userRole || '');
+            return canManageEvent;
         }
         return true;
     });

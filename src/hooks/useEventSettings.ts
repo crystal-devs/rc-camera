@@ -1,5 +1,5 @@
 // hooks/useEventSettings.ts
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { deleteEvent } from '@/services/apis/events.api'
@@ -30,7 +30,9 @@ interface EventFormData {
   permissions: any
   share_settings: {
     is_active: boolean
+    // null = unchanged, '' = clear PIN, string = set new PIN
     password: string | null
+    has_password: boolean
     expires_at: string | null
   }
   share_token: string
@@ -83,11 +85,13 @@ const convertEventToFormData = (event: Event): EventFormData => {
       url: event.cover_image?.url || '',
       public_id: event.cover_image?.public_id || ''
     },
-    visibility: (event.visibility === 'public' ? 'anyone_with_link' : event.visibility) || 'private',
+    // Legacy events may still carry 'public' (pre-rename of the visibility values)
+    visibility: ((event.visibility as string) === 'public' ? 'anyone_with_link' : event.visibility) || 'private',
     permissions: event.permissions || {},
     share_settings: {
       is_active: event.share_settings?.is_active ?? true,
-      password: event.share_settings?.password || null,
+      password: null, // API never returns the PIN; null means "leave unchanged"
+      has_password: (event.share_settings as any)?.has_password ?? false,
       expires_at: event.share_settings?.expires_at || null
     },
     share_token: event.share_token || '',
@@ -146,7 +150,14 @@ const prepareSubmitData = (formData: EventFormData) => {
     },
     visibility: formData.visibility,
     permissions: formData.permissions,
-    share_settings: formData.share_settings,
+    share_settings: {
+      is_active: formData.share_settings.is_active,
+      expires_at: formData.share_settings.expires_at,
+      // Omit password unless the host changed it ('' clears, string sets)
+      ...(formData.share_settings.password !== null
+        ? { password: formData.share_settings.password }
+        : {})
+    },
     photowall_settings: formData.photowall_settings,
     styling_config: formData.styling_config
   }
@@ -179,6 +190,7 @@ export const useEventSettings = (eventId: string) => {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
+  const initializedEventIdRef = useRef<string | null>(null)
 
   // Load event data and convert to form data
   useEffect(() => {
@@ -187,14 +199,20 @@ export const useEventSettings = (eventId: string) => {
       return
     }
 
+    // Wait for the auth token — getEventFromCacheOrFetch returns null without
+    // it, which the error path below would misread as "event not found".
+    if (!token) return
+
+    // Initialize the form only once per event; later selectedEvent updates
+    // (e.g. after save) must not wipe in-progress edits.
+    if (initializedEventIdRef.current === eventId) return
+
     const loadEventData = async () => {
       try {
-        let event = selectedEvent
-
-        // If we don't have the event or it's different, fetch it
-        if (!event || event._id !== eventId) {
-          event = await getEventFromCacheOrFetch(eventId, token!)
-        }
+        // Always resolve through cache-or-fetch: the persisted selectedEvent can
+        // be stale after an account switch and would carry the previous
+        // account's user_role and data.
+        const event = await getEventFromCacheOrFetch(eventId, token!)
 
         if (!event) {
           console.error(`Event ${eventId} not found`)
@@ -210,6 +228,7 @@ export const useEventSettings = (eventId: string) => {
         setOriginalData(convertedData)
         setPreviewUrl(event.cover_image?.url || null)
         setIsInitialized(true)
+        initializedEventIdRef.current = eventId
       } catch (error) {
         console.error('Error loading event settings:', error)
         toast.error("Failed to load event settings")
@@ -218,7 +237,7 @@ export const useEventSettings = (eventId: string) => {
     }
 
     loadEventData()
-  }, [eventId, token, selectedEvent, getEventFromCacheOrFetch, router])
+  }, [eventId, token, getEventFromCacheOrFetch, router])
 
   // Memoized change detection
   const hasChanges = useMemo(() => {
@@ -394,10 +413,8 @@ export const useEventSettings = (eventId: string) => {
     }
   }, [eventId, token, deleteEventFromStore, router, deleteEventMutation])
 
-  // Get user info
-  const currentUserId = selectedEvent?.created_by
-  const isEventCreator = currentUserId && selectedEvent?.created_by && currentUserId === selectedEvent.created_by
-
+  // NOTE: creator checks live in useEventRole (server-computed user_role) —
+  // do not derive them here from created_by.
   return {
     // Form data
     formData,
@@ -410,10 +427,6 @@ export const useEventSettings = (eventId: string) => {
 
     // Error state
     error,
-
-    // User info
-    currentUserId,
-    isEventCreator,
 
     // Form handlers
     handleInputChange,
