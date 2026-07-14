@@ -234,6 +234,25 @@ export const getMyAccess = async (
   return response.data.data as MyAccessResponse;
 };
 
+/**
+ * Close (archive = true) or reopen (archive = false) an event for guests.
+ * Creator-only server-side (the `event.archive` action). Returns the updated
+ * event. This is the dedicated path for the danger-zone close/reopen — it no
+ * longer rides through the generic update payload.
+ */
+export const toggleEventArchive = async (
+  eventId: string,
+  archive: boolean,
+  authToken: string
+): Promise<Event> => {
+  const response = await axios.patch(
+    `${API_BASE_URL}/event/${eventId}/archive`,
+    { archive },
+    { headers: { Authorization: `Bearer ${authToken}` }, timeout: 15000 }
+  );
+  return response.data.data as Event;
+};
+
 // Track ongoing update requests
 const updateEventInProgress = new Set<string>();
 

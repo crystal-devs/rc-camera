@@ -21,22 +21,6 @@ export interface InvitedBy {
   email: string;
 }
 
-export interface Permissions {
-  can_view: boolean;
-  can_upload: boolean;
-  can_download: boolean;
-  can_invite_others: boolean;
-  can_moderate_content: boolean;
-  can_manage_participants: boolean;
-  can_edit_event: boolean;
-  can_delete_event: boolean;
-  can_transfer_ownership: boolean;
-  can_approve_content: boolean;
-  can_export_data: boolean;
-  can_view_analytics: boolean;
-  can_manage_settings: boolean;
-}
-
 export interface ParticipantStats {
   uploads_count: number;
   downloads_count: number;
@@ -61,7 +45,6 @@ export interface Participant {
   joined_at: string | null;
   last_activity_at: string | null;
   removed_at: string | null;
-  permissions: Permissions;
   stats: ParticipantStats;
 }
 
@@ -287,7 +270,6 @@ export const updateParticipant = async (
   participantId: string,
   updates: {
     role?: 'co_host' | 'viewer';
-    permissions?: Partial<Permissions>;
     status?: 'active' | 'inactive' | 'pending' | 'removed';
   },
   authToken: string

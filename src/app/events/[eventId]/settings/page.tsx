@@ -73,6 +73,7 @@ const EventSettingsPage = () => {
     handleClearImage,
     handleSubmit,
     handleDeleteEvent,
+    handleToggleArchive,
     previewUrl,
   } = useEventSettings(eventId as string);
 
@@ -163,6 +164,7 @@ const EventSettingsPage = () => {
             onInputChange={handleInputChange}
             isCreator={isCreator}
             onDeleteEvent={handleDeleteEvent}
+            onToggleArchive={handleToggleArchive}
           />
         )}
         {activeTab === 'sharing' && (
@@ -171,6 +173,7 @@ const EventSettingsPage = () => {
             onInputChange={handleInputChange}
             eventId={eventId as string}
             isCreator={isCreator}
+            onToggleArchive={handleToggleArchive}
           />
         )}
         {activeTab === 'permissions' && (

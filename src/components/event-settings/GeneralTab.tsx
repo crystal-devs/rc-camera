@@ -27,6 +27,8 @@ interface GeneralTabProps {
     onInputChange: (field: string, value: any) => void;
     isCreator: boolean;
     onDeleteEvent: () => void;
+    /** Close (archive = true) / reopen (archive = false) the event for guests */
+    onToggleArchive: (archive: boolean) => void;
 }
 
 interface DatePickerFieldProps {
@@ -77,7 +79,8 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
     formData,
     onInputChange,
     isCreator,
-    onDeleteEvent
+    onDeleteEvent,
+    onToggleArchive
 }) => {
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
     const isEventLive = formData.share_settings?.is_active !== false;
@@ -225,7 +228,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                         ) : (
                             <Button
                                 type="button"
-                                onClick={() => onInputChange('share_settings.is_active', true)}
+                                onClick={() => onToggleArchive(false)}
                                 className="h-10 shrink-0 rounded-xl bg-foreground text-background shadow-none hover:bg-foreground/90"
                             >
                                 Reopen event
@@ -240,7 +243,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                             description="The event page is replaced with a friendly &quot;Event ended&quot; screen for everyone. Your photos are untouched and you can undo this anytime."
                             confirmLabel="Close event"
                             onConfirm={() => {
-                                onInputChange('share_settings.is_active', false);
+                                onToggleArchive(true);
                                 setShowCloseConfirm(false);
                             }}
                             onCancel={() => setShowCloseConfirm(false)}

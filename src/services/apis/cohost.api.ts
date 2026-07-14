@@ -12,20 +12,6 @@ export interface CoHost {
     profile_pic?: string;
   };
   status: 'active' | 'pending' | 'blocked' | 'removed';
-  permissions: {
-    can_view: boolean;
-    can_upload: boolean;
-    can_download: boolean;
-    can_invite_others: boolean;
-    can_moderate_content: boolean;
-    can_manage_participants: boolean;
-    can_edit_event: boolean;
-    can_delete_event: boolean;
-    can_approve_content: boolean;
-    can_export_data: boolean;
-    can_view_analytics: boolean;
-    can_manage_settings: boolean;
-  };
   invited_by?: {
     id: string;
     name: string;

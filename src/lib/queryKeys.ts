@@ -7,6 +7,7 @@ export const queryKeys = {
   events: () => [...queryKeys.all, 'events'] as const,
   eventsList: () => [...queryKeys.events(), 'list'] as const,
   event: (eventId: string) => [...queryKeys.events(), eventId] as const,
+  eventAccess: (eventId: string) => [...queryKeys.event(eventId), 'my-access'] as const,
   eventPhotos: (eventId: string, status?: string) =>
     status
       ? [...queryKeys.event(eventId), 'photos', status] as const

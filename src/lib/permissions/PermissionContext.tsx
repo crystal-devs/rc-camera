@@ -6,6 +6,8 @@ import { PermissionManager, createPermissionManager } from './PermissionManager'
 import { UserRole, parseRole } from '@/types/roles';
 import { PermissionAction } from '@/constants/permissions';
 import { getMyAccess } from '@/services/apis/events.api';
+import { queryKeys } from '@/lib/queryKeys';
+import { useQueryClient } from '@tanstack/react-query';
 import { logger } from '@/lib/logger/Logger';
 import { errorHandler } from '@/lib/errors/ErrorHandler';
 import { useAuthToken } from '@/hooks/use-auth';
@@ -71,6 +73,7 @@ export function PermissionProvider({
     const [role, setRole] = useState<UserRole | null>(initialRole || null);
 
     const token = useAuthToken();
+    const queryClient = useQueryClient();
     const webSocketStore = useWebSocketStore();
 
     /**
@@ -94,8 +97,14 @@ export function PermissionProvider({
             logger.debug('Fetching permissions', { eventId });
 
             // Server-computed role + permission set — the single source of
-            // truth, resolved by the same policy the API enforces.
-            const access = await getMyAccess(eventId, token);
+            // truth, resolved by the same policy the API enforces. Routed
+            // through React Query on the shared eventAccess key so this and
+            // useEventRole hit /my-access once, not twice, per event.
+            const access = await queryClient.fetchQuery({
+                queryKey: queryKeys.eventAccess(eventId),
+                queryFn: () => getMyAccess(eventId, token),
+                staleTime: 60_000,
+            });
 
             const userRole = parseRole(access.role);
             const manager = PermissionManager.fromAPI(access);
@@ -119,7 +128,7 @@ export function PermissionProvider({
         } finally {
             setIsLoading(false);
         }
-    }, [eventId, token]);
+    }, [eventId, token, queryClient]);
 
     /**
      * Handle permission updates from WebSocket
@@ -136,7 +145,10 @@ export function PermissionProvider({
                 eventId: data.eventId,
             });
 
-            // Re-resolve from the server rather than trusting the socket payload
+            // Re-resolve from the server rather than trusting the socket payload.
+            // Invalidate the shared cache first so fetchQuery (and useEventRole's
+            // observer) actually refetch instead of returning fresh-cached data.
+            queryClient.invalidateQueries({ queryKey: queryKeys.eventAccess(eventId) });
             fetchPermissions();
 
             errorHandler.handle(new Error('Permissions updated'), {
@@ -154,7 +166,7 @@ export function PermissionProvider({
             socket.off('permission_updated', handlePermissionUpdate);
             socket.off('permissions_updated', handlePermissionUpdate);
         };
-    }, [webSocketStore.socket, eventId, fetchPermissions]);
+    }, [webSocketStore.socket, eventId, fetchPermissions, queryClient]);
 
     /**
      * Load permissions on mount
@@ -169,8 +181,12 @@ export function PermissionProvider({
      * Reload permissions (public API)
      */
     const reloadPermissions = useCallback(async () => {
+        // Force a fresh resolve, not the (possibly still-fresh) shared cache.
+        if (eventId) {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.eventAccess(eventId) });
+        }
         await fetchPermissions();
-    }, [fetchPermissions]);
+    }, [fetchPermissions, eventId, queryClient]);
 
     const value: PermissionContextValue = {
         permissionManager,

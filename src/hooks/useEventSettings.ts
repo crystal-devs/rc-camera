@@ -8,7 +8,7 @@ import useEventStore, { Event } from '@/stores/useEventStore'
 import { getAuthToken } from '@/lib/store'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
-import { useUpdateEvent, useDeleteEvent } from '@/hooks/useEvents'
+import { useUpdateEvent, useDeleteEvent, useToggleEventArchive } from '@/hooks/useEvents'
 import { useToken } from './useToken'
 
 // Form data interface
@@ -168,6 +168,7 @@ export const useEventSettings = (eventId: string) => {
   const queryClient = useQueryClient()
   const updateEventMutation = useUpdateEvent()
   const deleteEventMutation = useDeleteEvent()
+  const toggleArchiveMutation = useToggleEventArchive()
 
   // Auth token
   const token = useToken()
@@ -413,6 +414,29 @@ export const useEventSettings = (eventId: string) => {
     }
   }, [eventId, token, deleteEventFromStore, router, deleteEventMutation])
 
+  // Close/reopen the event for guests via the dedicated archive route (a
+  // creator-only action, gated server-side). Kept off the generic save so a
+  // routine settings save never flips it.
+  const handleToggleArchive = useCallback(async (archive: boolean) => {
+    if (!token) return
+
+    try {
+      const updatedEvent = await toggleArchiveMutation.mutateAsync({ eventId, archive })
+
+      // Reflect the new state locally so the danger zone / sharing tab re-render
+      const applyState = (prev: EventFormData | null) =>
+        prev ? { ...prev, share_settings: { ...prev.share_settings, is_active: !archive } } : prev
+      setFormData(applyState)
+      setOriginalData(applyState)
+      updateEventInStore(eventId, updatedEvent as any)
+
+      toast.success(archive ? 'Event closed for guests' : 'Event reopened')
+    } catch (error: any) {
+      console.error('Error toggling event archive:', error)
+      toast.error(error.message || "Failed to update event")
+    }
+  }, [eventId, token, toggleArchiveMutation, updateEventInStore])
+
   // NOTE: creator checks live in useEventRole (server-computed user_role) —
   // do not derive them here from created_by.
   return {
@@ -434,6 +458,7 @@ export const useEventSettings = (eventId: string) => {
     handleClearImage,
     handleSubmit,
     handleDeleteEvent,
+    handleToggleArchive,
 
     // Image preview
     previewUrl,

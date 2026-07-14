@@ -92,5 +92,4 @@ export interface Location {
     updated_at: string; // ISO date string
     archived_at: string | null; // ISO date string or null
     user_role?: string; // From EventType
-    user_permissions?: Record<string, boolean> | null; // From EventType
   }

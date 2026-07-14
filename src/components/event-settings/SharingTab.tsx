@@ -19,9 +19,11 @@ interface SharingTabProps {
     eventId?: string;
     /** Closing/reopening the event is creator-only (server-enforced) */
     isCreator?: boolean;
+    /** Close (archive = true) / reopen (archive = false) the event for guests */
+    onToggleArchive: (archive: boolean) => void;
 }
 
-export const SharingTab: React.FC<SharingTabProps> = ({ formData, onInputChange, eventId, isCreator }) => {
+export const SharingTab: React.FC<SharingTabProps> = ({ formData, onInputChange, eventId, isCreator, onToggleArchive }) => {
     const { copied, copy } = useClipboard();
     const [showPin, setShowPin] = useState(false);
     // PIN is stored hashed server-side and never returned, so "a PIN exists" comes
@@ -74,7 +76,7 @@ export const SharingTab: React.FC<SharingTabProps> = ({ formData, onInputChange,
                     {isCreator && (
                         <Button
                             type="button"
-                            onClick={() => onInputChange('share_settings.is_active', true)}
+                            onClick={() => onToggleArchive(false)}
                             className="h-10 shrink-0 rounded-xl bg-foreground text-background shadow-none hover:bg-foreground/90"
                         >
                             Reopen event

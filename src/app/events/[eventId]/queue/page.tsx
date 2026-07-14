@@ -24,23 +24,26 @@ import { toast } from 'sonner';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { useQueueManagement } from '@/hooks/useQueueManagement';
 // import UploadQueueVisualization from '@/components/album/UploadQueueVisualization';
-import useEventStore from '@/stores/useEventStore';
+import { useEventRole } from '@/hooks/useEventRole';
 
 export default function AdminQueueManagement() {
   const params = useParams();
   const eventId = params?.eventId as string;
   const [selectedTab, setSelectedTab] = useState<'overview' | 'monitoring' | 'settings'>('overview');
-  const { userRole } = useEventStore();
+  // Server-resolved access (my-access), not the persisted client role — a stale
+  // localStorage role must never gate a management screen.
+  const { canManageEvent, isLoading: roleLoading } = useEventRole(eventId);
   const router = useRouter();
 
-  // Access control - only creators and co-hosts can access queue management
+  // Access control - only creators and co-hosts can access queue management.
+  // Wait for access to resolve before redirecting, or a slow lookup would eject
+  // a legitimate host.
   useEffect(() => {
-    const allowedRoles = ['creator', 'co_host'];
-    if (!allowedRoles.includes(userRole || '')) {
+    if (!roleLoading && !canManageEvent) {
       toast.error("Access denied. Only event creators and co-hosts can access queue management.");
       router.push(`/events/${eventId}`);
     }
-  }, [userRole, eventId, router]);
+  }, [roleLoading, canManageEvent, eventId, router]);
 
   // WebSocket connection for admin
   const webSocket = useEventWebSocket(eventId, {
