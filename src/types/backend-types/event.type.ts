@@ -38,7 +38,10 @@ export interface Location {
   
   export interface ShareSettings {
     is_active: boolean;
-    password: string | null;
+    // Write-only: send a string to set a new PIN, '' to clear, omit/null to keep.
+    // The API never returns the stored value (it's a bcrypt hash, select:false).
+    password?: string | null;
+    has_password?: boolean;
     expires_at: string | null; // ISO date string or null
   }
   
@@ -68,6 +71,12 @@ export interface Location {
     created_by: string; // ObjectId serialized as string
     share_token?: string; // Optional, sparse index
     share_settings: ShareSettings;
+    // DPDP: biometric features are per-event opt-in (server defaults to off)
+    face_recognition?: {
+      enabled: boolean;
+      consent_version?: string;
+      retention_days?: number;
+    };
     permissions: Permissions;
     co_host_invite_token: CoHostInviteToken;
     co_hosts: CoHost[];

@@ -38,7 +38,7 @@ export function GuestHeader({
     return (
         <header
             data-gallery-section
-            className="sticky top-0 left-0 right-0 z-[999] transition-colors duration-300 shadow-sm backdrop-blur-md bg-opacity-90"
+            className="sticky top-0 left-0 right-0 z-40 transition-colors duration-300 shadow-sm backdrop-blur-md bg-opacity-90"
             style={{
                 backgroundColor: themeColors.custom_secondary || themeColors.secondary || '#ffffff',
                 color: themeColors.text || '#000000'

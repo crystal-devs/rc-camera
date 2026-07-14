@@ -20,7 +20,7 @@ import {
 import { EmptyState } from '../album/EmptyState';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
-import { RowsPhotoGallery } from './layout/RowsPhotoGallery';
+import { MediaGrid, AdminMediaTile } from '@/components/media-gallery';
 import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { UploadProgressTab } from '../progress/upload-progress';
@@ -499,20 +499,32 @@ export default function OptimizedPhotoGallery({
       ) : (
         <>
           {/* Photo Grid */}
-          <RowsPhotoGallery
-            photos={photos}
-            targetRowHeight={displayConfig?.targetRowHeight} // 🚀 NEW: Pass configured height
-            onPhotoClick={galleryState.openPhotoViewer}
-            userPermissions={galleryState.effectivePermissions}
-            currentTab={galleryState.activeTab}
-            onStatusUpdate={handleStatusUpdate}
-            onDownload={handleDownload}
-            onDelete={handleDelete}
-            onSetCover={handleSetCover}
-            selectionMode={selection.getSelectedCount() > 0}
-            selectedPhotos={selection.selectedPhotos}
-            onToggleSelection={selection.togglePhotoSelection}
-            onNearEnd={handleLoadMore}
+          <MediaGrid
+            items={photos}
+            layout="rows"
+            targetRowHeight={displayConfig?.targetRowHeight}
+            gap={8}
+            scrollContainerRef={scrollRef}
+            hasNextPage={hasNextPage}
+            isLoadingMore={isFetchingNextPage}
+            onLoadMore={handleLoadMore}
+            renderItem={({ item, index, width, priority }) => (
+              <AdminMediaTile
+                photo={item}
+                index={index}
+                displayWidth={width}
+                priority={priority}
+                onPhotoClick={galleryState.openPhotoViewer}
+                userPermissions={galleryState.effectivePermissions}
+                onStatusUpdate={handleStatusUpdate}
+                onDownload={handleDownload}
+                onDelete={handleDelete}
+                onSetCover={handleSetCover}
+                selectionMode={selection.getSelectedCount() > 0}
+                isSelected={selection.selectedPhotos.has(item.id)}
+                onToggleSelection={selection.togglePhotoSelection}
+              />
+            )}
           />
 
           {/* Floating Bulk Action Bar */}

@@ -55,6 +55,8 @@ export interface WebSocketState {
     connectionError: string | null;
     userInfo: UserInfo | null;
     userType: 'admin' | 'guest' | 'photowall' | null;
+    // Event id resolved by the server during auth (share-token clients don't know it upfront)
+    authenticatedEventId: string | null;
     reconnectAttempts: number;
     lastConnectionTime: number;
     isConnecting: boolean;
@@ -172,6 +174,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
             connectionError: null,
             userInfo: null,
             userType: null,
+            authenticatedEventId: null,
             reconnectAttempts: 0,
             lastConnectionTime: 0,
             isConnecting: false,
@@ -329,6 +332,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                             set({
                                 isAuthenticated: true,
                                 userInfo: 'user' in data ? data.user : data,
+                                authenticatedEventId: ('eventId' in data && typeof data.eventId === 'string') ? data.eventId : eventId || null,
                                 connectionError: null,
                                 reconnectAttempts: 0
                             });
@@ -399,7 +403,9 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                             // Only retry for recoverable errors
                             const isRecoverableError = !errorMessage.toLowerCase().includes('not found') &&
                                                       !errorMessage.toLowerCase().includes('unauthorized') &&
-                                                      !errorMessage.toLowerCase().includes('forbidden');
+                                                      !errorMessage.toLowerCase().includes('forbidden') &&
+                                                      !errorMessage.toLowerCase().includes('access denied') &&
+                                                      !errorMessage.toLowerCase().includes('denied');
 
                             if (isRecoverableError) {
                                 // Trigger retry logic for recoverable errors
@@ -720,6 +726,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     connectionError: null,
                     userInfo: null,
                     userType: null,
+                    authenticatedEventId: null,
                     reconnectAttempts: 0,
                     isConnecting: false,
                     pendingSubscriptions: new Set(),
@@ -752,6 +759,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     subscriptions: new Set(),
                     connectionError: null,
                     userInfo: null,
+                    authenticatedEventId: null,
                     isConnecting: false,
                     pendingSubscriptions: new Set(),
                     failedSubscriptions: new Set(),

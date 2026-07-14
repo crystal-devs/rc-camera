@@ -32,7 +32,6 @@ import { Separator } from '@/components/ui/separator';
 import { ErrorBoundary, EventSelectorError } from '@/components/ui/error-boundary';
 import { EventSelectorSkeleton, EventSelectorTriggerSkeleton } from '@/components/ui/event-selector-skeleton';
 import { useEventSelector } from '@/hooks/useEventSelector';
-import EventCreateModal from '@/components/event/CreateEventModel';
 
 // Helper function to determine the current page type
 const getCurrentPageType = (pathname: string): string => {
@@ -52,7 +51,6 @@ export function EventSelector() {
     const router = useRouter();
     const pathname = usePathname();
     const [open, setOpen] = React.useState(false);
-    const [showCreateEventDialogue, setShowCreateEventDialogue] = React.useState(false);
 
     // Use the optimized hook
     const {
@@ -63,7 +61,6 @@ export function EventSelector() {
         searchTerm,
         setSearchTerm,
         selectEvent,
-        refreshEvents,
         hasEvents
     } = useEventSelector();
 
@@ -189,7 +186,7 @@ export function EventSelector() {
                                 <CommandItem
                                     onSelect={() => {
                                         setOpen(false);
-                                        setShowCreateEventDialogue(true);
+                                        router.push('/events/create');
                                     }}
                                     className="flex items-center gap-3 p-3 text-primary"
                                 >
@@ -203,16 +200,6 @@ export function EventSelector() {
                     </Command>
                 </PopoverContent>
             </Popover>
-
-            <EventCreateModal
-                open={showCreateEventDialogue}
-                onOpenChange={setShowCreateEventDialogue}
-                onCreated={(created) => {
-                    // Refresh events to include the new one
-                    refreshEvents();
-                    setShowCreateEventDialogue(false);
-                }}
-            />
         </ErrorBoundary>
     );
 }

@@ -345,6 +345,10 @@ const useEventStore = create<EventStore>()(
 
         if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
           console.log(`Using cached event data for ${eventId}`)
+          // Keep selection in sync with the event the caller navigated to
+          if (get().selectedEvent?._id !== eventId) {
+            set({ selectedEvent: cached.data })
+          }
           return cached.data
         }
 
@@ -362,10 +366,9 @@ const useEventStore = create<EventStore>()(
             newCache.set(eventId, { data: eventWithSettings, timestamp: Date.now() })
             set({ eventsCache: newCache })
 
-            const currentSelected = get().selectedEvent
-            if (currentSelected?._id === eventId) {
-              set({ selectedEvent: eventWithSettings })
-            }
+            // Callers pass the eventId from the current route — select it so
+            // the UI never keeps rendering a previously selected event
+            set({ selectedEvent: eventWithSettings })
 
             console.log(`Event ${eventId} fetched and cached successfully`)
             return eventWithSettings

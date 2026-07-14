@@ -22,6 +22,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'sonner';
 import useEventStore from '@/stores/useEventStore';
 import { useStore } from '@/lib/store';
@@ -49,6 +51,7 @@ export default function EventDashboardPage() {
     const { getAccessToken } = useSecureAuth();
     const [authToken, setAuthToken] = React.useState('');
     const [wallUrl, setWallUrl] = React.useState('');
+    const [qrDialogOpen, setQrDialogOpen] = React.useState(false);
 
     // Initialize auth token
     React.useEffect(() => {
@@ -88,26 +91,37 @@ export default function EventDashboardPage() {
 
     const handleOpenAlbum = () => {
         if (selectedEvent) {
-            router.push(`/events/${selectedEvent._id}`);
+            router.push(`/events/${selectedEvent._id}/media`);
         }
     };
 
     const handleShare = () => {
         if (selectedEvent) {
-            router.push(`/events/${selectedEvent._id}/share`);
+            router.push(`/events/${selectedEvent._id}/settings?tab=sharing`);
         }
     };
 
     const handleManageUploads = () => {
         if (selectedEvent) {
-            router.push(`/events/${selectedEvent._id}/manage`);
+            router.push(`/events/${selectedEvent._id}/media`);
         }
     };
 
     const handleDownloadQR = () => {
-        if (selectedEvent) {
-            router.push(`/events/${selectedEvent._id}/qr`);
-        }
+        setQrDialogOpen(true);
+    };
+
+    const guestUrl = selectedEvent?.share_token
+        ? `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${selectedEvent.share_token}`
+        : '';
+
+    const handleDownloadQRImage = () => {
+        const canvas = document.getElementById('event-qr-canvas') as HTMLCanvasElement | null;
+        if (!canvas || !selectedEvent) return;
+        const link = document.createElement('a');
+        link.download = `${selectedEvent.title.replace(/[^\w\s-]/g, '').trim() || 'event'}-qr.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
     };
 
     const handleOpenWall = () => {
@@ -505,6 +519,45 @@ export default function EventDashboardPage() {
                     </Card>
                 </div>
             </div>
+
+            {/* QR Code Dialog */}
+            <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+                <DialogContent className="sm:max-w-sm">
+                    <DialogTitle>Your event QR code</DialogTitle>
+                    <DialogDescription>
+                        Guests scan this to view and upload photos — no app, no login.
+                    </DialogDescription>
+                    <div className="flex flex-col items-center gap-4 py-2">
+                        {guestUrl ? (
+                            <>
+                                <div className="bg-white p-4 rounded-xl border">
+                                    <QRCodeCanvas
+                                        id="event-qr-canvas"
+                                        value={guestUrl}
+                                        size={220}
+                                        level="M"
+                                        includeMargin
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-500 break-all text-center">{guestUrl}</p>
+                                <div className="flex gap-2 w-full">
+                                    <Button className="flex-1" onClick={handleDownloadQRImage}>
+                                        Download PNG
+                                    </Button>
+                                    <Button variant="outline" className="flex-1" onClick={() => handleCopyLink(guestUrl)}>
+                                        <CopyIcon className="h-4 w-4 mr-2" />
+                                        Copy link
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <p className="text-sm text-gray-500">
+                                This event has no share link yet — enable sharing in Settings first.
+                            </p>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

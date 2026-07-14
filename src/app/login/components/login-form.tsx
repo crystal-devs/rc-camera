@@ -263,6 +263,8 @@ export function LoginForm({
         });
         toast.success("Registration successful! Please log in.");
         setIsLoginMode(true); // Switch to login mode after successful registration
+        setIsLoading(false);
+        return; // Not logged in yet — stay on the login form instead of redirecting
       }
 
       // Handle redirect logic here (similar to handleSuccessfulLogin)

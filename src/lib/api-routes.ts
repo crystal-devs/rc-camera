@@ -1,7 +1,7 @@
 // src/lib/api-routes.ts - Centralized API Routes Configuration
 export const API_ROUTES = {
   // Base configuration
-  BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001',
+  BASE_URL: process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001',
   VERSION: 'v1',
 
   // Authentication

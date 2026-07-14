@@ -438,7 +438,7 @@ export default function JoinPage() {
       {/* Subtle bottom footer */}
       <div className="relative z-10 mt-8 mb-2">
         <p className="text-white/40 text-[10px] uppercase tracking-[0.4em] font-medium drop-shadow-md">
-          Powered by Crystal Events
+          Powered by Rose Click
         </p>
       </div>
     </div>

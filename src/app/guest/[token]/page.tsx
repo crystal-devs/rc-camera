@@ -17,9 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BulkDownloadButton } from './BulkDownloadButton';
 import { TransformedPhoto, transformApiPhoto } from '@/types/events';
-import { PinterestPhotoGrid } from '@/components/photo/PinterestPhotoGrid';
-import { RowsPhotoGallery } from '@/components/photo/layout/RowsPhotoGallery';
-import { Photo } from '@/types/PhotoGallery.types';
+import { GuestPhotoGrid } from '@/components/guest/GuestPhotoGrid';
 
 import { notFound } from 'next/navigation';
 import { toast } from 'sonner';
@@ -423,7 +421,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         fetchEventDetails(shareToken);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [shareToken]);
 
   // WebSocket connection
@@ -733,19 +731,10 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
                 style={{ width: `${downloadProgress.progress}% ` }}
               />
             </div>
-            <div className="text-xs text-gray-600 space-y-1">
-              <div>Status: <span className="font-mono">{downloadProgress.status}</span></div>
-              <div>Progress: <span className="font-mono">{downloadProgress.progress}%</span></div>
-              <div>Files: <span className="font-mono">{downloadProgress.totalFiles}</span></div>
-              {downloadProgress.status === 'processing' ? `Processing ${downloadProgress.totalFiles} files…` : null}
-              {downloadProgress.status === 'completed' ? 'Download Ready' : null}
-            </div>
-            {/* Debug Info */}
-            <div className="mt-2 pt-2 border-t border-gray-200">
-              <div className="text-xs text-gray-500 space-y-1">
-                <div>Job ID: <span className="font-mono text-xs">{downloadJobId?.substring(0, 8)}...</span></div>
-                <div>Check console for detailed logs</div>
-              </div>
+            <div className="text-xs text-gray-600">
+              {downloadProgress.status === 'completed'
+                ? 'Your download is ready!'
+                : `Packing ${downloadProgress.totalFiles} photos into a zip…`}
             </div>
           </div>
         )
@@ -803,62 +792,18 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
                   </div>
                 )}
               </div>
-            ) : (() => {
-              const gridData = activeTab === 'highlights'
-                ? photos.filter(p => p.approval?.status === 'approved' || p.approval?.status === 'auto_approved')
-                : photos;
-              const styling = (eventState.details as any)?.styling_config;
-              const layoutId = styling?.gallery?.layout_id ?? 1;
-
-              if (layoutId === 2) {
-                const galleryPhotos = gridData.map(p => ({
-                  id: p.id, eventId: p.eventId || '', albumId: p.albumId,
-                  type: 'image', imageUrl: p.src, responsive_urls: p.responsive_urls,
-                  width: p.width, height: p.height,
-                  metadata: { width: p.width, height: p.height },
-                  approval: p.approval, uploadedBy: p.uploaded_by, createdAt: p.createdAt
-                } as unknown as Photo));
-                const spacingId = styling?.gallery?.grid_spacing ?? 1;
-                const spacingMap: Record<number, number> = { 0: 4, 1: 8, 2: 12, 3: 16 };
-                return (
-                  <RowsPhotoGallery
-                    photos={galleryPhotos}
-                    onPhotoClick={(photo, index) => {
-                      const original = gridData.find(p => p.id === photo.id);
-                      if (original) handlePhotoClick(original, index);
-                    }}
-                    userPermissions={{ upload: canUploadNow, download: eventState.details?.default_guest_permissions?.download ?? true, moderate: false, delete: false }}
-                    currentTab="approved"
-                    onStatusUpdate={() => {}}
-                    onDownload={(photo) => {
-                      const original = gridData.find(p => p.id === photo.id);
-                      if (original) {
-                        const link = document.createElement('a');
-                        link.href = original.responsive_urls?.original || original.src;
-                        link.download = `photo-${original.id}`;
-                        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                      }
-                    }}
-                    selectionMode={false}
-                    spacing={spacingMap[spacingId] || 8}
-                    targetRowHeight={styling?.gallery?.thumbnail_size === 0 ? 180 : styling?.gallery?.thumbnail_size === 2 ? 350 : 250}
-                    onNearEnd={loadMore}
-                  />
-                );
-              }
-              return (
-                <PinterestPhotoGrid
-                  photos={gridData}
-                  onPhotoClick={handlePhotoClick}
-                  hasNextPage={hasNextPage}
-                  isLoadingMore={isLoadingMore}
-                  onLoadMore={loadMore}
-                  onViewportChange={() => {}}
-                  eventStyling={(eventState.details as any)?.styling_config}
-                  layout="masonry"
-                />
-              );
-            })()}
+            ) : (
+              <GuestPhotoGrid
+                photos={activeTab === 'highlights'
+                  ? photos.filter(p => p.approval?.status === 'approved' || p.approval?.status === 'auto_approved')
+                  : photos}
+                onPhotoClick={handlePhotoClick}
+                hasNextPage={hasNextPage}
+                isLoadingMore={isLoadingMore}
+                onLoadMore={loadMore}
+                stylingConfig={(eventState.details as any)?.styling_config}
+              />
+            )}
           </>
         ) : activeTab === 'my_photos' ? (
           /* ─── My Photos Tab ──────────────────────── */
@@ -898,59 +843,13 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
                 </p>
                 <Button onClick={() => setShowFindMeModal(true)} variant="outline" className="mt-4">Try Another Selfie</Button>
               </div>
-            ) : (() => {
-              const styling = (eventState.details as any)?.styling_config;
-              const layoutId = styling?.gallery?.layout_id ?? 1;
-
-              if (layoutId === 2) {
-                const galleryPhotos = matchedPhotos.map(p => ({
-                  id: p.id, eventId: p.eventId || '', albumId: p.albumId,
-                  type: 'image', imageUrl: p.src, responsive_urls: p.responsive_urls,
-                  width: p.width, height: p.height,
-                  metadata: { width: p.width, height: p.height },
-                  approval: p.approval, uploadedBy: p.uploaded_by, createdAt: p.createdAt
-                } as unknown as Photo));
-                const spacingId = styling?.gallery?.grid_spacing ?? 1;
-                const spacingMap: Record<number, number> = { 0: 4, 1: 8, 2: 12, 3: 16 };
-                return (
-                  <RowsPhotoGallery
-                    photos={galleryPhotos}
-                    onPhotoClick={(photo, index) => {
-                      const original = matchedPhotos.find(p => p.id === photo.id);
-                      if (original) handlePhotoClick(original, index);
-                    }}
-                    userPermissions={{ upload: canUploadNow, download: true, moderate: false, delete: false }}
-                    currentTab="approved"
-                    onStatusUpdate={() => {}}
-                    onDownload={(photo) => {
-                      const original = matchedPhotos.find(p => p.id === photo.id);
-                      if (original) {
-                        const link = document.createElement('a');
-                        link.href = original.responsive_urls?.original || original.src;
-                        link.download = `photo-${original.id}`;
-                        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                      }
-                    }}
-                    selectionMode={false}
-                    spacing={spacingMap[spacingId] || 8}
-                    targetRowHeight={styling?.gallery?.thumbnail_size === 0 ? 180 : styling?.gallery?.thumbnail_size === 2 ? 350 : 250}
-                  />
-                );
-              }
-
-              return (
-                <PinterestPhotoGrid
-                  photos={matchedPhotos}
-                  onPhotoClick={handlePhotoClick}
-                  hasNextPage={false}
-                  isLoadingMore={false}
-                  onLoadMore={() => {}}
-                  onViewportChange={() => {}}
-                  eventStyling={(eventState.details as any)?.styling_config}
-                  layout="masonry"
-                />
-              );
-            })()}
+            ) : (
+              <GuestPhotoGrid
+                photos={matchedPhotos}
+                onPhotoClick={handlePhotoClick}
+                stylingConfig={(eventState.details as any)?.styling_config}
+              />
+            )}
           </>
         ) : null}
       </div>
@@ -1000,7 +899,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
           <FullscreenPhotoViewer
             selectedPhoto={{
               ...selectedPhoto,
-              type: 'image' as const,
+              type: selectedPhoto.type || 'image',
               takenBy: 'Guest',
               imageUrl: selectedPhoto.src,
               createdAt: new Date(selectedPhoto.createdAt),
@@ -1017,7 +916,7 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             selectedPhotoIndex={selectedPhotoIndex}
             photos={displayedPhotos.map(photo => ({
               ...photo,
-              type: 'image' as const,
+              type: photo.type || 'image',
               takenBy: 'Guest',
               imageUrl: photo.src,
               createdAt: new Date(photo.createdAt),
@@ -1034,8 +933,21 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
             onClose={() => setPhotoViewerOpen(false)}
             onPrev={() => navigatePhoto('prev')}
             onNext={() => navigatePhoto('next')}
-            downloadPhoto={() => {
-              // console.log('Downloading photo:', selectedPhoto);
+            downloadPhoto={async () => {
+              if (!selectedPhoto?.src) return;
+              try {
+                const response = await fetch(selectedPhoto.src);
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `photo-${selectedPhoto.id || Date.now()}.jpg`;
+                link.click();
+                URL.revokeObjectURL(url);
+              } catch {
+                // CORS-restricted image hosts: fall back to opening the image
+                window.open(selectedPhoto.src, '_blank', 'noopener');
+              }
             }}
           />
         </Suspense>

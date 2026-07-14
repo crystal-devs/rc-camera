@@ -60,7 +60,8 @@ export const convertEventDataToFormData = (eventData: any): EventFormData => {
     },
     share_settings: {
       is_active: eventData.share_settings?.is_active ?? true,
-      password: eventData.share_settings?.password || null,
+      password: null, // API never returns the PIN; null means "leave unchanged"
+      has_password: eventData.share_settings?.has_password ?? false,
       expires_at: eventData.share_settings?.expires_at || null
     },
     share_token: eventData.share_token || '',
@@ -84,7 +85,14 @@ export const prepareSubmitData = (formData: EventFormData) => {
     cover_image: formData.cover_image,
     visibility: formData.visibility,
     permissions: formData.permissions,
-    share_settings: formData.share_settings,
+    share_settings: {
+      is_active: formData.share_settings.is_active,
+      expires_at: formData.share_settings.expires_at,
+      // Omit password unless the host changed it ('' clears, string sets)
+      ...(formData.share_settings.password !== null
+        ? { password: formData.share_settings.password }
+        : {})
+    },
   };
 
   // Only include share_token if it exists

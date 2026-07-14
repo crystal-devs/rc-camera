@@ -131,7 +131,9 @@ export interface EventFormData {
   };
   share_settings: {
     is_active: boolean;
-    password: string | null;
+    // Write-only: omitted in API responses (stored as bcrypt hash server-side)
+    password?: string | null;
+    has_password?: boolean;
     expires_at: string | null;
   };
   share_token: string;
@@ -156,6 +158,7 @@ export interface ApiPhoto {
   imageUrl: string;
   thumbnail: string;
   createdAt: string;
+  type?: 'image' | 'video';
   approval: {
     status: 'auto_approved' | 'approved' | 'pending' | 'rejected';
     approved_by?: string | null;
@@ -201,6 +204,7 @@ export interface TransformedPhoto {
   albumId: string;
   eventId: string;
   responsive_urls?: ApiPhoto['responsive_urls'];
+  type?: 'image' | 'video';
 }
 
 export interface EventDetails {
@@ -267,6 +271,7 @@ export const transformApiPhoto = (apiPhoto: ApiPhoto): TransformedPhoto => {
     createdAt: apiPhoto.createdAt,
     albumId: apiPhoto.albumId,
     eventId: apiPhoto.eventId,
-    responsive_urls: apiPhoto.responsive_urls
+    responsive_urls: apiPhoto.responsive_urls,
+    type: apiPhoto.type
   };
 };

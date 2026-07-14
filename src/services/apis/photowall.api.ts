@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1` || 'http://localhost:3001/api/v1';
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001'}/api/v1`;
 
 export interface PhotoWallItem {
   id: string;
@@ -78,7 +78,7 @@ export const getPhotoWallData = async (
       if (error.response?.status === 403) {
         throw new Error('Photo wall access denied - wall may be disabled');
       }
-      if (error.response?.status >= 500) {
+      if ((error.response?.status ?? 0) >= 500) {
         throw new Error('Server error. Please try again later.');
       }
     }

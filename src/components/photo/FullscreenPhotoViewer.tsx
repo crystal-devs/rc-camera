@@ -101,6 +101,10 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
     adjacentIndices.forEach(index => {
       const photo = photos[index];
 
+      // Videos aren't preloaded as images — heavy, unbounded-size, and the
+      // browser has no "as=video" preload target worth using here.
+      if (photo.type === 'video') return;
+
       // Resolve URLs for prefetch item
       let prefetchUrl: string | null = null;
       let srcSet: string | null = null;
@@ -309,7 +313,9 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `photo-${selectedPhoto.id}.jpg`;
+      link.download = selectedPhoto.type === 'video'
+        ? `video-${selectedPhoto.id}.mp4`
+        : `photo-${selectedPhoto.id}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -386,6 +392,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   if (!selectedPhoto || !mounted) return null;
 
+  const isVideo = selectedPhoto.type === 'video';
   const canGoPrev = selectedPhotoIndex !== null && selectedPhotoIndex > 0;
   const canGoNext = selectedPhotoIndex !== null && selectedPhotoIndex < photos.length - 1;
 
@@ -528,36 +535,58 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
               className="relative flex items-center justify-center w-full h-full"
             >
 
-              {/* Main high-quality image at original dimensions */}
-              <img
-                ref={imageRef}
-                key={selectedPhoto.id}
-                srcSet={
-                  getImageUrls.thumbnail && getImageUrls.high
-                    ? `${getImageUrls.thumbnail} 800w,
-                    ${getImageUrls.display || getImageUrls.high} 1600w,
-                    ${getImageUrls.high} 2400w,
-                    ${getImageUrls.original} 4000w`
-                    : undefined
-                }
-                sizes="100vw"
-                src={getImageUrls.high || getImageUrls.display}
-                alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
-                className="relative w-full h-full object-contain"
-                style={{
-                  opacity: imageLoaded ? 1 : 0,
-                  transition: 'opacity 0.3s ease-out'
-                }}
-                onLoad={handleImageLoad}
-                onError={() => {
-                  console.warn('Image failed to load');
-                  setImageLoaded(true);
-                }}
-                draggable={false}
-                onClick={(e) => e.stopPropagation()}
-                width={selectedPhoto.metadata?.width}
-                height={selectedPhoto.metadata?.height}
-              />
+              {/* Main media: video for video items, image otherwise */}
+              {isVideo ? (
+                <video
+                  key={selectedPhoto.id}
+                  src={originalUrl}
+                  poster={getImageUrls.thumbnail || undefined}
+                  className="relative w-full h-full object-contain"
+                  style={{
+                    opacity: imageLoaded ? 1 : 0,
+                    transition: 'opacity 0.3s ease-out'
+                  }}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  onLoadedData={handleImageLoad}
+                  onError={() => {
+                    console.warn('Video failed to load');
+                    setImageLoaded(true);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <img
+                  ref={imageRef}
+                  key={selectedPhoto.id}
+                  srcSet={
+                    getImageUrls.thumbnail && getImageUrls.high
+                      ? `${getImageUrls.thumbnail} 800w,
+                      ${getImageUrls.display || getImageUrls.high} 1600w,
+                      ${getImageUrls.high} 2400w,
+                      ${getImageUrls.original} 4000w`
+                      : undefined
+                  }
+                  sizes="100vw"
+                  src={getImageUrls.high || getImageUrls.display}
+                  alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
+                  className="relative w-full h-full object-contain"
+                  style={{
+                    opacity: imageLoaded ? 1 : 0,
+                    transition: 'opacity 0.3s ease-out'
+                  }}
+                  onLoad={handleImageLoad}
+                  onError={() => {
+                    console.warn('Image failed to load');
+                    setImageLoaded(true);
+                  }}
+                  draggable={false}
+                  onClick={(e) => e.stopPropagation()}
+                  width={selectedPhoto.metadata?.width}
+                  height={selectedPhoto.metadata?.height}
+                />
+              )}
 
               {/* Loading indicator */}
               {(!imageLoaded || isHighResLoading) && (
