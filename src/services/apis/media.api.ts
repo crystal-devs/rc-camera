@@ -106,6 +106,8 @@ export const getEventMediaWithPagination = async (
         status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
         scrollType?: 'pagination' | 'infinite';
         cursor?: string;
+        /** Function filter: an id, or 'none' for untagged media (Phase 1) */
+        subEventId?: string;
     } = {}
 ): Promise<MediaApiResponse> => {
     try {
@@ -127,6 +129,7 @@ export const getEventMediaWithPagination = async (
         if (options.status) params.append('status', options.status);
         if (options.scrollType) params.append('scroll_type', options.scrollType);
         if (options.cursor) params.append('cursor', options.cursor);
+        if (options.subEventId) params.append('sub_event_id', options.subEventId);
 
         console.log(`Calling API: ${endpoint}?${params}`);
 

@@ -222,6 +222,8 @@ export interface PhotoGalleryProps {
   eventId: string;
   albumId: string | null;
   canUpload?: boolean;
+  /** Function (sub-event) filter: an id, or 'none' for untagged media (Phase 1) */
+  subEventId?: string;
   userPermissions?: {
     upload: boolean;
     download: boolean;

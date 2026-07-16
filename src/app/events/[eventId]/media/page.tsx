@@ -12,8 +12,10 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import PhotoGallery from '@/components/photo/PhotoGallery';
+import { SubEventChips } from '@/components/media-gallery';
 
 import { useEventData } from '@/hooks/useEventData';
+import { useSubEvents } from '@/hooks/useSubEvents';
 import useEventStore from '@/stores/useEventStore';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
@@ -45,6 +47,10 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
 
     const { user, isAuthenticated, isLoading: isAuthLoading } = useSecureAuth();
     const { invalidateAlbumsCache } = useEventStore();
+
+    // Function (sub-event) filter for the gallery. undefined = all photos.
+    const { subEvents } = useSubEvents(eventId);
+    const [selectedSubEvent, setSelectedSubEvent] = useState<string | undefined>(undefined);
 
     // ✅ Extract primitive values from user object
     const currentUserId = user?.id;
@@ -319,11 +325,24 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
                 </Alert>
             )}
 
+            {/* Function filter chips — only render for events that have functions,
+                so single-gallery events never see them (progressive disclosure) */}
+            {subEvents.length > 0 && (
+                <SubEventChips
+                    subEvents={subEvents}
+                    value={selectedSubEvent}
+                    onChange={setSelectedSubEvent}
+                    includeUnsorted
+                    className="mb-4"
+                />
+            )}
+
             {/* Photo Gallery */}
             <PhotoGallery
                 eventId={eventId}
                 albumId={null}
                 canUpload={true}
+                subEventId={selectedSubEvent}
                 displayConfig={{
                     targetRowHeight: 170
                 }}

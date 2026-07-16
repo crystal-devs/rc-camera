@@ -45,6 +45,8 @@ interface MediaFetchOptions {
   quality?: 'small' | 'medium' | 'large' | 'original';
   enabled?: boolean;
   maxPages?: number; // Maximum pages to auto-load (for small galleries)
+  /** Function (sub-event) filter: an id, or 'none' for untagged media (Phase 1) */
+  subEventId?: string;
 }
 
 /**
@@ -86,11 +88,13 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
     status = 'approved',
     limit = 20,
     quality = 'thumbnail',
-    enabled = true
+    enabled = true,
+    subEventId
   } = options;
 
   const query = useInfiniteQuery({
-    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
+    // subEventId is part of the key so switching function chips refetches
+    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all'],
     queryFn: async ({ pageParam = 1 }): Promise<{
       photos: Photo[];
       nextPage?: number;
@@ -105,7 +109,8 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
         limit,
         quality: quality as 'small' | 'medium' | 'large' | 'original',
         page: pageParam,
-        scrollType: 'infinite'
+        scrollType: 'infinite',
+        subEventId
       });
 
       console.log(`📄 Page ${pageParam} Response:`, {
@@ -123,7 +128,7 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
 
       // 🚀 Prefetch next page for smoother loading
       if (nextPage && photos.length === limit) {
-        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, nextPage];
+        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', nextPage];
         queryClient.prefetchQuery({
           queryKey: prefetchQueryKey,
           queryFn: async () => {
@@ -132,7 +137,8 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
               limit,
               quality: quality as 'small' | 'medium' | 'large' | 'original',
               page: nextPage,
-              scrollType: 'infinite'
+              scrollType: 'infinite',
+              subEventId
             });
             return {
               photos: (prefetchResponse.data || []).map(transformMediaToPhoto),

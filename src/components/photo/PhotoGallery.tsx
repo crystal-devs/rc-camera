@@ -53,6 +53,7 @@ export default function OptimizedPhotoGallery({
   eventId,
   albumId,
   canUpload = true,
+  subEventId,
   userPermissions = {
     upload: true,
     download: false,
@@ -99,6 +100,7 @@ export default function OptimizedPhotoGallery({
     limit: 50,
     quality: gridQuality,
     enabled: true,
+    subEventId,
   });
 
   const photos = infinitePhotos;
