@@ -12,6 +12,8 @@ export interface CoHost {
     profile_pic?: string;
   };
   status: 'active' | 'pending' | 'blocked' | 'removed';
+  /** Function ids this co-host is limited to; empty = full access (Phase 1) */
+  sub_event_scope?: string[];
   invited_by?: {
     id: string;
     name: string;
@@ -219,6 +221,24 @@ export const getEventCoHosts = async (
     console.error(`Error getting co-hosts for event ${eventId}:`, error);
     throw error;
   }
+};
+
+/**
+ * Set a co-host's per-function scope (Phase 1). Creator-only server-side. Pass
+ * an empty array to clear the scope (full access). Returns the stored ids.
+ */
+export const setCoHostScope = async (
+  eventId: string,
+  userId: string,
+  subEventIds: string[],
+  authToken: string
+): Promise<{ status: boolean; message: string; data: { user_id: string; sub_event_ids: string[] } | null }> => {
+  const response = await axios.patch(
+    `${API_BASE_URL}/event/${eventId}/cohosts/${userId}/scope`,
+    { sub_event_ids: subEventIds },
+    { headers: { Authorization: `Bearer ${authToken}` }, timeout: 10000 }
+  );
+  return response.data;
 };
 
 /**

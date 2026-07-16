@@ -40,6 +40,7 @@ import {
 } from '@/hooks/participants.hooks';
 import type { InviteParticipantRequest, ParticipantFilters } from '@/services/apis/participants.api';
 import { getEventGuestSessions, revokeGuestSession, GuestSession } from '@/services/apis/events.api';
+import { CoHostScopeControl } from '@/components/event/CoHostScopeControl';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -632,6 +633,10 @@ export default function GuestManagementPage({ params }: PageProps) {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                      {participant.role === 'co_host' && participant.user_id && (
+                        <CoHostScopeControl eventId={eventId} userId={participant.user_id} />
+                      )}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -676,6 +681,7 @@ export default function GuestManagementPage({ params }: PageProps) {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
