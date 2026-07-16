@@ -108,6 +108,10 @@ export const getEventMediaWithPagination = async (
         cursor?: string;
         /** Function filter: an id, or 'none' for untagged media (Phase 1) */
         subEventId?: string;
+        /** Sort order (Phase 3) */
+        sort?: 'newest' | 'oldest';
+        /** Filename search (Phase 3) */
+        search?: string;
     } = {}
 ): Promise<MediaApiResponse> => {
     try {
@@ -130,6 +134,8 @@ export const getEventMediaWithPagination = async (
         if (options.scrollType) params.append('scroll_type', options.scrollType);
         if (options.cursor) params.append('cursor', options.cursor);
         if (options.subEventId) params.append('sub_event_id', options.subEventId);
+        if (options.sort) params.append('sort', options.sort);
+        if (options.search && options.search.trim()) params.append('search', options.search.trim());
 
         console.log(`Calling API: ${endpoint}?${params}`);
 

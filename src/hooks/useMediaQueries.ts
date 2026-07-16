@@ -48,6 +48,10 @@ interface MediaFetchOptions {
   maxPages?: number; // Maximum pages to auto-load (for small galleries)
   /** Function (sub-event) filter: an id, or 'none' for untagged media (Phase 1) */
   subEventId?: string;
+  /** Sort order (Phase 3) */
+  sort?: 'newest' | 'oldest';
+  /** Filename search (Phase 3) */
+  search?: string;
 }
 
 /**
@@ -90,12 +94,14 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
     limit = 20,
     quality = 'thumbnail',
     enabled = true,
-    subEventId
+    subEventId,
+    sort = 'newest',
+    search
   } = options;
 
   const query = useInfiniteQuery({
-    // subEventId is part of the key so switching function chips refetches
-    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all'],
+    // subEventId/sort/search are part of the key so changing any refetches
+    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', sort, search ?? ''],
     queryFn: async ({ pageParam = 1 }): Promise<{
       photos: Photo[];
       nextPage?: number;
@@ -111,7 +117,9 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
         quality: quality as 'small' | 'medium' | 'large' | 'original',
         page: pageParam,
         scrollType: 'infinite',
-        subEventId
+        subEventId,
+        sort,
+        search
       });
 
       console.log(`📄 Page ${pageParam} Response:`, {
@@ -129,7 +137,7 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
 
       // 🚀 Prefetch next page for smoother loading
       if (nextPage && photos.length === limit) {
-        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', nextPage];
+        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', sort, search ?? '', nextPage];
         queryClient.prefetchQuery({
           queryKey: prefetchQueryKey,
           queryFn: async () => {
@@ -139,7 +147,9 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
               quality: quality as 'small' | 'medium' | 'large' | 'original',
               page: nextPage,
               scrollType: 'infinite',
-              subEventId
+              subEventId,
+              sort,
+              search
             });
             return {
               photos: (prefetchResponse.data || []).map(transformMediaToPhoto),
