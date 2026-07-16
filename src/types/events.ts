@@ -232,6 +232,8 @@ export interface MediaFetchOptions {
   limit: number;
   scroll_type: 'pagination' | 'infinite';
   quality: 'thumbnail' | 'display' | 'full';
+  /** Function (sub-event) filter: an id, or 'none' for untagged media (Phase 1) */
+  subEventId?: string;
 }
 
 export interface MediaResponse {

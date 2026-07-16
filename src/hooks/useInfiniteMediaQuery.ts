@@ -21,15 +21,19 @@ interface UseInfiniteMediaQueryProps {
     auth: string | null;
     limit?: number;
     enabled?: boolean;
+    /** Function (sub-event) filter: an id, or 'none' for untagged media (Phase 1) */
+    subEventId?: string;
 }
 
 export const useInfiniteMediaQuery = ({
     shareToken,
     auth,
     limit = 20,
-    enabled = true
+    enabled = true,
+    subEventId
 }: UseInfiniteMediaQueryProps) => {
-    const queryKey = ['guest-media', shareToken];
+    // subEventId is part of the key so switching function chips refetches
+    const queryKey = ['guest-media', shareToken, subEventId ?? 'all'];
 
     // Buffered changes state for WebSocket updates
     const [bufferedChanges, setBufferedChanges] = useState<any[]>([]);
@@ -44,7 +48,8 @@ export const useInfiniteMediaQuery = ({
             page: pageParam,
             limit,
             scroll_type: 'pagination',
-            quality: 'thumbnail'
+            quality: 'thumbnail',
+            subEventId
         };
 
         try {

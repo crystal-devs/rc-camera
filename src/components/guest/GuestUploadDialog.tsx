@@ -46,6 +46,11 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
     const [uploading, setUploading] = useState(false);
     const [guestInfo, setGuestInfo] = useState({ name: '', email: '' });
 
+    // Which function these photos belong to. '' = the whole event (default), so
+    // a guest who doesn't care never has to choose. Empty for single-function events.
+    const subEvents = ((eventDetails as any)?.sub_events ?? []) as Array<{ _id: string; name: string }>;
+    const [selectedSubEvent, setSelectedSubEvent] = useState<string>('');
+
     const maxPerGuest = (eventDetails as any)?.permissions?.max_photos_per_guest || 0;
     const [sessionCount, setSessionCount] = useState(0);
 
@@ -108,7 +113,8 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
                     shareToken,
                     [file], // Send 1 file at a time
                     guestInfo,
-                    auth || undefined
+                    auth || undefined,
+                    selectedSubEvent || undefined
                 );
 
                 if (result.status && result.data.uploads) {
@@ -173,7 +179,7 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
         } finally {
             setUploading(false);
         }
-    }, [selectedFiles, shareToken, guestInfo, auth, eventDetails?._id, onUploadComplete, resetForm, onClose, requireApproval]);
+    }, [selectedFiles, shareToken, guestInfo, auth, eventDetails?._id, onUploadComplete, resetForm, onClose, requireApproval, selectedSubEvent]);
 
     const handleClose = useCallback(() => {
         if (!uploading) {
@@ -235,6 +241,28 @@ export const GuestUploadDialog = memo(function GuestUploadDialog({
                                 )}
                             </label>
                         </div>
+
+                        {/* Function picker — only for multi-function events. Defaults
+                            to the whole event, so a guest who doesn't care never
+                            has to choose. */}
+                        {subEvents.length > 0 && (
+                            <div className="space-y-1.5">
+                                <label htmlFor="sub-event-picker" className="text-sm font-medium text-gray-700">
+                                    Which function are these from?
+                                </label>
+                                <select
+                                    id="sub-event-picker"
+                                    value={selectedSubEvent}
+                                    onChange={(e) => setSelectedSubEvent(e.target.value)}
+                                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                >
+                                    <option value="">The whole event</option>
+                                    {subEvents.map((fn) => (
+                                        <option key={fn._id} value={fn._id}>{fn.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
                         {selectedFiles.length > 0 && (
                             <div className="space-y-2">

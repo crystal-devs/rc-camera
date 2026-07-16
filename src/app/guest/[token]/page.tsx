@@ -18,6 +18,8 @@ import { Button } from '@/components/ui/button';
 import { BulkDownloadButton } from './BulkDownloadButton';
 import { TransformedPhoto, transformApiPhoto } from '@/types/events';
 import { GuestPhotoGrid } from '@/components/guest/GuestPhotoGrid';
+import { SubEventChips } from '@/components/media-gallery';
+import type { SubEvent } from '@/hooks/useSubEvents';
 
 import { notFound } from 'next/navigation';
 import { toast } from 'sonner';
@@ -129,6 +131,11 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   );
   const [matchedPhotos, setMatchedPhotos] = useState<TransformedPhoto[] | null>(null);
 
+  // Functions (sub-events) for this event, and the guest's chosen filter.
+  // undefined = the whole event. Empty for single-function events.
+  const subEvents = ((eventState.details as any)?.sub_events ?? []) as SubEvent[];
+  const [selectedSubEvent, setSelectedSubEvent] = useState<string | undefined>(undefined);
+
   // Upload Constraint State
   const [sessionUploadCount, setSessionUploadCount] = useState(0);
 
@@ -229,7 +236,10 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
   } = useInfiniteMediaQuery({
     shareToken,
     auth,
-    limit: 20
+    limit: 20,
+    // Filter the main feed by function; the my_photos/highlights tabs are
+    // face-matched and unaffected.
+    subEventId: selectedSubEvent
   });
 
   // Guest claim hook
@@ -776,6 +786,16 @@ function GuestPageContent({ shareToken }: GuestPageProps) {
         ) : activeTab === 'all' || activeTab === 'highlights' ? (
           /* ─── All Photos / Highlights Tab ──────────── */
           <>
+            {/* Function filter — only for multi-function events, and only on the
+                main feed (not the face-matched Highlights view) */}
+            {activeTab === 'all' && subEvents.length > 0 && (
+              <SubEventChips
+                subEvents={subEvents}
+                value={selectedSubEvent}
+                onChange={setSelectedSubEvent}
+                className="mb-4"
+              />
+            )}
             {photos.length === 0 ? (
               <div className="text-center py-16">
                 <Camera className="w-20 h-20 mx-auto text-gray-300 mb-4" />

@@ -11,7 +11,9 @@ export const uploadGuestPhotos = async (
         email?: string;
         phone?: string;
     } = {},
-    authToken?: string
+    authToken?: string,
+    /** Function (sub-event) to tag these photos with; omit for the whole event */
+    subEventId?: string
 ) => {
     try {
         const formData = new FormData();
@@ -23,6 +25,7 @@ export const uploadGuestPhotos = async (
         if (guestInfo.name) formData.append('guest_name', guestInfo.name);
         if (guestInfo.email) formData.append('guest_email', guestInfo.email);
         if (guestInfo.phone) formData.append('guest_phone', guestInfo.phone);
+        if (subEventId) formData.append('sub_event_id', subEventId);
         formData.append('platform', 'web');
 
         const headers: Record<string, string> = {};

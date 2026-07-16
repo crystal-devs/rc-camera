@@ -422,6 +422,7 @@ export const getEventMediaWithGuestToken = async (
         if (options.limit) params.append('limit', options.limit.toString());
         if (options.quality) params.append('quality', options.quality);
         if (options.scroll_type) params.append('scrollType', options.scroll_type); // Fixed param name
+        if (options.subEventId) params.append('sub_event_id', options.subEventId);
 
         console.log(`🔗 Fetching guest event media: ${shareToken.substring(0, 8)}... with params:`, Object.fromEntries(params));
 
