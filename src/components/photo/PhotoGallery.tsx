@@ -524,7 +524,9 @@ export default function OptimizedPhotoGallery({
                 onSetCover={handleSetCover}
                 selectionMode={selection.getSelectedCount() > 0}
                 isSelected={selection.selectedPhotos.has(item.id)}
-                onToggleSelection={selection.togglePhotoSelection}
+                onSelect={(photoId, idx, e) =>
+                  selection.selectPhoto(photoId, idx, photos, { shift: e.shiftKey })
+                }
               />
             )}
           />
@@ -533,7 +535,9 @@ export default function OptimizedPhotoGallery({
           {!isGuest && (
             <FloatingActionBar
               selectedCount={selection.getSelectedCount()}
+              totalCount={photos.length}
               onDeselect={selection.deselectAllPhotos}
+              onSelectAll={() => selection.selectAllPhotos(photos)}
               onApprove={
                 galleryState.activeTab !== 'approved'
                   ? () => bulkOps.handleBulkStatusUpdate(selection.selectedPhotos, 'approved')

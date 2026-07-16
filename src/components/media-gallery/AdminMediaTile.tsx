@@ -55,7 +55,8 @@ export interface AdminMediaTileProps {
   onSetCover?: (photo: Photo) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
-  onToggleSelection?: (photoId: string) => void;
+  /** Modifier-aware select — carries the tile index + event for Shift-range */
+  onSelect?: (photoId: string, index: number, e: React.MouseEvent) => void;
 }
 
 export const AdminMediaTile = ({
@@ -71,7 +72,7 @@ export const AdminMediaTile = ({
   onSetCover,
   selectionMode = false,
   isSelected = false,
-  onToggleSelection,
+  onSelect,
 }: AdminMediaTileProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -81,20 +82,24 @@ export const AdminMediaTile = ({
   const isRejected = status === 'rejected';
   const isHidden = status === 'hidden';
 
-  const handleClick = useCallback(() => {
-    if (selectionMode) {
-      onToggleSelection?.(photo.id);
-    } else if (!isUploading) {
-      onPhotoClick(photo, index);
-    }
-  }, [selectionMode, isUploading, onToggleSelection, photo, onPhotoClick, index]);
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Shift-click enters/extends a selection even from a non-selection state.
+      if (selectionMode || e.shiftKey) {
+        onSelect?.(photo.id, index, e);
+      } else if (!isUploading) {
+        onPhotoClick(photo, index);
+      }
+    },
+    [selectionMode, isUploading, onSelect, photo, onPhotoClick, index]
+  );
 
   const handleCheckboxClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      onToggleSelection?.(photo.id);
+      onSelect?.(photo.id, index, e);
     },
-    [onToggleSelection, photo.id]
+    [onSelect, photo.id, index]
   );
 
   return (
