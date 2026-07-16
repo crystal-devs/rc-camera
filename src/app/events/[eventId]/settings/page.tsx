@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
-  CircleDot, Link2, ShieldCheck, Palette, MonitorPlay, Save
+  CircleDot, Link2, ShieldCheck, Palette, MonitorPlay, Save, CalendarDays
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -17,13 +17,16 @@ import { SharingTab } from '@/components/event-settings/SharingTab';
 import { PermissionsTab } from '@/components/event-settings/PermissionsTab';
 import { AppearanceTab } from '@/components/event-settings/AppearanceTab';
 import { PhotoWallTab } from '@/components/event-settings/PhotoWallTab';
+import { FunctionsTab } from '@/components/event-settings/FunctionsTab';
 
 import { useEventSettings } from '@/hooks/useEventSettings';
 import { useEventRole } from '@/hooks/useEventRole';
 import { UserRole, hasRolePrivilege } from '@/types/roles';
+import { templateSurfacesSubEvents } from '@/constants/templates';
 
 const TABS = [
   { id: 'basics', label: 'General', icon: CircleDot },
+  { id: 'functions', label: 'Functions', icon: CalendarDays },
   { id: 'sharing', label: 'Sharing', icon: Link2 },
   { id: 'permissions', label: 'Permissions', icon: ShieldCheck },
   { id: 'design', label: 'Appearance', icon: Palette },
@@ -31,6 +34,13 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
+
+/**
+ * Progressive disclosure: multi-function structure only exists for templates
+ * that need it (weddings). A birthday host never meets the concept.
+ */
+const isTabVisible = (tabId: TabId, template?: string | null) =>
+  tabId !== 'functions' || templateSurfacesSubEvents(template);
 
 const EventSettingsPage = () => {
   const params = useParams();
@@ -76,6 +86,16 @@ const EventSettingsPage = () => {
     handleToggleArchive,
     previewUrl,
   } = useEventSettings(eventId as string);
+
+  const visibleTabs = TABS.filter((t) => isTabVisible(t.id, formData?.template));
+
+  // A deep link to a tab this template doesn't surface (e.g. ?tab=functions on a
+  // birthday) falls back to General rather than rendering an empty screen.
+  useEffect(() => {
+    if (formData && !isTabVisible(activeTab, formData.template)) {
+      setActiveTab('basics');
+    }
+  }, [formData, activeTab]);
 
   if (isLoading) {
     return (
@@ -132,7 +152,7 @@ const EventSettingsPage = () => {
         aria-label="Settings sections"
         className="sticky top-0 z-10 mb-8 flex gap-1 overflow-x-auto border-b border-border bg-background px-4 pt-2 sm:px-6 lg:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {TABS.map(({ id, label, icon: Icon }) => {
+        {visibleTabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id;
           return (
             <button
@@ -167,6 +187,7 @@ const EventSettingsPage = () => {
             onToggleArchive={handleToggleArchive}
           />
         )}
+        {activeTab === 'functions' && <FunctionsTab eventId={eventId as string} />}
         {activeTab === 'sharing' && (
           <SharingTab
             formData={formData}
