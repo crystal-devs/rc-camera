@@ -14,6 +14,7 @@ import {
   useInfiniteEventMediaFlat,
   useEventMediaCounts,
   useUpdateMediaStatus,
+  useToggleMediaFavorite,
   useDeleteMedia,
   useGalleryUtils,
 } from '@/hooks/useMediaQueries';
@@ -170,6 +171,14 @@ export default function OptimizedPhotoGallery({
   // Single photo operations
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
+  const favoriteMutation = useToggleMediaFavorite(eventId);
+
+  const handleToggleFavorite = useCallback(
+    (photo: Photo) => {
+      favoriteMutation.mutate({ mediaId: photo.id, favorite: !photo.isFavorite });
+    },
+    [favoriteMutation]
+  );
 
   // Display counts with fallback
   const displayCounts = useMemo(
@@ -527,6 +536,7 @@ export default function OptimizedPhotoGallery({
                 onSelect={(photoId, idx, e) =>
                   selection.selectPhoto(photoId, idx, photos, { shift: e.shiftKey })
                 }
+                onToggleFavorite={handleToggleFavorite}
               />
             )}
           />

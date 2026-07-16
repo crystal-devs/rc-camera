@@ -9,6 +9,7 @@ import {
   DownloadIcon,
   MoreVertical,
   ImageIcon,
+  StarIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Photo } from '@/types/PhotoGallery.types';
@@ -57,6 +58,8 @@ export interface AdminMediaTileProps {
   isSelected?: boolean;
   /** Modifier-aware select — carries the tile index + event for Shift-range */
   onSelect?: (photoId: string, index: number, e: React.MouseEvent) => void;
+  /** Toggle host-curation favorite (Phase 3) */
+  onToggleFavorite?: (photo: Photo) => void;
 }
 
 export const AdminMediaTile = ({
@@ -73,8 +76,10 @@ export const AdminMediaTile = ({
   selectionMode = false,
   isSelected = false,
   onSelect,
+  onToggleFavorite,
 }: AdminMediaTileProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const isFavorite = !!photo.isFavorite;
 
   const isUploading = photo.status === 'uploading' || photo.isTemporary;
   const status = photo.approval?.status || photo.approvalStatus || 'pending';
@@ -144,6 +149,25 @@ export const AdminMediaTile = ({
             {isSelected && <CheckIcon className="h-3.5 w-3.5" />}
           </div>
         </div>
+      )}
+
+      {/* Favorite star — top-right; always shown when favorited, else on hover.
+          Host curation only (moderate permission), hidden during selection. */}
+      {!isUploading && !selectionMode && userPermissions.moderate && onToggleFavorite && (
+        <button
+          type="button"
+          aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          aria-pressed={isFavorite}
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite(photo); }}
+          className={cn(
+            'absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-all',
+            isFavorite
+              ? 'bg-amber-400 text-white opacity-100'
+              : 'bg-black/25 text-white opacity-0 hover:bg-black/45 group-hover:opacity-100'
+          )}
+        >
+          <StarIcon className={cn('h-4 w-4', isFavorite && 'fill-current')} />
+        </button>
       )}
 
       {/* Actions menu - visible on hover */}

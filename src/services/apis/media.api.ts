@@ -254,6 +254,20 @@ export const updateMediaStatus = async (
     }
 };
 
+/** Toggle a photo's host-curation favorite flag (Phase 3). */
+export const toggleMediaFavorite = async (
+    mediaId: string,
+    favorite: boolean,
+    authToken: string
+): Promise<{ media_id: string; is_favorite: boolean }> => {
+    const response = await apiClient.patch(API_ROUTES.MEDIA.FAVORITE(mediaId), { favorite }, {
+        headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        timeout: 10000,
+    });
+    if (response.data?.status === true) return response.data.data;
+    throw new Error(response.data?.message || 'Failed to update favorite');
+};
+
 // NEW: Bulk update media status
 export async function bulkUpdateMediaStatus(
     eventId: string,
@@ -1395,6 +1409,7 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
         id: mediaItem._id || mediaItem.id,
         albumId: mediaItem.album_id,
         eventId: mediaItem.event_id,
+        isFavorite: !!mediaItem.is_favorite,
         uploadedBy: mediaItem.uploader_display_name || mediaItem.created_by || 'Unknown',
         uploaded_by: mediaItem.uploaded_by,
         type: mediaItem.type || 'image', // Fix: added missing type property

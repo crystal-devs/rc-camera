@@ -31,6 +31,7 @@ export const API_ROUTES = {
     GET_ALBUM: (albumId: string) => `/media/album/${albumId}`,
     GET_BY_ID: (mediaId: string) => `/media/${mediaId}`,
     UPDATE_STATUS: (mediaId: string) => `/media/${mediaId}/status`,
+    FAVORITE: (mediaId: string) => `/media/${mediaId}/favorite`,
     DELETE: (mediaId: string) => `/media/${mediaId}`,
     BULK_DELETE: (eventId: string) => `/media/event/${eventId}/bulk-delete`,
     PROCESSING_STATUS: (mediaId: string) => `/media/${mediaId}/processing`,

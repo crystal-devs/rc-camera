@@ -8,6 +8,7 @@ import {
   getAlbumMedia,
   uploadAlbumMedia,
   updateMediaStatus,
+  toggleMediaFavorite,
   bulkUpdateMediaStatus,
   deleteMedia,
   getEventMediaCounts,
@@ -445,6 +446,50 @@ async function getImageDimensions(file: File): Promise<{ width: number; height: 
  * 2. Invalidate NEW status cache to refetch from backend
  * 3. Let WebSocket updates handle progressive improvements
  */
+/**
+ * Toggle a photo's host-curation favorite (Phase 3). Optimistically patches
+ * isFavorite in every cached infinite page for this event so the star flips
+ * instantly, and rolls back on error.
+ */
+export function useToggleMediaFavorite(eventId: string) {
+  const queryClient = useQueryClient();
+
+  const patchIsFavorite = (mediaId: string, isFavorite: boolean) => {
+    queryClient.setQueriesData(
+      { queryKey: queryKeys.eventPhotos(eventId) },
+      (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            photos: (page.photos ?? []).map((p: Photo) =>
+              p.id === mediaId ? { ...p, isFavorite } : p
+            ),
+          })),
+        };
+      }
+    );
+  };
+
+  return useMutation({
+    mutationFn: async ({ mediaId, favorite }: { mediaId: string; favorite: boolean }) => {
+      await authManager.init();
+      const token = authManager.getAuthToken();
+      if (!token) throw new Error('Authentication required');
+      return await toggleMediaFavorite(mediaId, favorite, token);
+    },
+    onMutate: async ({ mediaId, favorite }) => {
+      patchIsFavorite(mediaId, favorite);
+      return { mediaId, previous: !favorite };
+    },
+    onError: (_err, _vars, context) => {
+      if (context) patchIsFavorite(context.mediaId, context.previous);
+      toast.error('Could not update favorite');
+    },
+  });
+}
+
 export function useUpdateMediaStatus(eventId: string) {
   const token = useAuthToken();
   const queryClient = useQueryClient();

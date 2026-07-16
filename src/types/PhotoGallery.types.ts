@@ -70,6 +70,9 @@ export interface Photo {
   // Legacy approval fields (for backward compatibility)
   approvalStatus?: 'pending' | 'approved' | 'rejected' | 'hidden';
 
+  /** Host-curated favorite (Phase 3) */
+  isFavorite?: boolean;
+
   // 🔧 METADATA: Enhanced to match backend
   metadata?: {
     width?: number;
