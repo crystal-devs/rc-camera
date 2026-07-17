@@ -55,6 +55,7 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
     // Sort + filename search (Phase 3). Search is debounced so the grid doesn't
     // refetch on every keystroke.
     const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
+    const [source, setSource] = useState<'guest' | 'official' | undefined>(undefined);
     const [searchInput, setSearchInput] = useState('');
     const [search, setSearch] = useState('');
     useEffect(() => {
@@ -358,20 +359,45 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
                         </button>
                     )}
                 </div>
-                <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setSort((s) => (s === 'newest' ? 'oldest' : 'newest'))}
-                    className="h-10 shrink-0 gap-2 rounded-xl"
-                    title="Toggle sort order"
-                >
-                    {sort === 'newest' ? (
-                        <ArrowDownWideNarrow className="size-4" />
-                    ) : (
-                        <ArrowUpWideNarrow className="size-4" />
-                    )}
-                    {sort === 'newest' ? 'Newest first' : 'Oldest first'}
-                </Button>
+                <div className="flex items-center gap-2">
+                    {/* Source filter: guest contributions vs official/photographer */}
+                    <div className="flex h-10 shrink-0 items-center rounded-xl border border-border bg-background p-0.5">
+                        {([
+                            { key: undefined, label: 'All' },
+                            { key: 'guest' as const, label: 'Guests' },
+                            { key: 'official' as const, label: 'Official' },
+                        ]).map(({ key, label }) => (
+                            <button
+                                key={label}
+                                type="button"
+                                onClick={() => setSource(key)}
+                                aria-pressed={source === key}
+                                className={
+                                    'h-9 rounded-lg px-3 text-sm font-medium transition-colors ' +
+                                    (source === key
+                                        ? 'bg-foreground text-background'
+                                        : 'text-muted-foreground hover:text-foreground')
+                                }
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setSort((s) => (s === 'newest' ? 'oldest' : 'newest'))}
+                        className="h-10 shrink-0 gap-2 rounded-xl"
+                        title="Toggle sort order"
+                    >
+                        {sort === 'newest' ? (
+                            <ArrowDownWideNarrow className="size-4" />
+                        ) : (
+                            <ArrowUpWideNarrow className="size-4" />
+                        )}
+                        {sort === 'newest' ? 'Newest first' : 'Oldest first'}
+                    </Button>
+                </div>
             </div>
 
             {/* Function filter chips — only render for events that have functions,
@@ -394,6 +420,7 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
                 subEventId={selectedSubEvent}
                 sort={sort}
                 search={search}
+                source={source}
                 displayConfig={{
                     targetRowHeight: 170
                 }}

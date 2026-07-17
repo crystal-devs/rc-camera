@@ -52,6 +52,8 @@ interface MediaFetchOptions {
   sort?: 'newest' | 'oldest';
   /** Filename search (Phase 3) */
   search?: string;
+  /** Source filter: guest vs official (Phase 3) */
+  source?: 'guest' | 'official';
 }
 
 /**
@@ -96,12 +98,13 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
     enabled = true,
     subEventId,
     sort = 'newest',
-    search
+    search,
+    source
   } = options;
 
   const query = useInfiniteQuery({
-    // subEventId/sort/search are part of the key so changing any refetches
-    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', sort, search ?? ''],
+    // subEventId/sort/search/source are part of the key so changing any refetches
+    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', sort, search ?? '', source ?? 'all'],
     queryFn: async ({ pageParam = 1 }): Promise<{
       photos: Photo[];
       nextPage?: number;
@@ -119,7 +122,8 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
         scrollType: 'infinite',
         subEventId,
         sort,
-        search
+        search,
+        source
       });
 
       console.log(`📄 Page ${pageParam} Response:`, {
@@ -137,7 +141,7 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
 
       // 🚀 Prefetch next page for smoother loading
       if (nextPage && photos.length === limit) {
-        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', sort, search ?? '', nextPage];
+        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', sort, search ?? '', source ?? 'all', nextPage];
         queryClient.prefetchQuery({
           queryKey: prefetchQueryKey,
           queryFn: async () => {
@@ -149,7 +153,8 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
               scrollType: 'infinite',
               subEventId,
               sort,
-              search
+              search,
+              source
             });
             return {
               photos: (prefetchResponse.data || []).map(transformMediaToPhoto),

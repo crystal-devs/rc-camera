@@ -112,6 +112,8 @@ export const getEventMediaWithPagination = async (
         sort?: 'newest' | 'oldest';
         /** Filename search (Phase 3) */
         search?: string;
+        /** Source filter: guest vs official (Phase 3) */
+        source?: 'guest' | 'official';
     } = {}
 ): Promise<MediaApiResponse> => {
     try {
@@ -136,6 +138,7 @@ export const getEventMediaWithPagination = async (
         if (options.subEventId) params.append('sub_event_id', options.subEventId);
         if (options.sort) params.append('sort', options.sort);
         if (options.search && options.search.trim()) params.append('search', options.search.trim());
+        if (options.source) params.append('source', options.source);
 
         console.log(`Calling API: ${endpoint}?${params}`);
 

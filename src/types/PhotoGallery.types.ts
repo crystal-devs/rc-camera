@@ -231,6 +231,8 @@ export interface PhotoGalleryProps {
   sort?: 'newest' | 'oldest';
   /** Filename search (Phase 3) */
   search?: string;
+  /** Source filter: guest vs official (Phase 3) */
+  source?: 'guest' | 'official';
   userPermissions?: {
     upload: boolean;
     download: boolean;

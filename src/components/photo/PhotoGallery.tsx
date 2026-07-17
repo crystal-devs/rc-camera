@@ -57,6 +57,7 @@ export default function OptimizedPhotoGallery({
   subEventId,
   sort,
   search,
+  source,
   userPermissions = {
     upload: true,
     download: false,
@@ -106,6 +107,7 @@ export default function OptimizedPhotoGallery({
     subEventId,
     sort,
     search,
+    source,
   });
 
   const photos = infinitePhotos;
