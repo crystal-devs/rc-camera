@@ -2,7 +2,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { io, Socket } from 'socket.io-client';
-import { useToken } from '@/hooks/useToken';
 
 // ============================================================================
 // Logger Utility - Environment Aware
@@ -56,12 +55,16 @@ export interface WebSocketState {
     connectionError: string | null;
     userInfo: UserInfo | null;
     userType: 'admin' | 'guest' | 'photowall' | null;
+    // Event id resolved by the server during auth (share-token clients don't know it upfront)
+    authenticatedEventId: string | null;
     reconnectAttempts: number;
     lastConnectionTime: number;
     isConnecting: boolean;
     pendingSubscriptions: Set<string>;
     failedSubscriptions: Set<string>;
     retryCounts: Map<string, number>;
+    // Stored to enable reconnect() without violating Rules of Hooks
+    _lastAuthToken: string | null;
 }
 
 export interface WebSocketActions {
@@ -171,12 +174,14 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
             connectionError: null,
             userInfo: null,
             userType: null,
+            authenticatedEventId: null,
             reconnectAttempts: 0,
             lastConnectionTime: 0,
             isConnecting: false,
             pendingSubscriptions: new Set(),
             failedSubscriptions: new Set(),
             retryCounts: new Map(),
+            _lastAuthToken: null,
 
             // Actions
             connect: async (authToken: string, userType: 'admin' | 'guest' | 'photowall', eventId?: string) => {
@@ -251,7 +256,9 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                         lastConnectionTime: now,
                         subscriptions: new Set(),
                         pendingSubscriptions: new Set(),
-                        failedSubscriptions: new Set()
+                        failedSubscriptions: new Set(),
+                        // Store token so reconnect() can use it without calling a hook
+                        _lastAuthToken: authToken
                     });
 
                     if (!authToken) {
@@ -325,6 +332,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                             set({
                                 isAuthenticated: true,
                                 userInfo: 'user' in data ? data.user : data,
+                                authenticatedEventId: ('eventId' in data && typeof data.eventId === 'string') ? data.eventId : eventId || null,
                                 connectionError: null,
                                 reconnectAttempts: 0
                             });
@@ -395,7 +403,9 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                             // Only retry for recoverable errors
                             const isRecoverableError = !errorMessage.toLowerCase().includes('not found') &&
                                                       !errorMessage.toLowerCase().includes('unauthorized') &&
-                                                      !errorMessage.toLowerCase().includes('forbidden');
+                                                      !errorMessage.toLowerCase().includes('forbidden') &&
+                                                      !errorMessage.toLowerCase().includes('access denied') &&
+                                                      !errorMessage.toLowerCase().includes('denied');
 
                             if (isRecoverableError) {
                                 // Trigger retry logic for recoverable errors
@@ -670,18 +680,19 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
             },
 
             reconnect: async () => {
-                const { userType } = get();
+                const { userType, _lastAuthToken } = get();
                 if (!userType) {
                     Logger.warn('Cannot reconnect: no user type stored');
                     return;
                 }
 
-                const authToken = typeof window !== 'undefined'
-                    ? useToken()
-                    : null;
+                // Use the token stored during the last connect() call.
+                // We cannot call useToken() here — it's a React hook and this
+                // is a plain function outside the React component tree.
+                const authToken = _lastAuthToken;
 
                 if (!authToken) {
-                    Logger.warn('Cannot reconnect: no auth token found');
+                    Logger.warn('Cannot reconnect: no auth token found in store');
                     return;
                 }
 
@@ -715,11 +726,13 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     connectionError: null,
                     userInfo: null,
                     userType: null,
+                    authenticatedEventId: null,
                     reconnectAttempts: 0,
                     isConnecting: false,
                     pendingSubscriptions: new Set(),
                     failedSubscriptions: new Set(),
-                    retryCounts: new Map()
+                    retryCounts: new Map(),
+                    _lastAuthToken: null
                 });
             },
 
@@ -746,6 +759,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     subscriptions: new Set(),
                     connectionError: null,
                     userInfo: null,
+                    authenticatedEventId: null,
                     isConnecting: false,
                     pendingSubscriptions: new Set(),
                     failedSubscriptions: new Set(),
@@ -763,14 +777,15 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
         }),
         {
             name: 'websocket-store',
-            version: 3, // Incremented for mutex implementation
+            version: 4, // Incremented: fixed hook-in-store bug
             partialize: (state) => ({
                 userType: state.userType,
                 lastConnectionTime: state.lastConnectionTime,
+                // Do NOT persist _lastAuthToken — tokens should not be persisted
             }),
             onRehydrateStorage: () => (state) => {
                 if (state) {
-                    // Reset runtime state on rehydration
+                    // Reset all runtime state on rehydration
                     state.socket = null;
                     state.isConnected = false;
                     state.isAuthenticated = false;
@@ -781,6 +796,7 @@ export const useWebSocketStore = create<WebSocketState & WebSocketActions>()(
                     state.isConnecting = false;
                     state.pendingSubscriptions = new Set();
                     state.failedSubscriptions = new Set();
+                    state._lastAuthToken = null;
 
                     // Reset global state
                     currentConnectionState = ConnectionState.IDLE;

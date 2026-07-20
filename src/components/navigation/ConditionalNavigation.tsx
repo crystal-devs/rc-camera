@@ -78,7 +78,7 @@ export function ConditionalNavigation({ children }: ConditionalNavigationProps) 
             {/* Main content area with custom styling */}
             <div className="flex-1 flex flex-col min-w-0">
               {/* Content area with rounded border and custom scrollbar */}
-              <main className="flex-1 relative bg-background border border-border rounded-lg m-2 mt-0 ml-0 overflow-hidden">
+              <main className="flex-1 relative bg-background border border-border rounded-lg md:m-2 mt-0 ml-0 overflow-hidden">
                 {/* Custom scrollbar styles */}
                 <style jsx global>{`
                     .custom-scrollbar::-webkit-scrollbar {

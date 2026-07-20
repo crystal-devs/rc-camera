@@ -12,9 +12,10 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { UserPlus, Crown, Calendar } from 'lucide-react';
+import { UserPlus, Crown, Calendar, X } from 'lucide-react';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
 import { authManager } from '@/lib/auth-manager';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 interface InviteContext {
   token: string;
@@ -61,6 +62,7 @@ export function LoginForm({
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [lastAttemptTime, setLastAttemptTime] = useState(0);
+  const [showAuthError, setShowAuthError] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -108,7 +110,7 @@ export function LoginForm({
 
     if (!accessToken) {
       console.error('No access token!', apiResult);
-      toast.error('Authentication failed');
+      setShowAuthError(true);
       return;
     }
 
@@ -261,6 +263,8 @@ export function LoginForm({
         });
         toast.success("Registration successful! Please log in.");
         setIsLoginMode(true); // Switch to login mode after successful registration
+        setIsLoading(false);
+        return; // Not logged in yet — stay on the login form instead of redirecting
       }
 
       // Handle redirect logic here (similar to handleSuccessfulLogin)
@@ -281,7 +285,11 @@ export function LoginForm({
     } catch (err: any) {
       // Increment failed attempts for rate limiting
       setLoginAttempts(prev => prev + 1);
-      toast.error(err?.message ?? `Something went wrong with ${isLoginMode ? 'login' : 'registration'}`);
+      if (isLoginMode) {
+        setShowAuthError(true);
+      } else {
+        toast.error(err?.message ?? `Something went wrong with registration`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -310,13 +318,13 @@ export function LoginForm({
         await handleSuccessfulLogin(profile, result);
       } catch (err: any) {
         console.error('Google login error:', err);
-        toast.error(err?.message ?? "Failed to authenticate with Google");
+        setShowAuthError(true);
       } finally {
         setIsLoading(false);
       }
     },
     onError: () => {
-      toast.error("Google Login failed");
+      setShowAuthError(true);
       setIsLoading(false);
     },
     flow: 'implicit',
@@ -467,6 +475,31 @@ export function LoginForm({
           </>
         )}
       </div>
+
+      <Dialog open={showAuthError} onOpenChange={setShowAuthError}>
+        <DialogContent 
+          showCloseButton={false} 
+          className="bg-[#1C1C1E] border-none text-white sm:max-w-[400px] p-6 rounded-[28px] gap-2 shadow-2xl"
+        >
+          <button 
+            type="button"
+            onClick={() => setShowAuthError(false)}
+            className="absolute right-4 top-4 rounded-full bg-[#2C2C2E] p-[6px] text-[#8E8E92] hover:text-white border border-[#48484A] focus:outline-none focus:ring-2 focus:ring-[#0A84FF] transition-all"
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </button>
+          
+          <div className="flex flex-col items-center text-center space-y-3 pt-2 pb-2">
+            <DialogTitle className="text-[20px] font-semibold tracking-tight text-white mb-1">
+              Authentication error
+            </DialogTitle>
+            <DialogDescription className="text-[15px] text-[#98989E] leading-[1.4] px-2 font-medium">
+              Something went wrong during the authentication process. Please try signing in again.
+            </DialogDescription>
+          </div>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }

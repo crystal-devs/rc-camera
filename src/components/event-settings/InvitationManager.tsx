@@ -2,16 +2,14 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Mail, Plus, Send, Users, Clock, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { Mail, Send, Users, Clock, CheckCircle, XCircle, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { sendInvitations, getInvitations, InvitationResponse } from '@/services/apis/events.api';
+import { 
+  sendInvitations, 
+  getInvitations, 
+  InvitationResponse 
+} from '@/services/apis/events.api';
 import { useStore } from '@/lib/store';
 import { useToken } from '@/hooks/useToken';
 
@@ -39,7 +37,6 @@ export const InvitationManager: React.FC<InvitationManagerProps> = ({
 
   const authToken = useStore(state => state.userData ? useToken() : null);
 
-  // Load existing invitations when component becomes visible
   useEffect(() => {
     if (isVisible && eventId && authToken) {
       loadInvitations();
@@ -48,11 +45,9 @@ export const InvitationManager: React.FC<InvitationManagerProps> = ({
 
   const loadInvitations = async () => {
     if (!authToken) return;
-
     try {
       setIsLoading(true);
       const response = await getInvitations(eventId, authToken);
-
       if (response.status && response.data?.invitations) {
         setInvitations(response.data.invitations);
       }
@@ -67,7 +62,6 @@ export const InvitationManager: React.FC<InvitationManagerProps> = ({
   const handleSendInvitations = async () => {
     if (!emails.trim() || !authToken) return;
 
-    // Parse emails (comma or newline separated)
     const emailList = emails
       .split(/[,;\n]/)
       .map(email => email.trim())
@@ -90,11 +84,9 @@ export const InvitationManager: React.FC<InvitationManagerProps> = ({
       const response = await sendInvitations(eventId, invitationData, authToken);
 
       if (response.status) {
-        toast.success(`Invitations sent to ${emailList.length} guest(s)!`);
+        toast.success(`Access granted to ${emailList.length} guest(s)!`);
         setEmails('');
         setMessage('');
-
-        // Reload invitations
         await loadInvitations();
       } else {
         toast.error(response.message || 'Failed to send invitations');
@@ -107,27 +99,27 @@ export const InvitationManager: React.FC<InvitationManagerProps> = ({
     }
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusDisplay = (status: string) => {
     switch (status) {
       case 'accepted':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
+        return {
+          icon: <CheckCircle className="w-4 h-4 text-emerald-500" />,
+          badgeClass: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:ring-emerald-900',
+          label: 'Accepted'
+        };
       case 'declined':
-        return <XCircle className="h-4 w-4 text-red-500" />;
+        return {
+          icon: <XCircle className="w-4 h-4 text-red-500" />,
+          badgeClass: 'bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/30 dark:text-red-400 dark:ring-red-900',
+          label: 'Declined'
+        };
       case 'pending':
       default:
-        return <Clock className="h-4 w-4 text-yellow-500" />;
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'accepted':
-        return <Badge variant="default" className="bg-green-100 text-green-800">Accepted</Badge>;
-      case 'declined':
-        return <Badge variant="destructive">Declined</Badge>;
-      case 'pending':
-      default:
-        return <Badge variant="secondary">Pending</Badge>;
+        return {
+          icon: <Clock className="w-4 h-4 text-amber-500" />,
+          badgeClass: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:ring-amber-900',
+          label: 'Pending'
+        };
     }
   };
 
@@ -135,113 +127,103 @@ export const InvitationManager: React.FC<InvitationManagerProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Send Invitations Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Mail className="h-5 w-5" />
-            Send Invitations
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="emails">Email addresses *</Label>
-            <Textarea
-              id="emails"
+      
+      {/* ── Add Guests Section ────────────────────────────────────────────── */}
+      <div className="rounded-2xl p-6 bg-zinc-50 dark:bg-zinc-800/20 ring-1 ring-inset ring-zinc-200 dark:ring-zinc-800/80">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400 flex items-center justify-center">
+            <Mail className="w-4 h-4" />
+          </div>
+          <h4 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">Invite New Guests</h4>
+        </div>
+        
+        <div className="space-y-4">
+          <div className="group relative rounded-xl bg-white dark:bg-zinc-900 ring-1 ring-zinc-200 dark:ring-zinc-800 focus-within:ring-2 focus-within:ring-indigo-500/50 dark:focus-within:ring-indigo-500/50 transition-all shadow-sm">
+            <textarea
               value={emails}
               onChange={(e) => setEmails(e.target.value)}
-              placeholder="Enter email addresses (one per line or comma-separated)&#10;john@example.com&#10;jane@example.com"
-              rows={4}
-              className="font-mono text-sm"
+              placeholder="Paste email addresses here (comma or newline separated)..."
+              rows={3}
+              className="w-full bg-transparent p-4 text-[14px] outline-none resize-none placeholder:text-zinc-400 dark:placeholder:text-zinc-600 disabled:opacity-50"
+              disabled={isSending}
             />
-            <p className="text-xs text-muted-foreground">
-              Enter multiple emails separated by commas or new lines
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="message">Personal message (optional)</Label>
-            <Textarea
-              id="message"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Join me at my event! I'd love to see your photos there."
-              rows={2}
-              maxLength={200}
-            />
-            <p className="text-xs text-muted-foreground">
-              {message.length}/200 characters
-            </p>
-          </div>
-
-          <Button
-            onClick={handleSendInvitations}
-            disabled={!emails.trim() || isSending}
-            className="w-full"
-          >
-            {isSending ? (
-              <>
-                <Clock className="mr-2 h-4 w-4 animate-spin" />
-                Sending...
-              </>
-            ) : (
-              <>
-                <Send className="mr-2 h-4 w-4" />
-                Send Invitations
-              </>
+            {emails.trim() && (
+              <div className="absolute bottom-3 right-3 animate-in fade-in zoom-in-95">
+                <button
+                  onClick={handleSendInvitations}
+                  disabled={isSending}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-[13px] shadow disabled:opacity-50 transition-colors"
+                >
+                  {isSending ? (
+                    <Clock className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  {isSending ? 'Sending...' : 'Grant Access'}
+                </button>
+              </div>
             )}
-          </Button>
-        </CardContent>
-      </Card>
+          </div>
+          <div className="text-[12px] flex items-center gap-2 text-zinc-500 dark:text-zinc-500 font-medium">
+             <ChevronRight className="w-3.5 h-3.5" /> This directly whitelists the email. Guests must sign in with this exact email to gain access.
+          </div>
+        </div>
+      </div>
 
-      {/* Invitation Status Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Invitation Status
-            {invitations.length > 0 && (
-              <Badge variant="secondary">{invitations.length}</Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      {/* ── Active Invitations List ──────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-zinc-500" />
+            <h4 className="text-[14px] font-semibold tracking-tight text-zinc-800 dark:text-zinc-300">Whitelist Access Roster</h4>
+          </div>
+          <div className="flex h-6 items-center rounded-full bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+            {invitations.length} Total
+          </div>
+        </div>
+
+        <div className="rounded-2xl ring-1 ring-inset ring-zinc-200/60 dark:ring-zinc-800/60 overflow-hidden bg-white/50 dark:bg-zinc-900/30">
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Clock className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-muted-foreground">Loading invitations...</span>
+            <div className="flex items-center justify-center py-12 text-zinc-400">
+              <Clock className="w-5 h-5 animate-spin mr-3" />
+              <span className="text-[13px] font-medium">Fetching roster...</span>
             </div>
           ) : invitations.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Mail className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No invitations sent yet</p>
-              <p className="text-sm">Send your first invitations above</p>
+            <div className="flex flex-col items-center justify-center p-12 text-center">
+              <div className="w-12 h-12 bg-zinc-50 dark:bg-zinc-800/50 rounded-full flex items-center justify-center mb-3">
+                <Users className="w-6 h-6 text-zinc-300 dark:text-zinc-600" />
+              </div>
+              <p className="text-[14px] font-medium text-zinc-900 dark:text-zinc-300 mb-1">Your roster is empty</p>
+              <p className="text-[13px] text-zinc-500">Paste some emails above to start granting secure access.</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {invitations.map((invitation, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-3 border rounded-lg bg-card"
-                >
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(invitation.status)}
-                    <div>
-                      <p className="font-medium text-sm">{invitation.email}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Sent {new Date(invitation.sent_at).toLocaleDateString()}
-                      </p>
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {invitations.map((inv, idx) => {
+                const status = getStatusDisplay(inv.status);
+                return (
+                  <div key={idx} className="flex items-center justify-between p-4 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center group-hover:bg-white dark:group-hover:bg-zinc-700 ring-1 ring-zinc-200 dark:ring-zinc-700/50 transition-colors">
+                        {status.icon}
+                      </div>
+                      <div>
+                        <p className="text-[14px] font-medium text-zinc-900 dark:text-zinc-100 tracking-tight">{inv.email}</p>
+                        <p className="text-[12px] text-zinc-500 dark:text-zinc-500 mt-0.5">
+                          Added {new Date(inv.sent_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                      </div>
                     </div>
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ring-1 ring-inset ${status.badgeClass}`}>
+                      {status.label}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {getStatusBadge(invitation.status)}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+
     </div>
   );
 };

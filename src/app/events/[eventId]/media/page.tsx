@@ -1,7 +1,7 @@
 // app/events/[eventId]/media/page.tsx - OPTIMIZED VERSION
 'use client';
 
-import { Download, Share2, AlertCircle } from 'lucide-react';
+import { Download, Share2, AlertCircle, Search, ArrowDownWideNarrow, ArrowUpWideNarrow, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { use, useEffect, useState, useCallback, memo, useRef } from 'react';
 
@@ -12,8 +12,10 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import PhotoGallery from '@/components/photo/PhotoGallery';
+import { SubEventChips } from '@/components/media-gallery';
 
 import { useEventData } from '@/hooks/useEventData';
+import { useSubEvents } from '@/hooks/useSubEvents';
 import useEventStore from '@/stores/useEventStore';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
 
@@ -45,6 +47,21 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
 
     const { user, isAuthenticated, isLoading: isAuthLoading } = useSecureAuth();
     const { invalidateAlbumsCache } = useEventStore();
+
+    // Function (sub-event) filter for the gallery. undefined = all photos.
+    const { subEvents } = useSubEvents(eventId);
+    const [selectedSubEvent, setSelectedSubEvent] = useState<string | undefined>(undefined);
+
+    // Sort + filename search (Phase 3). Search is debounced so the grid doesn't
+    // refetch on every keystroke.
+    const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
+    const [source, setSource] = useState<'guest' | 'official' | undefined>(undefined);
+    const [searchInput, setSearchInput] = useState('');
+    const [search, setSearch] = useState('');
+    useEffect(() => {
+        const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+        return () => clearTimeout(t);
+    }, [searchInput]);
 
     // ✅ Extract primitive values from user object
     const currentUserId = user?.id;
@@ -319,11 +336,91 @@ const OptimizedEventDetailsPage = memo(function OptimizedEventDetailsPage({ para
                 </Alert>
             )}
 
+            {/* Search + sort toolbar (Phase 3) */}
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative w-full sm:max-w-xs">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                        type="text"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        placeholder="Search by file name…"
+                        aria-label="Search photos by file name"
+                        className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-9 text-sm outline-none focus:border-foreground/40 focus:ring-2 focus:ring-ring/30"
+                    />
+                    {searchInput && (
+                        <button
+                            type="button"
+                            aria-label="Clear search"
+                            onClick={() => setSearchInput('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+                        >
+                            <X className="size-4" />
+                        </button>
+                    )}
+                </div>
+                <div className="flex items-center gap-2">
+                    {/* Source filter: guest contributions vs official/photographer */}
+                    <div className="flex h-10 shrink-0 items-center rounded-xl border border-border bg-background p-0.5">
+                        {([
+                            { key: undefined, label: 'All' },
+                            { key: 'guest' as const, label: 'Guests' },
+                            { key: 'official' as const, label: 'Official' },
+                        ]).map(({ key, label }) => (
+                            <button
+                                key={label}
+                                type="button"
+                                onClick={() => setSource(key)}
+                                aria-pressed={source === key}
+                                className={
+                                    'h-9 rounded-lg px-3 text-sm font-medium transition-colors ' +
+                                    (source === key
+                                        ? 'bg-foreground text-background'
+                                        : 'text-muted-foreground hover:text-foreground')
+                                }
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setSort((s) => (s === 'newest' ? 'oldest' : 'newest'))}
+                        className="h-10 shrink-0 gap-2 rounded-xl"
+                        title="Toggle sort order"
+                    >
+                        {sort === 'newest' ? (
+                            <ArrowDownWideNarrow className="size-4" />
+                        ) : (
+                            <ArrowUpWideNarrow className="size-4" />
+                        )}
+                        {sort === 'newest' ? 'Newest first' : 'Oldest first'}
+                    </Button>
+                </div>
+            </div>
+
+            {/* Function filter chips — only render for events that have functions,
+                so single-gallery events never see them (progressive disclosure) */}
+            {subEvents.length > 0 && (
+                <SubEventChips
+                    subEvents={subEvents}
+                    value={selectedSubEvent}
+                    onChange={setSelectedSubEvent}
+                    includeUnsorted
+                    className="mb-4"
+                />
+            )}
+
             {/* Photo Gallery */}
             <PhotoGallery
                 eventId={eventId}
                 albumId={null}
                 canUpload={true}
+                subEventId={selectedSubEvent}
+                sort={sort}
+                search={search}
+                source={source}
                 displayConfig={{
                     targetRowHeight: 170
                 }}

@@ -11,7 +11,9 @@ export const uploadGuestPhotos = async (
         email?: string;
         phone?: string;
     } = {},
-    authToken?: string
+    authToken?: string,
+    /** Function (sub-event) to tag these photos with; omit for the whole event */
+    subEventId?: string
 ) => {
     try {
         const formData = new FormData();
@@ -23,6 +25,7 @@ export const uploadGuestPhotos = async (
         if (guestInfo.name) formData.append('guest_name', guestInfo.name);
         if (guestInfo.email) formData.append('guest_email', guestInfo.email);
         if (guestInfo.phone) formData.append('guest_phone', guestInfo.phone);
+        if (subEventId) formData.append('sub_event_id', subEventId);
         formData.append('platform', 'web');
 
         const headers: Record<string, string> = {};
@@ -65,7 +68,7 @@ export const uploadGuestPhotos = async (
         throw new Error('Upload failed. Please try again.');
     }
 };
-export const loginWithFace = async (file: File, eventId: string): Promise<{
+export const loginWithFace = async (file: File, eventId: string, consent: boolean): Promise<{
     token: string;
     faceId: string;
     isNewIdentity: boolean;
@@ -75,6 +78,8 @@ export const loginWithFace = async (file: File, eventId: string): Promise<{
         const formData = new FormData();
         formData.append('selfie', file);
         formData.append('eventId', eventId);
+        // DPDP: backend rejects face processing without explicit consent
+        formData.append('consent', consent ? 'true' : 'false');
 
         const response = await axios.post(
             `${API_BASE_URL}/guest/auth/face`,
@@ -85,6 +90,23 @@ export const loginWithFace = async (file: File, eventId: string): Promise<{
         return response.data.data;
     } catch (error) {
         throw new Error('Face login failed');
+    }
+};
+
+/**
+ * DPDP: withdraw biometric consent — the backend deletes the guest's face from
+ * the event's Rekognition collection and clears stored identifiers.
+ */
+export const withdrawFaceConsent = async (token: string): Promise<{ message: string }> => {
+    try {
+        const response = await axios.post(
+            `${API_BASE_URL}/guest/consent/withdraw`,
+            {},
+            { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        return response.data;
+    } catch (error) {
+        throw new Error('Failed to withdraw consent');
     }
 };
 

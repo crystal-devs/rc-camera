@@ -3,7 +3,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
-import { fetchEvents, createEvent, updateEvent, deleteEvent } from '@/services/apis/events.api';
+import { fetchEvents, createEvent, updateEvent, deleteEvent, toggleEventArchive } from '@/services/apis/events.api';
 import { queryKeys } from '@/lib/queryKeys';
 import { useAuthToken } from '@/hooks/use-auth';
 import type { Event } from '@/types/backend-types/event.type';
@@ -118,6 +118,27 @@ export const useDeleteEvent = () => {
       queryClient.removeQueries({ queryKey: queryKeys.event(deletedEventId) });
 
       // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: queryKeys.events() });
+    },
+    retry: 1,
+  });
+};
+
+// Hook for closing/reopening an event for guests (the dedicated archive route)
+export const useToggleEventArchive = () => {
+  const queryClient = useQueryClient();
+  const authToken = useAuthToken();
+
+  return useMutation({
+    mutationFn: ({ eventId, archive }: { eventId: string; archive: boolean }) =>
+      toggleEventArchive(eventId, archive, authToken || ''),
+    onSuccess: (updatedEvent) => {
+      if (updatedEvent?._id) {
+        queryClient.setQueryData(queryKeys.event(updatedEvent._id), updatedEvent);
+        queryClient.setQueryData<Event[]>(queryKeys.eventsList(), (oldEvents = []) =>
+          oldEvents.map(event => (event._id === updatedEvent._id ? updatedEvent : event))
+        );
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.events() });
     },
     retry: 1,

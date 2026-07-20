@@ -1,12 +1,22 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 
+/**
+ * Slim guest WebSocket event handlers (v2).
+ *
+ * Guests receive only 2 meaningful events from the server:
+ *   new_photos_available  – N new approved photos exist; show a banner
+ *   photo_removed         – A photo (by ID) was removed; remove from local state
+ *
+ * This replaces the old 6-event system (media_approved, media_status_updated,
+ * new_media_uploaded, media_removed, guest_media_removed, media_processing_complete).
+ */
+
 interface WebSocketHandlers {
-    handleMediaApproved: (payload: any) => void;
-    handleMediaStatusUpdated: (payload: any) => void;
-    handleNewMediaUploaded: (payload: any) => void;
-    handleMediaRemoved: (payload: any) => void;
-    handleMediaProcessingComplete: (payload: any) => void;
+    /** Called when N new approved photos are available. Guests should show a refresh banner. */
+    handleNewPhotosAvailable: (payload: { eventId: string; count: number }) => void;
+    /** Called when a visible photo is removed. Remove it silently from local state. */
+    handleMediaRemoved: (payload: { mediaId: string; eventId: string }) => void;
 }
 
 interface UseGuestWebSocketHandlersOptions {
@@ -14,131 +24,74 @@ interface UseGuestWebSocketHandlersOptions {
     webSocketHandlers: WebSocketHandlers;
 }
 
-/**
- * Hook to manage WebSocket event handlers with proper ref usage.
- * Follows Vercel best practices:
- * - Uses refs to avoid unstable dependencies
- * - Deduplicates events with Set stored in ref
- * - Stable event listener registration
- */
 export function useGuestWebSocketHandlers({
     socket,
     webSocketHandlers
 }: UseGuestWebSocketHandlersOptions) {
-    // Use refs for transient values that change frequently
+    // Deduplication: prevent double-firing for the same mediaId within 10s
     const processedEventsRef = useRef(new Set<string>());
     const eventTimeoutsRef = useRef(new Map<string, NodeJS.Timeout>());
 
-    // Stable deduplication checker with no dependencies
-    const shouldProcessEvent = useCallback((eventType: string, payload: any): boolean => {
-        const mediaId = payload.mediaId || payload._id || payload.id || 'unknown';
-        const signature = `${eventType}:${mediaId}`;
+    const deduplicate = useCallback((eventType: string, identifier: string): boolean => {
+        const key = `${eventType}:${identifier}`;
+        if (processedEventsRef.current.has(key)) return false;
 
-        if (processedEventsRef.current.has(signature)) {
-            return false;
-        }
-
-        processedEventsRef.current.add(signature);
+        processedEventsRef.current.add(key);
 
         const timeoutId = setTimeout(() => {
-            processedEventsRef.current.delete(signature);
-            eventTimeoutsRef.current.delete(signature);
-        }, 10000);
+            processedEventsRef.current.delete(key);
+            eventTimeoutsRef.current.delete(key);
+        }, 10_000);
 
-        eventTimeoutsRef.current.set(signature, timeoutId);
+        eventTimeoutsRef.current.set(key, timeoutId);
         return true;
-    }, []); // Stable - no dependencies
+    }, []);
 
-    // Create event handlers with stable callbacks
-    const handleMediaApproved = useCallback((payload: any) => {
-        if (!shouldProcessEvent('media_approved', payload)) return;
-        webSocketHandlers.handleMediaApproved(payload);
-        toast.success('New photos approved!', {
-            duration: 3000,
-            position: 'bottom-center'
-        });
-    }, [shouldProcessEvent, webSocketHandlers]);
+    // ── new_photos_available ────────────────────────────────────────────────
+    const handleNewPhotosAvailable = useCallback((payload: any) => {
+        const count = payload?.count ?? 1;
+        const key = `${payload?.eventId}:${Date.now().toString().slice(0, -3)}`; // dedupe per second
 
-    const handleMediaStatusUpdated = useCallback((payload: any) => {
-        if (!shouldProcessEvent('media_status_updated', payload)) return;
-        webSocketHandlers.handleMediaStatusUpdated(payload);
+        if (!deduplicate('new_photos_available', key)) return;
 
-        const items = Array.isArray(payload) ? payload : [payload];
-        items.forEach(item => {
-            if (item.newStatus === 'approved' && item.previousStatus !== 'approved') {
-                toast.success('Photo approved!', {
-                    duration: 2000,
-                    position: 'bottom-center'
-                });
-            } else if (item.newStatus === 'hidden' || item.newStatus === 'rejected') {
-                toast.info('Photo was removed', {
-                    duration: 3000,
-                    position: 'bottom-center'
-                });
-            }
-        });
-    }, [shouldProcessEvent, webSocketHandlers]);
+        webSocketHandlers.handleNewPhotosAvailable({ eventId: payload?.eventId, count });
 
-    const handleNewMediaUploaded = useCallback((payload: any) => {
-        if (!shouldProcessEvent('new_media_uploaded', payload)) return;
-        webSocketHandlers.handleNewMediaUploaded(payload);
-        toast.success('New photos added!', {
-            duration: 3000,
-            position: 'bottom-center'
-        });
-    }, [shouldProcessEvent, webSocketHandlers]);
+        toast.success(
+            count === 1
+                ? 'A new photo was added — tap to refresh'
+                : `${count} new photo${count > 1 ? 's' : ''} added — tap to refresh`,
+            { duration: 4000, position: 'bottom-center' }
+        );
+    }, [deduplicate, webSocketHandlers]);
 
-    const handleMediaRemoved = useCallback((payload: any) => {
-        if (!shouldProcessEvent('media_removed', payload)) return;
-        webSocketHandlers.handleMediaRemoved(payload);
-        const count = payload.mediaIds?.length || 1;
-        toast.info(`${count} photo${count > 1 ? 's' : ''} removed`, {
-            duration: 3000,
-            position: 'bottom-center'
-        });
-    }, [shouldProcessEvent, webSocketHandlers]);
+    // ── photo_removed ───────────────────────────────────────────────────────
+    const handlePhotoRemoved = useCallback((payload: any) => {
+        const mediaId = payload?.mediaId;
+        if (!mediaId) return;
+        if (!deduplicate('photo_removed', mediaId)) return;
 
-    const handleMediaProcessingComplete = useCallback((payload: any) => {
-        if (!shouldProcessEvent('media_processing_complete', payload)) return;
-        webSocketHandlers.handleMediaProcessingComplete(payload);
-        toast.success('High-quality version ready!', {
-            duration: 2000,
-            position: 'bottom-center'
-        });
-    }, [shouldProcessEvent, webSocketHandlers]);
+        // Call handleMediaRemoved which directly mutates the React Query cache
+        webSocketHandlers.handleMediaRemoved({ mediaId, eventId: payload?.eventId });
+        // No toast for removal — silent UX is less disruptive
+    }, [deduplicate, webSocketHandlers]);
 
-    // Register event listeners - only re-runs when socket or handlers change
+    // Register listeners
     useEffect(() => {
         if (!socket) return;
 
-        socket.on('media_approved', handleMediaApproved);
-        socket.on('media_status_updated', handleMediaStatusUpdated);
-        socket.on('new_media_uploaded', handleNewMediaUploaded);
-        socket.on('media_removed', handleMediaRemoved);
-        socket.on('guest_media_removed', handleMediaRemoved);
-        socket.on('media_processing_complete', handleMediaProcessingComplete);
+        socket.on('new_photos_available', handleNewPhotosAvailable);
+        socket.on('photo_removed', handlePhotoRemoved);
 
         return () => {
-            socket.off('media_approved', handleMediaApproved);
-            socket.off('media_status_updated', handleMediaStatusUpdated);
-            socket.off('new_media_uploaded', handleNewMediaUploaded);
-            socket.off('media_removed', handleMediaRemoved);
-            socket.off('guest_media_removed', handleMediaRemoved);
-            socket.off('media_processing_complete', handleMediaProcessingComplete);
+            socket.off('new_photos_available', handleNewPhotosAvailable);
+            socket.off('photo_removed', handlePhotoRemoved);
         };
-    }, [
-        socket,
-        handleMediaApproved,
-        handleMediaStatusUpdated,
-        handleNewMediaUploaded,
-        handleMediaRemoved,
-        handleMediaProcessingComplete
-    ]);
+    }, [socket, handleNewPhotosAvailable, handlePhotoRemoved]);
 
-    // Cleanup timeouts on unmount
+    // Cleanup on unmount
     useEffect(() => {
         return () => {
-            eventTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+            eventTimeoutsRef.current.forEach(t => clearTimeout(t));
             eventTimeoutsRef.current.clear();
             processedEventsRef.current.clear();
         };

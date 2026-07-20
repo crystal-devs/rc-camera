@@ -8,6 +8,17 @@ import { Photo } from '@/types/PhotoGallery.types';
 import { useFullscreen } from '@/lib/FullscreenContext';
 import { PhotoInfoSheet } from './PhotoInfoSheet';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 
 interface FullscreenPhotoViewerProps {
   selectedPhoto: Photo;
@@ -41,6 +52,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
   const [isHighResLoading, setIsHighResLoading] = useState(false);
   const [photoInfoOpen, setPhotoInfoOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -88,6 +100,10 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
     adjacentIndices.forEach(index => {
       const photo = photos[index];
+
+      // Videos aren't preloaded as images — heavy, unbounded-size, and the
+      // browser has no "as=video" preload target worth using here.
+      if (photo.type === 'video') return;
 
       // Resolve URLs for prefetch item
       let prefetchUrl: string | null = null;
@@ -297,7 +313,9 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `photo-${selectedPhoto.id}.jpg`;
+      link.download = selectedPhoto.type === 'video'
+        ? `video-${selectedPhoto.id}.mp4`
+        : `photo-${selectedPhoto.id}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -311,8 +329,15 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (deletePhoto && confirm('Are you sure you want to delete this photo?')) {
+    if (deletePhoto) {
+      setShowDeleteConfirm(true);
+    }
+  }, [deletePhoto]);
+
+  const confirmDelete = useCallback(() => {
+    if (deletePhoto) {
       deletePhoto(selectedPhoto.id);
+      setShowDeleteConfirm(false);
     }
   }, [deletePhoto, selectedPhoto.id]);
 
@@ -367,6 +392,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   if (!selectedPhoto || !mounted) return null;
 
+  const isVideo = selectedPhoto.type === 'video';
   const canGoPrev = selectedPhotoIndex !== null && selectedPhotoIndex > 0;
   const canGoNext = selectedPhotoIndex !== null && selectedPhotoIndex < photos.length - 1;
 
@@ -381,7 +407,7 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
 
   const content = (
     <div
-      className="fixed inset-0 z-[100] bg-black m-0 p-0 overflow-hidden"
+      className="fixed inset-0 z-[2000] bg-black m-0 p-0 overflow-hidden"
       data-photo-viewer
       style={{ margin: 0, padding: 0, width: '100vw', height: '100dvh' }}
     >
@@ -509,36 +535,58 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
               className="relative flex items-center justify-center w-full h-full"
             >
 
-              {/* Main high-quality image at original dimensions */}
-              <img
-                ref={imageRef}
-                key={selectedPhoto.id}
-                srcSet={
-                  getImageUrls.thumbnail && getImageUrls.high
-                    ? `${getImageUrls.thumbnail} 800w,
-                    ${getImageUrls.display || getImageUrls.high} 1600w,
-                    ${getImageUrls.high} 2400w,
-                    ${getImageUrls.original} 4000w`
-                    : undefined
-                }
-                sizes="100vw"
-                src={getImageUrls.high || getImageUrls.display}
-                alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
-                className="relative w-full h-full object-contain"
-                style={{
-                  opacity: imageLoaded ? 1 : 0,
-                  transition: 'opacity 0.3s ease-out'
-                }}
-                onLoad={handleImageLoad}
-                onError={() => {
-                  console.warn('Image failed to load');
-                  setImageLoaded(true);
-                }}
-                draggable={false}
-                onClick={(e) => e.stopPropagation()}
-                width={selectedPhoto.metadata?.width}
-                height={selectedPhoto.metadata?.height}
-              />
+              {/* Main media: video for video items, image otherwise */}
+              {isVideo ? (
+                <video
+                  key={selectedPhoto.id}
+                  src={originalUrl}
+                  poster={getImageUrls.thumbnail || undefined}
+                  className="relative w-full h-full object-contain"
+                  style={{
+                    opacity: imageLoaded ? 1 : 0,
+                    transition: 'opacity 0.3s ease-out'
+                  }}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  onLoadedData={handleImageLoad}
+                  onError={() => {
+                    console.warn('Video failed to load');
+                    setImageLoaded(true);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <img
+                  ref={imageRef}
+                  key={selectedPhoto.id}
+                  srcSet={
+                    getImageUrls.thumbnail && getImageUrls.high
+                      ? `${getImageUrls.thumbnail} 800w,
+                      ${getImageUrls.display || getImageUrls.high} 1600w,
+                      ${getImageUrls.high} 2400w,
+                      ${getImageUrls.original} 4000w`
+                      : undefined
+                  }
+                  sizes="100vw"
+                  src={getImageUrls.high || getImageUrls.display}
+                  alt={`Photo ${(selectedPhotoIndex || 0) + 1}`}
+                  className="relative w-full h-full object-contain"
+                  style={{
+                    opacity: imageLoaded ? 1 : 0,
+                    transition: 'opacity 0.3s ease-out'
+                  }}
+                  onLoad={handleImageLoad}
+                  onError={() => {
+                    console.warn('Image failed to load');
+                    setImageLoaded(true);
+                  }}
+                  draggable={false}
+                  onClick={(e) => e.stopPropagation()}
+                  width={selectedPhoto.metadata?.width}
+                  height={selectedPhoto.metadata?.height}
+                />
+              )}
 
               {/* Loading indicator */}
               {(!imageLoaded || isHighResLoading) && (
@@ -561,7 +609,6 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
         </div>
       </div>
 
-      {/* Photo Info Sheet */}
       <PhotoInfoSheet
         isOpen={photoInfoOpen}
         onClose={() => setPhotoInfoOpen(false)}
@@ -602,6 +649,26 @@ const FullscreenPhotoViewer: React.FC<FullscreenPhotoViewerProps> = ({
           }
         } : undefined}
       />
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent className="z-[110]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This photo will be permanently deleted from this event. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <style jsx>{`
         @keyframes fadeInOut {

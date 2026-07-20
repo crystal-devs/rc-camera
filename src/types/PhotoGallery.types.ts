@@ -70,6 +70,9 @@ export interface Photo {
   // Legacy approval fields (for backward compatibility)
   approvalStatus?: 'pending' | 'approved' | 'rejected' | 'hidden';
 
+  /** Host-curated favorite (Phase 3) */
+  isFavorite?: boolean;
+
   // 🔧 METADATA: Enhanced to match backend
   metadata?: {
     width?: number;
@@ -222,6 +225,14 @@ export interface PhotoGalleryProps {
   eventId: string;
   albumId: string | null;
   canUpload?: boolean;
+  /** Function (sub-event) filter: an id, or 'none' for untagged media (Phase 1) */
+  subEventId?: string;
+  /** Sort order (Phase 3) */
+  sort?: 'newest' | 'oldest';
+  /** Filename search (Phase 3) */
+  search?: string;
+  /** Source filter: guest vs official (Phase 3) */
+  source?: 'guest' | 'official';
   userPermissions?: {
     upload: boolean;
     download: boolean;

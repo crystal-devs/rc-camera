@@ -30,6 +30,7 @@ const mapApiEventToEvent = (apiEvent: any): Event => {
     share_settings: apiEvent.share_settings || {
       is_active: true,
       password: null,
+      has_password: false,
       expires_at: null
     },
     permissions: apiEvent.permissions || {
@@ -210,6 +211,46 @@ export const createEvent = async (eventData: Partial<Event>, authToken: string):
   } finally {
     createEventInProgress = false;
   }
+};
+
+export interface MyAccessResponse {
+  event_id: string;
+  role: string;
+  permissions: string[];
+}
+
+/**
+ * The caller's role + server-computed permission set for an event.
+ * Single source of truth for client-side RBAC UI (docs/RBAC_DESIGN.md).
+ */
+export const getMyAccess = async (
+  eventId: string,
+  authToken: string
+): Promise<MyAccessResponse> => {
+  const response = await axios.get(`${API_BASE_URL}/event/${eventId}/my-access`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+    timeout: 10000
+  });
+  return response.data.data as MyAccessResponse;
+};
+
+/**
+ * Close (archive = true) or reopen (archive = false) an event for guests.
+ * Creator-only server-side (the `event.archive` action). Returns the updated
+ * event. This is the dedicated path for the danger-zone close/reopen — it no
+ * longer rides through the generic update payload.
+ */
+export const toggleEventArchive = async (
+  eventId: string,
+  archive: boolean,
+  authToken: string
+): Promise<Event> => {
+  const response = await axios.patch(
+    `${API_BASE_URL}/event/${eventId}/archive`,
+    { archive },
+    { headers: { Authorization: `Bearer ${authToken}` }, timeout: 15000 }
+  );
+  return response.data.data as Event;
 };
 
 // Track ongoing update requests

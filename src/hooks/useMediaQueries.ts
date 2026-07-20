@@ -8,6 +8,7 @@ import {
   getAlbumMedia,
   uploadAlbumMedia,
   updateMediaStatus,
+  toggleMediaFavorite,
   bulkUpdateMediaStatus,
   deleteMedia,
   getEventMediaCounts,
@@ -25,6 +26,7 @@ import { useAuthToken } from '@/hooks/use-auth';
 import { authManager } from '@/lib/auth-manager';
 import { queryKeys } from '@/lib/queryKeys';
 import { Photo } from '@/types/PhotoGallery.types';
+import { pLimit } from '@/utils/async';
 
 // Industry standard: Optimized cache configuration for image galleries (Google Photos style)
 const CACHE_CONFIG = {
@@ -44,6 +46,14 @@ interface MediaFetchOptions {
   quality?: 'small' | 'medium' | 'large' | 'original';
   enabled?: boolean;
   maxPages?: number; // Maximum pages to auto-load (for small galleries)
+  /** Function (sub-event) filter: an id, or 'none' for untagged media (Phase 1) */
+  subEventId?: string;
+  /** Sort order (Phase 3) */
+  sort?: 'newest' | 'oldest';
+  /** Filename search (Phase 3) */
+  search?: string;
+  /** Source filter: guest vs official (Phase 3) */
+  source?: 'guest' | 'official';
 }
 
 /**
@@ -85,11 +95,16 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
     status = 'approved',
     limit = 20,
     quality = 'thumbnail',
-    enabled = true
+    enabled = true,
+    subEventId,
+    sort = 'newest',
+    search,
+    source
   } = options;
 
   const query = useInfiniteQuery({
-    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality],
+    // subEventId/sort/search/source are part of the key so changing any refetches
+    queryKey: [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', sort, search ?? '', source ?? 'all'],
     queryFn: async ({ pageParam = 1 }): Promise<{
       photos: Photo[];
       nextPage?: number;
@@ -104,7 +119,11 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
         limit,
         quality: quality as 'small' | 'medium' | 'large' | 'original',
         page: pageParam,
-        scrollType: 'infinite'
+        scrollType: 'infinite',
+        subEventId,
+        sort,
+        search,
+        source
       });
 
       console.log(`📄 Page ${pageParam} Response:`, {
@@ -122,7 +141,7 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
 
       // 🚀 Prefetch next page for smoother loading
       if (nextPage && photos.length === limit) {
-        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, nextPage];
+        const prefetchQueryKey = [...queryKeys.eventPhotos(eventId, status), 'infinite', quality, subEventId ?? 'all', sort, search ?? '', source ?? 'all', nextPage];
         queryClient.prefetchQuery({
           queryKey: prefetchQueryKey,
           queryFn: async () => {
@@ -131,7 +150,11 @@ export function useInfiniteEventMedia(eventId: string, options: MediaFetchOption
               limit,
               quality: quality as 'small' | 'medium' | 'large' | 'original',
               page: nextPage,
-              scrollType: 'infinite'
+              scrollType: 'infinite',
+              subEventId,
+              sort,
+              search,
+              source
             });
             return {
               photos: (prefetchResponse.data || []).map(transformMediaToPhoto),
@@ -278,8 +301,9 @@ export function useUploadMultipleMedia(
       const errors: any[] = [];
       const batchUploads: any[] = [];
 
-      // 3. Upload concurrently to S3
-      const uploadPromises = files.map(async (file, index) => {
+      // 3. Upload concurrently to S3 with a limit of 3
+      const limit = pLimit(3);
+      const uploadPromises = files.map((file, index) => limit(async () => {
         const uploadData = uploadUrls[index];
         if (!uploadData) return;
 
@@ -323,7 +347,7 @@ export function useUploadMultipleMedia(
           errors.push({ filename: file.name, error: err.message });
           progressMap[file.name] = 0;
         }
-      });
+      }));
 
       await Promise.allSettled(uploadPromises);
 
@@ -437,6 +461,50 @@ async function getImageDimensions(file: File): Promise<{ width: number; height: 
  * 2. Invalidate NEW status cache to refetch from backend
  * 3. Let WebSocket updates handle progressive improvements
  */
+/**
+ * Toggle a photo's host-curation favorite (Phase 3). Optimistically patches
+ * isFavorite in every cached infinite page for this event so the star flips
+ * instantly, and rolls back on error.
+ */
+export function useToggleMediaFavorite(eventId: string) {
+  const queryClient = useQueryClient();
+
+  const patchIsFavorite = (mediaId: string, isFavorite: boolean) => {
+    queryClient.setQueriesData(
+      { queryKey: queryKeys.eventPhotos(eventId) },
+      (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            photos: (page.photos ?? []).map((p: Photo) =>
+              p.id === mediaId ? { ...p, isFavorite } : p
+            ),
+          })),
+        };
+      }
+    );
+  };
+
+  return useMutation({
+    mutationFn: async ({ mediaId, favorite }: { mediaId: string; favorite: boolean }) => {
+      await authManager.init();
+      const token = authManager.getAuthToken();
+      if (!token) throw new Error('Authentication required');
+      return await toggleMediaFavorite(mediaId, favorite, token);
+    },
+    onMutate: async ({ mediaId, favorite }) => {
+      patchIsFavorite(mediaId, favorite);
+      return { mediaId, previous: !favorite };
+    },
+    onError: (_err, _vars, context) => {
+      if (context) patchIsFavorite(context.mediaId, context.previous);
+      toast.error('Could not update favorite');
+    },
+  });
+}
+
 export function useUpdateMediaStatus(eventId: string) {
   const token = useAuthToken();
   const queryClient = useQueryClient();

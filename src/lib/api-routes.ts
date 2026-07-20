@@ -1,7 +1,7 @@
 // src/lib/api-routes.ts - Centralized API Routes Configuration
 export const API_ROUTES = {
   // Base configuration
-  BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001',
+  BASE_URL: process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001',
   VERSION: 'v1',
 
   // Authentication
@@ -27,9 +27,11 @@ export const API_ROUTES = {
   MEDIA: {
     UPLOAD: '/media/upload',
     GET_EVENT: (eventId: string) => `/media/event/${eventId}`,
+    GET_COUNTS: (eventId: string) => `/media/event/${eventId}/counts`,
     GET_ALBUM: (albumId: string) => `/media/album/${albumId}`,
     GET_BY_ID: (mediaId: string) => `/media/${mediaId}`,
     UPDATE_STATUS: (mediaId: string) => `/media/${mediaId}/status`,
+    FAVORITE: (mediaId: string) => `/media/${mediaId}/favorite`,
     DELETE: (mediaId: string) => `/media/${mediaId}`,
     BULK_DELETE: (eventId: string) => `/media/event/${eventId}/bulk-delete`,
     PROCESSING_STATUS: (mediaId: string) => `/media/${mediaId}/processing`,

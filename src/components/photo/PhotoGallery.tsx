@@ -14,13 +14,14 @@ import {
   useInfiniteEventMediaFlat,
   useEventMediaCounts,
   useUpdateMediaStatus,
+  useToggleMediaFavorite,
   useDeleteMedia,
   useGalleryUtils,
 } from '@/hooks/useMediaQueries';
 import { EmptyState } from '../album/EmptyState';
 import { FullscreenPhotoViewer } from './FullscreenPhotoViewer';
 import { Photo, PhotoGalleryProps } from '@/types/PhotoGallery.types';
-import { RowsPhotoGallery } from './layout/RowsPhotoGallery';
+import { MediaGrid, AdminMediaTile } from '@/components/media-gallery';
 import { useWebSocketUploadProgress } from '@/hooks/useWebSocketUploadProgress';
 import { useEventWebSocket } from '@/hooks/useEventWebSocket';
 import { UploadProgressTab } from '../progress/upload-progress';
@@ -53,6 +54,10 @@ export default function OptimizedPhotoGallery({
   eventId,
   albumId,
   canUpload = true,
+  subEventId,
+  sort,
+  search,
+  source,
   userPermissions = {
     upload: true,
     download: false,
@@ -99,6 +104,10 @@ export default function OptimizedPhotoGallery({
     limit: 50,
     quality: gridQuality,
     enabled: true,
+    subEventId,
+    sort,
+    search,
+    source,
   });
 
   const photos = infinitePhotos;
@@ -168,6 +177,14 @@ export default function OptimizedPhotoGallery({
   // Single photo operations
   const updateStatusMutation = useUpdateMediaStatus(eventId);
   const deleteMutation = useDeleteMedia(eventId);
+  const favoriteMutation = useToggleMediaFavorite(eventId);
+
+  const handleToggleFavorite = useCallback(
+    (photo: Photo) => {
+      favoriteMutation.mutate({ mediaId: photo.id, favorite: !photo.isFavorite });
+    },
+    [favoriteMutation]
+  );
 
   // Display counts with fallback
   const displayCounts = useMemo(
@@ -499,27 +516,44 @@ export default function OptimizedPhotoGallery({
       ) : (
         <>
           {/* Photo Grid */}
-          <RowsPhotoGallery
-            photos={photos}
-            targetRowHeight={displayConfig?.targetRowHeight} // 🚀 NEW: Pass configured height
-            onPhotoClick={galleryState.openPhotoViewer}
-            userPermissions={galleryState.effectivePermissions}
-            currentTab={galleryState.activeTab}
-            onStatusUpdate={handleStatusUpdate}
-            onDownload={handleDownload}
-            onDelete={handleDelete}
-            onSetCover={handleSetCover}
-            selectionMode={selection.getSelectedCount() > 0}
-            selectedPhotos={selection.selectedPhotos}
-            onToggleSelection={selection.togglePhotoSelection}
-            onNearEnd={handleLoadMore}
+          <MediaGrid
+            items={photos}
+            layout="rows"
+            targetRowHeight={displayConfig?.targetRowHeight}
+            gap={8}
+            scrollContainerRef={scrollRef}
+            hasNextPage={hasNextPage}
+            isLoadingMore={isFetchingNextPage}
+            onLoadMore={handleLoadMore}
+            renderItem={({ item, index, width, priority }) => (
+              <AdminMediaTile
+                photo={item}
+                index={index}
+                displayWidth={width}
+                priority={priority}
+                onPhotoClick={galleryState.openPhotoViewer}
+                userPermissions={galleryState.effectivePermissions}
+                onStatusUpdate={handleStatusUpdate}
+                onDownload={handleDownload}
+                onDelete={handleDelete}
+                onSetCover={handleSetCover}
+                selectionMode={selection.getSelectedCount() > 0}
+                isSelected={selection.selectedPhotos.has(item.id)}
+                onSelect={(photoId, idx, e) =>
+                  selection.selectPhoto(photoId, idx, photos, { shift: e.shiftKey })
+                }
+                onToggleFavorite={handleToggleFavorite}
+              />
+            )}
           />
 
           {/* Floating Bulk Action Bar */}
           {!isGuest && (
             <FloatingActionBar
               selectedCount={selection.getSelectedCount()}
+              totalCount={photos.length}
               onDeselect={selection.deselectAllPhotos}
+              onSelectAll={() => selection.selectAllPhotos(photos)}
               onApprove={
                 galleryState.activeTab !== 'approved'
                   ? () => bulkOps.handleBulkStatusUpdate(selection.selectedPhotos, 'approved')

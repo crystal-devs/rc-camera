@@ -4,14 +4,17 @@
 
 'use client';
 
-import { XIcon, CheckIcon, EyeOffIcon, TrashIcon, DownloadIcon } from 'lucide-react';
+import { XIcon, CheckIcon, EyeOffIcon, TrashIcon, DownloadIcon, CheckCheckIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserPermissions } from '../../utils/permissionUtils';
 import { TabType } from '../GalleryHeader/GalleryTabs';
 
 interface FloatingActionBarProps {
     selectedCount: number;
+    /** Number of photos currently loaded in the grid (for the Select-all toggle) */
+    totalCount?: number;
     onDeselect: () => void;
+    onSelectAll?: () => void;
     onApprove?: () => void;
     onReject?: () => void;
     onHide?: () => void;
@@ -23,7 +26,9 @@ interface FloatingActionBarProps {
 
 export function FloatingActionBar({
     selectedCount,
+    totalCount,
     onDeselect,
+    onSelectAll,
     onApprove,
     onReject,
     onHide,
@@ -33,6 +38,8 @@ export function FloatingActionBar({
     currentTab,
 }: FloatingActionBarProps) {
     if (selectedCount === 0) return null;
+
+    const allSelected = totalCount !== undefined && selectedCount >= totalCount && totalCount > 0;
 
     return (
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 w-[90%] max-w-2xl bg-background/80 backdrop-blur-md border shadow-lg rounded-full px-6 py-3 flex items-center justify-between animate-in slide-in-from-bottom-10 fade-in duration-300">
@@ -47,6 +54,20 @@ export function FloatingActionBar({
                         <XIcon className="h-4 w-4" />
                     </Button>
                     <span className="font-medium text-sm">{selectedCount} selected</span>
+                    {onSelectAll && !allSelected && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={onSelectAll}
+                            className="h-8 rounded-full text-xs text-muted-foreground hover:text-foreground"
+                            title="Select all loaded photos"
+                        >
+                            <CheckCheckIcon className="h-4 w-4 sm:mr-1.5" />
+                            <span className="hidden sm:inline">
+                                Select all{totalCount ? ` ${totalCount}` : ''}
+                            </span>
+                        </Button>
+                    )}
                 </div>
 
                 <div className="h-6 w-px bg-border" />

@@ -1,6 +1,6 @@
 // hooks/useInfiniteMediaQuery.ts - Clean and simple
 'use client';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, useCallback } from 'react';
 import { getEventMediaWithGuestToken } from '@/services/apis/media.api';
 import { MediaFetchOptions, transformApiPhoto } from '@/types/events';
@@ -21,18 +21,23 @@ interface UseInfiniteMediaQueryProps {
     auth: string | null;
     limit?: number;
     enabled?: boolean;
+    /** Function (sub-event) filter: an id, or 'none' for untagged media (Phase 1) */
+    subEventId?: string;
 }
 
 export const useInfiniteMediaQuery = ({
     shareToken,
     auth,
     limit = 20,
-    enabled = true
+    enabled = true,
+    subEventId
 }: UseInfiniteMediaQueryProps) => {
-    const queryKey = ['guest-media', shareToken];
+    // subEventId is part of the key so switching function chips refetches
+    const queryKey = ['guest-media', shareToken, subEventId ?? 'all'];
 
     // Buffered changes state for WebSocket updates
     const [bufferedChanges, setBufferedChanges] = useState<any[]>([]);
+    const queryClient = useQueryClient();
 
     const fetchMediaPage = async ({ pageParam = 1 }) => {
         if (!shareToken) {
@@ -43,7 +48,8 @@ export const useInfiniteMediaQuery = ({
             page: pageParam,
             limit,
             scroll_type: 'pagination',
-            quality: 'thumbnail'
+            quality: 'thumbnail',
+            subEventId
         };
 
         try {
@@ -110,6 +116,20 @@ export const useInfiniteMediaQuery = ({
 
     // WebSocket handlers
     const webSocketHandlers = {
+        // ── New slim guest events (v2) ────────────────────────────────────────
+        handleNewPhotosAvailable: useCallback((payload: { eventId: string; count: number }) => {
+            // Buffer N synthetic entries so bufferedCount ticks up and the
+            // NotificationBanner ("N new photos available") shows up.
+            setBufferedChanges((prev) => [
+                ...prev,
+                ...Array.from({ length: payload.count }, (_, i) => ({
+                    type: 'approved',
+                    photo: { id: `ws-${Date.now()}-${i}`, eventId: payload.eventId },
+                    reason: 'approval'
+                }))
+            ]);
+        }, []),
+        // ── Legacy handlers kept for admin/wall pages ─────────────────────────
         handleMediaApproved: useCallback((payload: any) => {
             setBufferedChanges((prev) => [
                 ...prev,
@@ -128,12 +148,23 @@ export const useInfiniteMediaQuery = ({
                 { type: 'uploaded', photo: payload, reason: 'upload' }
             ]);
         }, []),
-        handleMediaRemoved: useCallback((payload: any) => {
-            setBufferedChanges((prev) => [
-                ...prev,
-                { type: 'removed', photo: payload, reason: 'removal' }
-            ]);
-        }, []),
+        handleMediaRemoved: useCallback((payload: { mediaId: string, eventId: string }) => {
+            // Silently remove from local query cache so it disappears instantly
+            if (!payload?.mediaId) return;
+            
+            const cacheKey = ['guest-media', shareToken];
+            queryClient.setQueriesData({ queryKey: cacheKey }, (oldData: any) => {
+                if (!oldData || !oldData.pages) return oldData;
+                return {
+                    ...oldData,
+                    pages: oldData.pages.map((page: any) => ({
+                        ...page,
+                        photos: page.photos.filter((p: any) => p.id !== payload.mediaId),
+                        total: Math.max(0, page.total - 1)
+                    }))
+                };
+            });
+        }, [queryClient, shareToken]),
         handleMediaProcessingComplete: useCallback((payload: any) => {
             setBufferedChanges((prev) => [
                 ...prev,

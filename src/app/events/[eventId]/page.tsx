@@ -22,11 +22,14 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'sonner';
 import useEventStore from '@/stores/useEventStore';
 import { useStore } from '@/lib/store';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
 import EventCoverSelector from '@/components/event/EventCoverSelector';
+import { formatStorageSize } from '@/lib/subscription-utils';
 
 export default function EventDashboardPage() {
     const params = useParams();
@@ -38,13 +41,17 @@ export default function EventDashboardPage() {
     const {
         selectedEvent,
         getEventFromCacheOrFetch,
+        invalidateEventCache,
         isLoadingEvent,
         userRole
     } = useEventStore();
 
+    const subscription = useStore(state => state.subscription);
+
     const { getAccessToken } = useSecureAuth();
     const [authToken, setAuthToken] = React.useState('');
     const [wallUrl, setWallUrl] = React.useState('');
+    const [qrDialogOpen, setQrDialogOpen] = React.useState(false);
 
     // Initialize auth token
     React.useEffect(() => {
@@ -54,10 +61,16 @@ export default function EventDashboardPage() {
 
     // Fetch event data
     React.useEffect(() => {
-        if (eventId && authToken && (!selectedEvent || selectedEvent._id !== eventId)) {
-            getEventFromCacheOrFetch(eventId, authToken);
+        if (eventId && authToken) {
+            // Auto-heal local cache if stats look corrupted
+            if (selectedEvent && selectedEvent._id === eventId && ((selectedEvent.stats?.total_size_mb || 0) < 0 || (selectedEvent.stats?.photos || 0) < 0)) {
+                invalidateEventCache(eventId);
+                getEventFromCacheOrFetch(eventId, authToken);
+            } else if (!selectedEvent || selectedEvent._id !== eventId) {
+                getEventFromCacheOrFetch(eventId, authToken);
+            }
         }
-    }, [eventId, authToken, selectedEvent, getEventFromCacheOrFetch]);
+    }, [eventId, authToken, selectedEvent, getEventFromCacheOrFetch, invalidateEventCache]);
 
     // Generate wall URL
     React.useEffect(() => {
@@ -78,26 +91,37 @@ export default function EventDashboardPage() {
 
     const handleOpenAlbum = () => {
         if (selectedEvent) {
-            router.push(`/events/${selectedEvent._id}`);
+            router.push(`/events/${selectedEvent._id}/media`);
         }
     };
 
     const handleShare = () => {
         if (selectedEvent) {
-            router.push(`/events/${selectedEvent._id}/share`);
+            router.push(`/events/${selectedEvent._id}/settings?tab=sharing`);
         }
     };
 
     const handleManageUploads = () => {
         if (selectedEvent) {
-            router.push(`/events/${selectedEvent._id}/manage`);
+            router.push(`/events/${selectedEvent._id}/media`);
         }
     };
 
     const handleDownloadQR = () => {
-        if (selectedEvent) {
-            router.push(`/events/${selectedEvent._id}/qr`);
-        }
+        setQrDialogOpen(true);
+    };
+
+    const guestUrl = selectedEvent?.share_token
+        ? `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${selectedEvent.share_token}`
+        : '';
+
+    const handleDownloadQRImage = () => {
+        const canvas = document.getElementById('event-qr-canvas') as HTMLCanvasElement | null;
+        if (!canvas || !selectedEvent) return;
+        const link = document.createElement('a');
+        link.download = `${selectedEvent.title.replace(/[^\w\s-]/g, '').trim() || 'event'}-qr.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
     };
 
     const handleOpenWall = () => {
@@ -120,21 +144,26 @@ export default function EventDashboardPage() {
         if (!selectedEvent) return '';
 
         switch (selectedEvent.visibility) {
-            case 'public':
-                return 'Public - Anyone can find and access this event';
             case 'anyone_with_link':
-                return 'Accessible to all with link/QR code. Guest can view and upload to the album.';
+                return 'Open — Anyone with the link can view and upload photos. No account needed.';
+            case 'invited_only':
+                return 'Protected — Only guests on your invite list can access. They must be logged in.';
             case 'private':
-                return 'Private - Only invited users can access';
+                return '⚠️ Not shared yet — Go to Settings › Sharing to choose how guests can join.';
             default:
-                return 'Unknown privacy setting';
+                return '';
         }
     };
 
     const getModerationText = () => {
-        // Based on your API, this might be determined by permissions or settings
-        // For now, showing a general message
-        return 'Uploads immediately visible in the album, no pre-publishing moderation.';
+        if (!selectedEvent) return '';
+        const permissions = selectedEvent.permissions as any;
+        const uploadsEnabled = permissions?.can_upload !== false;
+        
+        if (!uploadsEnabled) {
+             return 'Uploads are currently disabled. Guests cannot contribute new photos or videos.';
+        }
+        return 'Uploads are currently allowed. Media will be visible in the album automatically.';
     };
 
     if (isLoadingEvent) {
@@ -354,7 +383,12 @@ export default function EventDashboardPage() {
                                 <CardTitle className="text-base font-medium flex items-center gap-2">
                                     📊 Statistics
                                 </CardTitle>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => {
+                                    if (eventId && authToken) {
+                                        invalidateEventCache(eventId as string);
+                                        getEventFromCacheOrFetch(eventId as string, authToken);
+                                    }
+                                }}>
                                     <RefreshCwIcon className="h-4 w-4" />
                                 </Button>
                             </div>
@@ -366,9 +400,9 @@ export default function EventDashboardPage() {
                             <div className="text-sm">
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-gray-600">
-                                        {selectedEvent?.stats?.total_size_mb?.toFixed(2) || '0.00'} GB of 0.0 GB used (0%)
+                                        {formatStorageSize(Math.max(0, selectedEvent?.stats?.total_size_mb || 0))} of {formatStorageSize(subscription?.limits?.maxStorage || 0)} used ({subscription?.limits?.maxStorage ? Math.min(100, Math.max(0, Math.round((Math.max(0, selectedEvent?.stats?.total_size_mb || 0) / subscription.limits.maxStorage) * 100))) : 0}%)
                                     </span>
-                                    <Button variant="link" size="sm" className="h-auto p-0 text-xs">
+                                    <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => router.push('/settings')}>
                                         Upgrade
                                     </Button>
                                 </div>
@@ -449,8 +483,21 @@ export default function EventDashboardPage() {
                             <div className="flex items-center gap-2 text-sm">
                                 <EyeIcon className="h-4 w-4 text-gray-400" />
                                 <span className="text-gray-600">Visibility:</span>
-                                <Badge variant="secondary" className="text-xs">
-                                    {selectedEvent?.visibility || 'private'}
+                                <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${
+                                        selectedEvent?.visibility === 'anyone_with_link'
+                                            ? 'bg-green-100 text-green-700'
+                                            : selectedEvent?.visibility === 'invited_only'
+                                            ? 'bg-blue-100 text-blue-700'
+                                            : 'bg-amber-100 text-amber-700'
+                                    }`}
+                                >
+                                    {selectedEvent?.visibility === 'anyone_with_link'
+                                        ? '🌐 Open'
+                                        : selectedEvent?.visibility === 'invited_only'
+                                        ? '🔵 Protected'
+                                        : '⚠️ Draft'}
                                 </Badge>
                             </div>
 
@@ -472,6 +519,45 @@ export default function EventDashboardPage() {
                     </Card>
                 </div>
             </div>
+
+            {/* QR Code Dialog */}
+            <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+                <DialogContent className="sm:max-w-sm">
+                    <DialogTitle>Your event QR code</DialogTitle>
+                    <DialogDescription>
+                        Guests scan this to view and upload photos — no app, no login.
+                    </DialogDescription>
+                    <div className="flex flex-col items-center gap-4 py-2">
+                        {guestUrl ? (
+                            <>
+                                <div className="bg-white p-4 rounded-xl border">
+                                    <QRCodeCanvas
+                                        id="event-qr-canvas"
+                                        value={guestUrl}
+                                        size={220}
+                                        level="M"
+                                        includeMargin
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-500 break-all text-center">{guestUrl}</p>
+                                <div className="flex gap-2 w-full">
+                                    <Button className="flex-1" onClick={handleDownloadQRImage}>
+                                        Download PNG
+                                    </Button>
+                                    <Button variant="outline" className="flex-1" onClick={() => handleCopyLink(guestUrl)}>
+                                        <CopyIcon className="h-4 w-4 mr-2" />
+                                        Copy link
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <p className="text-sm text-gray-500">
+                                This event has no share link yet — enable sharing in Settings first.
+                            </p>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

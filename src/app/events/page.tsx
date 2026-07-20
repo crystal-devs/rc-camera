@@ -35,8 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Event } from '@/types/backend-types/event.type';
 import { toast } from "sonner";
-import EventCreateModal from '@/components/event/CreateEventModel';
-import { useEvents, useCreateEvent } from '@/hooks/useEvents';
+import { useEvents } from '@/hooks/useEvents';
 import { getSignedUrlForKey } from '@/services/apis/media.api';
 import { useToken } from '@/hooks/useToken';
 import { useEffect } from 'react';
@@ -48,13 +47,11 @@ export default function EventsPage() {
   const [sortOrder, setSortOrder] = useState<'date-desc' | 'date-asc' | 'name-asc' | 'name-desc'>('date-desc');
   const [filterType, setFilterType] = useState<'all' | 'active' | 'past'>('all');
   const [activeTab, setActiveTab] = useState<'grid' | 'list'>('grid');
-  const [showCreateEventDialogue, setShowCreateEventDialogue] = useState(false);
   const [coverUrls, setCoverUrls] = useState<Map<string, string>>(new Map());
   const authToken = useToken();
 
   // Use React Query for events fetching with background refetching
   const { data: events = [], isLoading, error, refetch } = useEvents({ enableBackgroundRefetch: true });
-  const createEventMutation = useCreateEvent();
 
   // Extract S3 key from cover data
   const getS3Key = (cover: any): string | null => {
@@ -160,7 +157,7 @@ export default function EventsPage() {
   };
 
   const createNewEvent = () => {
-    // router.push('/events/create');
+    router.push('/events/create');
   };
 
   return (
@@ -174,24 +171,10 @@ export default function EventsPage() {
         </div>
 
 
-        {/* here  */}
-        <EventCreateModal
-          open={showCreateEventDialogue}
-          onOpenChange={setShowCreateEventDialogue}
-          trigger={
-            <Button
-              onClick={() => setShowCreateEventDialogue(true)}
-              className="mt-4 md:mt-0"
-            >
-              <PlusIcon className="h-4 w-4 mr-2" />
-              Create New Event
-            </Button>
-          }
-          onCreated={(created) => {
-            // The mutation will handle cache updates
-            setShowCreateEventDialogue(false);
-          }}
-        />
+        <Button onClick={createNewEvent} className="mt-4 md:mt-0">
+          <PlusIcon className="h-4 w-4 mr-2" />
+          Create New Event
+        </Button>
       </div>
 
       {/* Single line filter controls that work on all screen sizes */}
@@ -298,7 +281,7 @@ export default function EventsPage() {
             <p className="text-gray-500 max-w-md mx-auto mb-6">
               You haven't created any events yet. Create your first event to start collecting photos!
             </p>
-            <Button onClick={() => setShowCreateEventDialogue(true)}>
+            <Button onClick={createNewEvent}>
               <PlusIcon className="h-4 w-4 mr-2" />
               Create First Event
             </Button>
@@ -491,8 +474,18 @@ export default function EventsPage() {
                       </span>
                     </div>
 
-                    <div className="text-gray-500">
-                      {event.share_settings.is_active ? 'Public' : 'Restricted'} event
+                    <div className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      event.visibility === 'anyone_with_link'
+                        ? 'bg-green-50 text-green-700'
+                        : event.visibility === 'invited_only'
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {event.visibility === 'anyone_with_link'
+                        ? '🌐 Open'
+                        : event.visibility === 'invited_only'
+                        ? '🔵 Protected'
+                        : '⚠️ Draft'}
                     </div>
                   </div>
                 </div>

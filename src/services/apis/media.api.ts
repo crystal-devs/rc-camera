@@ -106,6 +106,14 @@ export const getEventMediaWithPagination = async (
         status?: 'approved' | 'pending' | 'rejected' | 'hidden' | 'auto_approved';
         scrollType?: 'pagination' | 'infinite';
         cursor?: string;
+        /** Function filter: an id, or 'none' for untagged media (Phase 1) */
+        subEventId?: string;
+        /** Sort order (Phase 3) */
+        sort?: 'newest' | 'oldest';
+        /** Filename search (Phase 3) */
+        search?: string;
+        /** Source filter: guest vs official (Phase 3) */
+        source?: 'guest' | 'official';
     } = {}
 ): Promise<MediaApiResponse> => {
     try {
@@ -127,6 +135,10 @@ export const getEventMediaWithPagination = async (
         if (options.status) params.append('status', options.status);
         if (options.scrollType) params.append('scroll_type', options.scrollType);
         if (options.cursor) params.append('cursor', options.cursor);
+        if (options.subEventId) params.append('sub_event_id', options.subEventId);
+        if (options.sort) params.append('sort', options.sort);
+        if (options.search && options.search.trim()) params.append('search', options.search.trim());
+        if (options.source) params.append('source', options.source);
 
         console.log(`Calling API: ${endpoint}?${params}`);
 
@@ -251,6 +263,20 @@ export const updateMediaStatus = async (
     }
 };
 
+/** Toggle a photo's host-curation favorite flag (Phase 3). */
+export const toggleMediaFavorite = async (
+    mediaId: string,
+    favorite: boolean,
+    authToken: string
+): Promise<{ media_id: string; is_favorite: boolean }> => {
+    const response = await apiClient.patch(API_ROUTES.MEDIA.FAVORITE(mediaId), { favorite }, {
+        headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        timeout: 10000,
+    });
+    if (response.data?.status === true) return response.data.data;
+    throw new Error(response.data?.message || 'Failed to update favorite');
+};
+
 // NEW: Bulk update media status
 export async function bulkUpdateMediaStatus(
     eventId: string,
@@ -370,23 +396,29 @@ export const getEventMediaCounts = async (
     total: number;
 } | null> => {
     try {
-        // const endpoint = `${API_BASE_URL}/media/event/${eventId}/counts`;
+        const endpoint = API_ROUTES.MEDIA.GET_COUNTS(eventId);
 
-        // console.log(`Fetching media counts for eventId: ${eventId}`);
+        console.log(`Fetching media counts for eventId: ${eventId}`);
 
-        // const response = await axios.get(endpoint, {
-        //     headers: {
-        //         'Authorization': `Bearer ${authToken}`,
-        //     },
-        //     timeout: 10000,
-        // });
+        const headers: any = {
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'no-cache',
+        };
 
-        // if (response.data && response.data.status === true) {
-        //     return response.data.data;
-        // }
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
 
-        // throw new Error(response.data?.message || 'Failed to fetch media counts');
-        return null;
+        const response = await apiClient.get(endpoint, {
+            headers,
+            timeout: 10000,
+        });
+
+        if (response.data && response.data.status === true) {
+            return response.data.data;
+        }
+
+        throw new Error(response.data?.message || 'Failed to fetch media counts');
     } catch (error) {
         console.error('Error fetching media counts:', error);
         return null;
@@ -413,6 +445,7 @@ export const getEventMediaWithGuestToken = async (
         if (options.limit) params.append('limit', options.limit.toString());
         if (options.quality) params.append('quality', options.quality);
         if (options.scroll_type) params.append('scrollType', options.scroll_type); // Fixed param name
+        if (options.subEventId) params.append('sub_event_id', options.subEventId);
 
         console.log(`🔗 Fetching guest event media: ${shareToken.substring(0, 8)}... with params:`, Object.fromEntries(params));
 
@@ -1385,6 +1418,7 @@ export const transformMediaToPhoto = (mediaItem: any): Photo => {
         id: mediaItem._id || mediaItem.id,
         albumId: mediaItem.album_id,
         eventId: mediaItem.event_id,
+        isFavorite: !!mediaItem.is_favorite,
         uploadedBy: mediaItem.uploader_display_name || mediaItem.created_by || 'Unknown',
         uploaded_by: mediaItem.uploaded_by,
         type: mediaItem.type || 'image', // Fix: added missing type property

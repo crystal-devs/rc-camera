@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Upload, Loader2, Search, CheckCircle, AlertCircle } from 'lucide-react';
-import { loginWithFace, loginWithGlobalIdentity } from '@/services/apis/guest.api';
+import { loginWithFace, loginWithGlobalIdentity, withdrawFaceConsent } from '@/services/apis/guest.api';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useSecureAuth } from '@/contexts/SecureAuthContext';
@@ -34,6 +34,7 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
     const [isUploading, setIsUploading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [consentGiven, setConsentGiven] = useState(false);
     const [scanProgress, setScanProgress] = useState<ScanProgress>({
         current: 0,
         total: 0,
@@ -93,13 +94,17 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
 
     const handleSearch = async () => {
         if (!selectedFile) return;
+        if (!consentGiven) {
+            toast.error("Please agree to face matching to continue.");
+            return;
+        }
 
         setIsUploading(true);
         setScanProgress({ current: 0, total: 0, matchCount: 0, status: 'uploading' });
 
         try {
             // Perform Face Login
-            const { token, isNewIdentity, message } = await loginWithFace(selectedFile, eventId);
+            const { token, isNewIdentity, message } = await loginWithFace(selectedFile, eventId, consentGiven);
 
             // Show indexing status
             setScanProgress(prev => ({ ...prev, status: 'indexing' }));
@@ -135,6 +140,19 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
     const handleViewMatches = () => {
         onClose();
         // Parent will handle switching to my_photos tab
+    };
+
+    const handleWithdrawConsent = async () => {
+        if (!token) return;
+        try {
+            await withdrawFaceConsent(token);
+            toast.success("Your face data has been deleted.");
+            setConsentGiven(false);
+            clearSelection();
+            onClose();
+        } catch {
+            toast.error("Could not delete face data. Please try again.");
+        }
     };
 
     const clearSelection = () => {
@@ -360,12 +378,27 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
                                     </p>
                                 )}
 
-                                {/* Action Button */}
+                                {/* Consent + Action Button */}
                                 <div className="w-full space-y-3">
+                                    {previewUrl && scanProgress.status === 'idle' && (
+                                        <label className="flex items-start gap-2.5 px-1 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={consentGiven}
+                                                onChange={(e) => setConsentGiven(e.target.checked)}
+                                                className="mt-0.5 h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 accent-blue-600"
+                                            />
+                                            <span className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                                                I agree that my selfie will be analysed to create a face
+                                                signature used only to find my photos in this event. I can
+                                                withdraw consent anytime, which deletes my face data.
+                                            </span>
+                                        </label>
+                                    )}
                                     {previewUrl && scanProgress.status === 'idle' && (
                                         <Button
                                             onClick={handleSearch}
-                                            disabled={isUploading}
+                                            disabled={isUploading || !consentGiven}
                                             className="w-full py-6 text-base bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/20"
                                         >
                                             {isUploading ? (
@@ -386,8 +419,19 @@ export const SelfieUploadModal: React.FC<SelfieUploadModalProps> = ({
                         )}
 
                         <p className="text-[10px] text-zinc-400 text-center px-4">
-                            Your selfie is processed securely to find matches and is not stored or shared.
+                            Your face signature is stored securely for this event only and is
+                            never shared. You can withdraw consent and delete it at any time.
                         </p>
+
+                        {/* Withdraw consent (visible once the guest has a face session) */}
+                        {token && (
+                            <button
+                                onClick={handleWithdrawConsent}
+                                className="text-[11px] text-red-500 hover:text-red-600 underline underline-offset-2"
+                            >
+                                Delete my face data &amp; withdraw consent
+                            </button>
+                        )}
                     </div>
                 </motion.div>
             </motion.div>

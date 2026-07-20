@@ -18,3 +18,6 @@ export const LOGOUT_ROUTE = `${RC_API_BASE_URL}/auth/logout`
 export const VERIFY_USER_ROUTE = `${RC_API_BASE_URL}/auth/verify-clicky`
 export const CSRF_TOKEN_ROUTE = `${RC_API_BASE_URL}/auth/csrf-token`
 export const GOOGLE_OAUTH_ROUTE = `${RC_API_BASE_URL}/auth/google`
+
+// SSE routes
+export const SSE_UPLOAD_PROGRESS_ROUTE = (eventId: string) => `${RC_API_BASE_URL}/sse/upload-progress/${eventId}`

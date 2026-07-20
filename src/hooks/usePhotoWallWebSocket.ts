@@ -74,6 +74,8 @@ export const usePhotoWallWebSocket = (
   useEffect(() => {
     if (!enabled || !shareToken) return;
 
+    let subscribedEventId: string | null = null;
+
     const initializeConnection = async () => {
       try {
         console.log('📺 PhotoWall: Initializing WebSocket connection');
@@ -81,9 +83,11 @@ export const usePhotoWallWebSocket = (
         // Connect with photowall user type
         await connect(shareToken, 'photowall', eventId);
 
-        // Subscribe to the event
-        if (eventId) {
-          await subscribe(eventId, shareToken);
+        // Subscribe to the event — the wall only has a share token, so fall
+        // back to the event id the server resolved during auth
+        subscribedEventId = eventId || useWebSocketStore.getState().authenticatedEventId;
+        if (subscribedEventId) {
+          await subscribe(subscribedEventId, shareToken);
         }
       } catch (error) {
         console.error('📺 PhotoWall: Connection failed:', error);
@@ -94,8 +98,8 @@ export const usePhotoWallWebSocket = (
 
     // Cleanup on unmount
     return () => {
-      if (eventId) {
-        unsubscribe(eventId);
+      if (subscribedEventId) {
+        unsubscribe(subscribedEventId);
       }
     };
   }, [enabled, shareToken, eventId, connect, subscribe, unsubscribe]);
