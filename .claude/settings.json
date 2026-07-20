@@ -13,7 +13,11 @@
       "PowerShell(cd d:\\\\Programing\\\\rc-api; npx tsc --noEmit 2>$null; \"api exit: $LASTEXITCODE\"; cd d:\\\\Programing\\\\rc-frontend; npx tsc --noEmit 2>$null | Select-String \"permissions|Permission\" ; \"fe filtered done\")",
       "PowerShell(cd d:\\\\Programing\\\\rc-api; npx tsc --noEmit 2>$null; \"api exit: $LASTEXITCODE\")",
       "PowerShell(cd d:\\\\Programing\\\\rc-api; npx tsc --noEmit 2>$null; \"api: $LASTEXITCODE\"; cd d:\\\\Programing\\\\rc-frontend; npm run build 2>&1 | Select-String -Pattern \"Compiled|Failed|error\" | Select-Object -First 6)",
-      "PowerShell(Remove-Item d:\\\\Programing\\\\rc-frontend\\\\src\\\\components\\\\event-settings\\\\TeamTab.tsx -Confirm:$false)"
+      "PowerShell(Remove-Item d:\\\\Programing\\\\rc-frontend\\\\src\\\\components\\\\event-settings\\\\TeamTab.tsx -Confirm:$false)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/@tanstack/react-query/package.json'\\).version\\)\")",
+      "Bash(git commit *)",
+      "PowerShell(try { $c = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction Stop; $c.OwningProcess | Select-Object -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue; Write-Output \"stopped PID $_ on 3000\" } } catch { Write-Output \"no listener on 3000\" })"
     ]
   }
 }
